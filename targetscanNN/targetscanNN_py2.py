@@ -11,7 +11,7 @@ if __name__ == '__main__':
     LEN_DATA, LEN_FEATURES = int(LEN_DATA), int(LEN_FEATURES)
     WRITE_SUMMARY = False
 
-    print('Building neural network')
+    print 'Building neural network'
 
     with tf.Session() as sess:
 
@@ -88,11 +88,11 @@ if __name__ == '__main__':
             test_writer = tf.summary.FileWriter(LOGDIR + '/test')
 
 
-        print('Reading in data')
+        print 'Reading in data'
 
         train, test = helpers.read_data(INFILE, LEN_DATA, LEN_FEATURES, extra=num_extra, shuffle=True)
 
-        print('Training model')
+        print 'Training model'
 
         # TRAIN MODEL #
         num_epoch = 10000
@@ -115,7 +115,7 @@ if __name__ == '__main__':
                 if WRITE_SUMMARY:
                     test_writer.add_summary(summary, i)
 
-                print('Accuracy at step %s: %s' % (i, acc))
+                print 'Accuracy at step %s: %s' % (i, acc)
             
             else:
                 _, summary = sess.run([train_step, merged], feed_dict={x: batch[0],
@@ -125,8 +125,8 @@ if __name__ == '__main__':
                 if WRITE_SUMMARY:
                     train_writer.add_summary(summary, i)
 
-        print("test accuracy %g"%accuracy.eval(feed_dict={x: test.features,
+        print "test accuracy %g"%accuracy.eval(feed_dict={x: test.features,
                                                           extra: test.extra_features,
                                                           y: test.labels,
-                                                          keep_prob: 1.0}))
+                                                          keep_prob: 1.0})
 
