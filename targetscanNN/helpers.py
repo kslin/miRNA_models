@@ -51,18 +51,18 @@ def make_square(seq1, seq2):
                     one_hot_encode(seq2, np.array(['U','A','G','C'])))
 
 
-def read_data(infile, len_data, len_features, extra=None, shuffle=True):
+def read_data(infile, len_data, len_features, extra, shuffle=True):
     """Reads in sequences and creates dataset objects"""
 
     # create arrays to hold data
     features = np.zeros((len_data, len_features))
     labels = np.zeros((len_data, 1))
 
-    if extra is not None:
+    if extra > 0:
         extra_features = np.zeros((len_data, extra))
 
     else:
-        extra_features = np.zeros((len_data, 1))
+        extra_features = np.zeros((len_data, 0))
         extra_features.fill(None)
 
     # read in sequences and use 'make square' encoding

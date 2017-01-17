@@ -5,6 +5,7 @@ import tensorflow as tf
 
 import helpers
 
+
 if __name__ == '__main__':
 
     INFILE, LEN_DATA, LEN_FEATURES, LOGDIR = sys.argv[1:]
@@ -16,7 +17,7 @@ if __name__ == '__main__':
     with tf.Session() as sess:
 
         dim1, dim2 = 80, 96
-        num_extra = 1
+        num_extra = 17
         out_nodes = 1
 
         # create placeholders for data
@@ -55,31 +56,45 @@ if __name__ == '__main__':
         # reshape to 1D tensor
         layer2_flat_dim = layer2.get_shape().as_list()
         layer2_flat_dim = layer2_flat_dim[1] * layer2_flat_dim[2] * layer2_flat_dim[3]
-        layer2_flat = tf.concat(1, [tf.reshape(layer2, [-1, layer2_flat_dim]), extra])
+        layer2_flat = tf.reshape(layer2, [-1, layer2_flat_dim])
+
+        # add in extra features
+        # layer2_flat = tf.concat(1, [tf.reshape(layer2, [-1, layer2_flat_dim]), extra])
 
         ## LAYER 3 ##
 
         # add fully connected layer
-        in_channels = layer2_flat_dim + num_extra
-        out_channels = 32
-        layer3 = helpers.make_fullyconnected_layer(layer2_flat, in_channels, out_channels, 'fullyconnected', act=tf.nn.relu)
+        in_channels = layer2_flat_dim# + num_extra
+        out_channels = 8
+        layer4 = helpers.make_fullyconnected_layer(layer2_flat, in_channels, out_channels, 'fullyconnected', act=tf.nn.relu)
 
-        # add dropout
-        with tf.name_scope('dropout'):
-            keep_prob = tf.placeholder(tf.float32)
-            tf.summary.scalar('dropout_keep_probability', keep_prob)
-            dropout = tf.nn.dropout(layer3, keep_prob)
+        # # add dropout
+        # with tf.name_scope('dropout'):
+        #     keep_prob = tf.placeholder(tf.float32)
+        #     tf.summary.scalar('dropout_keep_probability', keep_prob)
+        #     dropout = tf.nn.dropout(layer3, keep_prob)
 
         ## LAYER 4 ##
 
         # add last layer with 1 output channel
-        in_channels = out_channels
+        # in_channels = out_channels
+        # out_channels = 1
+        # layer4 = helpers.make_fullyconnected_layer(dropout, in_channels, out_channels, 'fullyconnected2', act=tf.identity)
+
+        # add extra features
+        layer4 = tf.concat(1, [layer4, extra])
+
+
+        ## LAYER 5 ##
+
+        # add last layer with 1 output channel
+        in_channels = out_channels + num_extra
         out_channels = out_nodes
-        layer4 = helpers.make_fullyconnected_layer(dropout, in_channels, out_channels, 'fullyconnected', act=tf.identity)
+        layer5 = helpers.make_fullyconnected_layer(layer4, in_channels, out_channels, 'fullyconnected3', act=tf.identity)
 
 
         # prepare training steps and log writers
-        train_step, accuracy = helpers.make_train_step('regression', layer4, y)
+        train_step, accuracy = helpers.make_train_step('regression', layer5, y)
 
         merged = tf.summary.merge_all()
 
@@ -95,9 +110,9 @@ if __name__ == '__main__':
         print('Training model')
 
         # TRAIN MODEL #
-        num_epoch = 10000
+        num_epoch = 20000
         batch_size = 100
-        report_int = 100
+        report_int = 500
         keep_prob_train = 0.5
 
         # initialize variables
@@ -110,8 +125,8 @@ if __name__ == '__main__':
                 
                 acc, summary = sess.run([accuracy, merged], feed_dict={x: test.features,
                                                                        extra: test.extra_features,
-                                                                       y: test.labels,
-                                                                       keep_prob: 1.0})
+                                                                       # keep_prob: 1.0
+                                                                       y: test.labels})
                 if WRITE_SUMMARY:
                     test_writer.add_summary(summary, i)
 
@@ -120,13 +135,13 @@ if __name__ == '__main__':
             else:
                 _, summary = sess.run([train_step, merged], feed_dict={x: batch[0],
                                                                        extra: batch[1],
-                                                                       y: batch[2],
-                                                                       keep_prob: keep_prob_train})
+                                                                       # keep_prob: keep_prob_train,
+                                                                       y: batch[2]})
                 if WRITE_SUMMARY:
                     train_writer.add_summary(summary, i)
 
         print("test accuracy %g"%accuracy.eval(feed_dict={x: test.features,
                                                           extra: test.extra_features,
-                                                          y: test.labels,
-                                                          keep_prob: 1.0}))
+                                                          # keep_prob: 1.0,
+                                                          y: test.labels}))
 
