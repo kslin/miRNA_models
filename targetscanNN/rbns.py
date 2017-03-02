@@ -14,11 +14,11 @@ import sequence_helpers
 if __name__ == '__main__':
 
     parser = OptionParser()
+    parser.add_option("-f", "--file_dir", dest="FILE_DIR", help="directory with data files")
     parser.add_option("-i", "--train_file", dest="TRAIN_FILE", help="training data")
-    parser.add_option("-t", "--test_file", dest="TEST_FILE", help="testing data")
+    parser.add_option("-t", "--test_size", dest="TEST_SIZE", type="int", help="size of testing data")
     parser.add_option("-m", "--mirlen", dest="MIRLEN", type="int", help="length of miRNA")
     parser.add_option("-s","--seqlen", dest="SEQLEN", type="int", help="length of sequence")
-    parser.add_option("-d","--datalen", dest="DATALEN", type="int", help="length of data")
     parser.add_option("-e","--extra", default=0, type="int", dest="NUM_EXTRA", help="number of extra features to use")
     parser.add_option("-l","--logdir", dest="LOGDIR", help="directory for writing logs")
     parser.add_option("-y", "--summary",
@@ -132,23 +132,57 @@ if __name__ == '__main__':
             test_writer = tf.summary.FileWriter(options.LOGDIR + '/test')
 
 
-        mir = 'UGAGGUAGUAGGUUGUAUGGUU'
-        mir = mir[:options.MIRLEN][::-1].replace('U','T')
-        seed_site = 'TACCTC'
-
         print('Reading test data')
-        data = pd.read_csv(options.TEST_FILE, header=None)
-        # data[0] = [x.replace('T','U') for x in data[0]]
-        data['use'] = [int(len(regex.findall("({}){}".format(seed_site, '{e<=1}'), seq)) > 0) for seq in data[0]]
+
+        mir_dict = {'let-7': 'UGAGGUAGUAGGUUGUAUGGUU',
+                    'miR-1': 'UGGAAUGUAAAGAAGUAUGUAU',
+                    'miR-124': 'UAAGGCACGCGGUGAAUGCC',
+                    'miR-155': 'UUAAUGCUAAUCGUGAUAGGGGU',
+                    'lsy-6': 'UUUUGUAUGAGACGCAUUUCGA'}
+        seed_dict = {}
+
+        for key, value in mir_dict.items():
+            mir_dict[key] = value[:options.MIRLEN][:options.MIRLEN][::-1].replace('U','T')
+            seed_dict[key] = helpers.complementary(value[1:7])[::-1].replace('U','T')
+
+
+        # mir = mir_dict['let-7']
+        # seed_site = seed_dict['let-7']
+
+        train_mirs = ['let-7', 'lsy-6','miR-1', 'miR-124']
+        test_mirs = ['miR-155']
+
+
+        data = pd.DataFrame(None)
+
+        # read top lines of each data file and concat together
+        for name in test_mirs:
+            mirseq = mir_dict[name]
+            seed_site = seed_dict[name]
+            temp = pd.read_csv(options.FILE_DIR + name + '_shuffled.txt', header=None, nrows=options.TEST_SIZE)
+            # temp[0] = [x.replace('T','U')[::-1] for x in temp[0]]
+
+            # only take sequences with one or fewer mismatched
+            temp['use'] = [int(len(regex.findall("({}){}".format(seed_site, '{e<=1}'), seq)) > 0) for seq in temp[0]]
+            temp = temp[temp['use'] == 1]
+            temp['mir'] = [mirseq]*len(temp)
+            data = pd.concat([data, temp])
+        
+
+        # shuffle data
+        ix = np.arange(len(data))
+        np.random.shuffle(ix)
+        data = data.iloc[ix]
+
         print(len(data))
-        data = data[data['use'] == 1]
-        print(len(data))
+
+
         # test_labels = data[list(range(1,8))].values.astype(float) + 1
         test_labels = np.log(data[list(range(1,8))].values.astype(float) + 1)
 
         test_features = np.zeros((len(data), 16 * options.MIRLEN * options.SEQLEN))
-        for i, seq in enumerate(list(data[0])):
-            test_features[i,:] = helpers.make_square(mir, seq).flatten()
+        for i, (seq, mirseq) in enumerate(zip(data[0], data['mir'])):
+            test_features[i,:] = helpers.make_square(mirseq, seq).flatten()
 
 
         print('Training model')
@@ -171,53 +205,62 @@ if __name__ == '__main__':
         line_counter = 0
         features = np.zeros((batch_size, 16 * options.MIRLEN * options.SEQLEN))
         labels = np.zeros((batch_size, out_nodes))
-        with open(options.TRAIN_FILE, 'r') as infile:
-            for line in infile:
-                if line_counter >= (options.DATALEN - 1):
-                    line_counter = 0
-                    infile.seek(0)
-                if sample_counter == batch_size:
-                    
-                    if batch_counter%report_int == 0:
+        readers = {mirname: open(options.FILE_DIR + mirname + '_shuffled.txt', 'r') for mirname in train_mirs}
+        for reader in readers.values():
+            reader.seek(options.TEST_SIZE)
+        
+
+        while True:
+            mirname = np.random.choice(train_mirs)
+            reader = readers[mirname]
+            line = reader.readline()
+            if len(line) == 0:
+                reader.seek(options.TEST_SIZE)
+                line = reader.readline()
+
+            if sample_counter == batch_size:
                 
-                        acc, summary = sess.run([accuracy, merged], feed_dict={x: test_features,
-                                                                               keep_prob: 1.0,
-                                                                               y: test_labels})
-
-                        if options.SUMMARY:
-                            test_writer.add_summary(summary, batch_counter)
-
-                        print('Accuracy at step %s: %s' % (batch_counter, acc))
-
-                        # save model
-                        saver.save(sess, options.LOGDIR + '/my-model', global_step=batch_counter)
+                if batch_counter%report_int == 0:
             
-                    else:
-                        _, summary = sess.run([train_step, merged], feed_dict={x: features,
-                                                                               keep_prob: keep_prob_train,
-                                                                               y: labels})
+                    acc, summary = sess.run([accuracy, merged], feed_dict={x: test_features,
+                                                                           keep_prob: 1.0,
+                                                                           y: test_labels})
 
-                        if options.SUMMARY:
-                            train_writer.add_summary(summary, batch_counter)
+                    if options.SUMMARY:
+                        test_writer.add_summary(summary, batch_counter)
+
+                    print('Accuracy at step %s: %s' % (batch_counter, acc))
+
+                    # save model
+                    saver.save(sess, options.LOGDIR + '/my-model', global_step=batch_counter)
+        
+                else:
+                    _, summary = sess.run([train_step, merged], feed_dict={x: features,
+                                                                           keep_prob: keep_prob_train,
+                                                                           y: labels})
+
+                    if options.SUMMARY:
+                        train_writer.add_summary(summary, batch_counter)
 
 
-                    batch_counter += 1
-                    sample_counter = 0
-                    features = np.zeros((batch_size, 16 * options.MIRLEN * options.SEQLEN))
-                    labels = np.zeros((batch_size, out_nodes))
-                    if batch_counter == num_epoch:
-                        break
+                batch_counter += 1
+                sample_counter = 0
+                features = np.zeros((batch_size, 16 * options.MIRLEN * options.SEQLEN))
+                labels = np.zeros((batch_size, out_nodes))
+                if batch_counter == num_epoch:
+                    break
 
-                vals = line.replace('\n','').split(',')
-                seq = vals[0]
-                # seq = vals[0].replace('T','U')
-                # if ('UACCUC' in seq):
-                if len(regex.findall("({}){}".format(seed_site, '{e<=1}'), seq)) > 0:
-                    features[sample_counter, :] = helpers.make_square(mir, seq).flatten()
-                    # labels[sample_counter, :] = [float(x) + 1 for x in vals[1:]]
-                    labels[sample_counter, :] = [np.log(float(x) + 1) for x in vals[1:]]
-                    sample_counter += 1
-                line_counter += 1
+            vals = line.replace('\n','').split(',')
+            seq = vals[0]
+            # seq = vals[0].replace('T','U')
+            # if ('UACCUC' in seq):
+            if len(regex.findall("({}){}".format(seed_dict[mirname], '{e<=1}'), seq)) > 0:
+                # print(mir_dict[mirname], seq, seed_site)
+                features[sample_counter, :] = helpers.make_square(mir_dict[mirname], seq).flatten()
+                # labels[sample_counter, :] = [float(x) + 1 for x in vals[1:]]
+                labels[sample_counter, :] = [np.log(float(x) + 1) for x in vals[1:]]
+                sample_counter += 1
+            line_counter += 1
 
 
         print(batch_counter, num_epoch, line_counter)

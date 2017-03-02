@@ -14,4 +14,4 @@ sample:
 	cd targetscanNN && python sample.py -m 23 -s 12 -d 16000000 -a ../../accuracy/sample_scores.txt -l ../../logdirs/sample
 
 rbns:
-	cd targetscanNN && python rbns.py -i ../../data/sean_counts_train.txt -t ../../data/sean_data/let-7_shuffled.txt -m 22 -s 12 -d 16677216 -l ../../logdirs/rbns
+	cd targetscanNN && python rbns.py -f ../../data/sean_data/ -i ../../data/sean_counts_train.txt -t 100000 -m 20 -s 12 -l ../../logdirs/rbns
