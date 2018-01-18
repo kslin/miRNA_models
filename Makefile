@@ -35,6 +35,13 @@ all:
 		bsub python regression/kd_regression/kd_regression_hyperparam.py -i ../data/sean_data/12mers/kds_multinomial_$${pos}.txt -l ../logdirs/train_all_4_8_$${pos}/ ; \
 	done
 
+all_one_pos:
+	python regression/kd_and_logfc_regression/main.py -i ../data/sean_data/12mers/kds_multinomial_2-5.txt -l ../logdirs/train_pos/2-5/
+
+
+all_all_pos:
+	python regression/kd_and_logfc_regression/main.py -i ../data/sean_data/12mers/kds_multinomial_2-5.txt -f /lab/bartel4_ata/kathyl/RNA_Seq/analysis/data/3pseq/for_nn.txt -l ../logdirs/train_pos/pos_2-5_10epoch_3pseq
+
 
 test_positions:
 	for pos in 2-5 3-6 4-7 5-8 ; do \

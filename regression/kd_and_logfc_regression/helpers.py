@@ -358,6 +358,7 @@ def read_extras_only(infile, len_data, len_features, extra, shuffle=True):
 ## NN Functions ##
 
 def weight_variable(shape, n_in, name=None):
+    # print(n_in)
     # initial = tf.random_normal(shape, stddev=np.sqrt(2/n_in))
     initial = tf.truncated_normal(shape, stddev=0.1)
     # initial = tf.constant(0.1, shape=shape)
@@ -382,8 +383,40 @@ def variable_summaries(var):
         tf.summary.histogram('histogram', var)
 
 
+def batch_norm(x, n_out, phase_train):
+    """
+    Batch normalization on convolutional maps.
+    Ref.: http://stackoverflow.com/questions/33949786/how-could-i-use-batch-normalization-in-tensorflow
+    Args:
+        x:           Tensor, 4D BHWD input maps
+        n_out:       integer, depth of input maps
+        phase_train: boolean tf.Variable, true indicates training phase
+        scope:       string, variable scope
+    Return:
+        normed:      batch-normalized maps
+    """
+    with tf.variable_scope('bn'):
+        beta = tf.Variable(tf.constant(0.0, shape=[n_out]),
+                                     name='beta', trainable=True)
+        gamma = tf.Variable(tf.constant(1.0, shape=[n_out]),
+                                      name='gamma', trainable=True)
+        batch_mean, batch_var = tf.nn.moments(x, [0,1,2], name='moments')
+        ema = tf.train.ExponentialMovingAverage(decay=0.5)
+
+        def mean_var_with_update():
+            ema_apply_op = ema.apply([batch_mean, batch_var])
+            with tf.control_dependencies([ema_apply_op]):
+                return tf.identity(batch_mean), tf.identity(batch_var)
+
+        mean, var = tf.cond(phase_train,
+                            mean_var_with_update,
+                            lambda: (ema.average(batch_mean), ema.average(batch_var)))
+        normed = tf.nn.batch_normalization(x, mean, var, beta, gamma, 1e-3)
+    return normed
+
+
 def make_convolution_layer(input_tensor, dim1, dim2, in_channels, out_channels, stride1, stride2,
-    layer_name, padding='SAME', act=tf.nn.relu, init_weight=None, init_bias=None):
+    layer_name, phase_train, padding='SAME', act=tf.nn.relu, init_weight=None, init_bias=None):
     """Create layer, given the input tensor, dimensions, and preactivation function
     """
     # add a name scope ensures logical grouping of the layers in the graph.
@@ -391,7 +424,7 @@ def make_convolution_layer(input_tensor, dim1, dim2, in_channels, out_channels, 
         # create variables for weights and biases
         with tf.name_scope('weights'):
             if init_weight is None:
-                weights = weight_variable([dim1, dim2, in_channels, out_channels], in_channels, name="{}_weight".format(layer_name))
+                weights = weight_variable([dim1, dim2, in_channels, out_channels], dim1*dim2, name="{}_weight".format(layer_name))
             else:
                 weights = tf.Variable(init_weight, name="{}_weight".format(layer_name))
 
@@ -413,8 +446,11 @@ def make_convolution_layer(input_tensor, dim1, dim2, in_channels, out_channels, 
         with tf.name_scope('Wx_plus_b'):
             preactivate = tf.nn.conv2d(input_tensor, weights, strides=[1, stride1, stride2, 1], padding=padding) + biases
             tf.summary.histogram('pre_activations', preactivate)
+
+        # bn_layer = batch_norm(preactivate, out_channels, phase_train)
+        bn_layer = tf.layers.batch_normalization(preactivate, axis=1, training=phase_train)
         
-        out_layer = act(preactivate, name='activation')
+        out_layer = act(bn_layer, name='activation')
         tf.summary.histogram('activations', out_layer)
 
         var_dict = {"{}_weight".format(layer_name): weights, "{}_bias".format(layer_name): biases}
@@ -515,32 +551,36 @@ def make_train_step_classification(tensor, y, starting_learning_rate):
     return train_step, accuracy, loss
 
 def make_train_step_regression(loss_type, tensor, y, starting_learning_rate, weight_regularize, data_weights=None):
-    if loss_type == 'l2':
+    extra_update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
+    with tf.control_dependencies(extra_update_ops):
         with tf.name_scope('loss'):
-            loss = tf.nn.l2_loss(tf.sub(tensor, y)) + weight_regularize
-            # if data_weights is not None:
-            #     loss = tf.reduce_sum(tf.multiply(tf.square(tf.sub(tensor, y)), data_weights))
-            # else:
-            #     loss = tf.nn.l2_loss(tf.sub(tensor, y))
+            if loss_type == 'l2':
+                loss = tf.nn.l2_loss(tf.subtract(tensor, y)) + weight_regularize
+                # if data_weights is not None:
+                #     loss = tf.reduce_sum(tf.multiply(tf.square(tf.sub(tensor, y)), data_weights))
+                # else:
+                #     loss = tf.nn.l2_loss(tf.sub(tensor, y))
 
-    elif loss_type == 'poisson':
-        with tf.name_scope('loss'):
-            loss = tf.reduce_sum(tf.subtract(tf.exp(tensor), tf.multiply(tensor, y)))
-    
-    else:
-        print('unknown loss_type, see function')
+            elif loss_type == 'poisson':
+                loss = tf.reduce_sum(tf.subtract(tf.exp(tensor), tf.multiply(tensor, y))) + weight_regularize
 
-    SS_err = tf.reduce_sum(tf.square(tf.sub(tensor, y)))
-    SS_tot = tf.reduce_sum(tf.square(tf.sub(y, tf.reduce_mean(y, 0))))
-
-    with tf.name_scope('accuracy'):
-        accuracy = tf.sub(tf.cast(1.0, tf.float32), tf.div(SS_err, SS_tot)) # R2
-
-    with tf.name_scope('train'):
-        train_step = tf.train.AdamOptimizer(starting_learning_rate).minimize(loss)
+            elif loss_type == 'heteroscedastic':
+                loss = tf.nn.l2_loss(tf.divide(tf.subtract(y, tensor), (y+0.5))) + weight_regularize
         
-    tf.summary.scalar('accuracy', accuracy)
-    tf.summary.scalar('loss', loss)
+            else:
+                raise ValueError('unknown loss_type, must be l2, poisson, or heteroscedastic')
+
+        SS_err = tf.reduce_sum(tf.square(tf.subtract(tensor, y)))
+        SS_tot = tf.reduce_sum(tf.square(tf.subtract(y, tf.reduce_mean(y, 0))))
+
+        with tf.name_scope('accuracy'):
+            accuracy = tf.subtract(tf.cast(1.0, tf.float32), tf.divide(SS_err, SS_tot)) # R2
+
+        with tf.name_scope('train'):
+            train_step = tf.train.AdamOptimizer(starting_learning_rate).minimize(loss)
+            
+        tf.summary.scalar('accuracy', accuracy)
+        tf.summary.scalar('loss', loss)
 
     return train_step, accuracy, loss
 

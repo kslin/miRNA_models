@@ -9,7 +9,7 @@ import seaborn as sns
 import tensorflow as tf
 
 import helpers
-from model import inference_2layer, inference_3layer
+from model import inference
 import train_model
 
 def train_hyperparam(kd_data, logfc_data, params, inference_func):
@@ -43,6 +43,7 @@ def train_hyperparam(kd_data, logfc_data, params, inference_func):
 
 def train_kd_only(kd_data, logfc_data, params, inference_func, logdir):
     params['TRAIN_LOGFC'] = False
+    params['LOGFC_BATCH_SIZE'] = 0
     params['TRAIN_KD'] = True
 
     print(params)
@@ -65,6 +66,7 @@ def train_kd_only(kd_data, logfc_data, params, inference_func, logdir):
 def train_logfc_only(kd_data, logfc_data, params, train_mirs, test_mirs, inference_func, logdir):
     params['TRAIN_LOGFC'] = True
     params['TRAIN_KD'] = False
+    params['BATCH_SIZE'] = 0
 
     print(params)
     
@@ -104,29 +106,29 @@ if __name__ == '__main__':
 
     parser = OptionParser()
     parser.add_option("-i", "--infile", dest="INFILE", help="training data")
+    parser.add_option("-f", "--logfc_file", dest="LOGFC_FILE", help="logfc data")
     parser.add_option("-l", "--logdir", dest="LOGDIR", help="directory for writing logs", default=None)
 
     (options, args) = parser.parse_args()
 
     params = {
-                'MIRLEN': 20,
+                'MIRLEN': 10,
                 'SEQLEN': 12,
                 'IN_NODES': 1,
                 'OUT_NODES': 1,
                 'HIDDEN1': 4,
-                'HIDDEN2': 16,
-                'HIDDEN3': 8,
+                # 'HIDDEN2': 8,
+                'HIDDEN3': 16,
                 'ERROR_MODEL': 'l2',
                 'MAX_EPOCH': 10,
                 'BATCH_SIZE': 200,
                 'LOGFC_BATCH_SIZE': 200,
-                'REPORT_INT': 50,
+                'REPORT_INT': 100,
                 'KEEP_PROB_TRAIN': 0.5,
                 'TEST_SIZE': 5000,
                 'RESTORE_FROM': None,
                 'NUM_RUNS': 2,
-                'STARTING_LEARNING_RATE': 0.001,
-                'STARTING_LEARNING_RATE_LOGFC': 0.0005,
+                'STARTING_LEARNING_RATE': 0.002,
                 'LAMBDA': 0.00005,
                 'LOG_SCALE': False,
                 'NCOLS': 1
@@ -146,29 +148,57 @@ if __name__ == '__main__':
     data.columns = ['mirseq','seq','kd']
     data['sitem8'] = [helpers.complementaryT(mirseq[-8:-1]) for mirseq in data['mirseq']]
     data['color'] = [helpers.get_color_old(sitem8, seq) for (sitem8, seq) in zip(data['sitem8'], data['seq'])]
+    data['color2'] = [helpers.get_color_old(sitem8, seq[2:10]) for (sitem8, seq) in zip(data['sitem8'], data['seq'])]
 
-    # simple log-transformation and zero-centering
-    data['log_kd'] = (-1*np.log2(data['kd']) - 3)/10
+    # get rid of sequences with sites out of register
+    print(len(data))
+    data = data[data['color'] == data['color2']].drop('color2',1)
+    print(len(data))
+
+    # log-transformation and zero-centering
+    data['log_kd'] = (-1*np.log2(data['kd']) - 4)/6.4
 
     shuffle_ix = np.random.permutation(len(data))
     data = data.iloc[shuffle_ix]
 
     # read in logfc data
-    logfc = pd.read_csv('/lab/bartel4_ata/kathyl/RNA_Seq/analysis/data/for_nn.txt',sep='\t')
+    logfc = pd.read_csv(options.LOGFC_FILE, sep='\t')
     logfc['sitem8'] = [helpers.complementaryT(mirseq[-8:-1]) for mirseq in logfc['mirseq']]
     logfc['color'] = [helpers.get_color_old(sitem8, seq) for (sitem8, seq) in zip(logfc['sitem8'], logfc['seq'])]
-    logfc['logFC'] /= -3
+    logfc['logFC'] /= -1
 
-    # train_hyperparam(data, logfc, params, inference_2layer)
+    print(len(data), len(logfc))
 
-    # train_kd_only(data, logfc, params, inference_2layer, os.path.join(options.LOGDIR, 'kd_only'))
+    # train_hyperparam(data, logfc, params, inference)
+
+    # train_kd_only(data, logfc, params, inference, os.path.join(options.LOGDIR, 'kd_only'))
 
     all_mirs = logfc['mir'].unique()
-    train_mirs = [a for a in all_mirs if a not in ['let7']]
-    test_mirs = [a for a in all_mirs if a not in ['let7']]
+    all_mirs = [a for a in all_mirs if a not in ['let7']]
+    possible_mirs = [a for a in all_mirs if a not in ['mir1','mir124','mir155','lsy6','fake_mir']]
 
-    train_logfc_and_kd(data, logfc, params, train_mirs, test_mirs, inference_2layer,
-                             os.path.join(options.LOGDIR, 'logfc_and_kd'))
+    tested = []
+
+    for i in range(10):
+        while True:
+            test_mirs = sorted(list(np.random.choice(possible_mirs, size=3, replace=False)))
+            dir_name = '_'.join(test_mirs)
+            if dir_name not in tested:
+                break
+
+        tested.append(dir_name)
+
+        train_mirs = [a for a in all_mirs if a not in test_mirs]
+        print(test_mirs)
+        print(train_mirs)
+
+        print(os.path.join(options.LOGDIR, '_'.join(test_mirs)))
+
+        train_logfc_and_kd(data, logfc, params, train_mirs, test_mirs, inference,
+                                 os.path.join(options.LOGDIR, dir_name))
+
+    # train_logfc_and_kd(data, logfc, params, train_mirs, test_mirs, inference,
+    #                          os.path.join(options.LOGDIR, 'logfc_and_kd'))
 
     # for i in range(len(all_mirs)):
     #     for j in range(i+1, len(all_mirs)):
@@ -182,10 +212,10 @@ if __name__ == '__main__':
     #         if not os.path.isdir(mir_logdir):
     #             os.makedirs(mir_logdir)
 
-    #         # train_logfc_only(data, logfc, params, train_mirs, test_mirs, inference_2layer,
+    #         # train_logfc_only(data, logfc, params, train_mirs, test_mirs, inference,
     #         #                  os.path.join(mir_logdir, 'logfc_only'))
 
-    #         train_logfc_and_kd(data, logfc, params, train_mirs, test_mirs, inference_2layer,
+    #         train_logfc_and_kd(data, logfc, params, train_mirs, test_mirs, inference,
     #                          os.path.join(mir_logdir, 'logfc_and_kd'))
 
 
