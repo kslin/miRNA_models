@@ -6,6 +6,12 @@ import seaborn as sns
 import tensorflow as tf
 import regex
 
+def calc_rsq(predicted, actual):
+    SS_res = np.sum((predicted - actual)**2)
+    SS_tot = np.sum((actual - np.mean(actual))**2)
+
+    return 1.0 - (SS_res/SS_tot)
+
 ### SEQUENCE FUNCTIONS ###
 
 def rev_comp(seq):
@@ -64,10 +70,10 @@ MIRSEQ_DICT = {
                   'mir7-25nt': 'TGGAAGACTAGTGATTTTGTTGTTT'
             }
 
-SITE_DICT = {x: rev_comp(y[1:6]) for (x,y) in MIRSEQ_DICT.items()}
+SITE_DICT = {x: rev_comp(y[1:7]) for (x,y) in MIRSEQ_DICT.items()}
 
 
-def get_color_old(sitem8, seq):
+def get_color(sitem8, seq):
     if (sitem8 + 'A') in seq:
         return 'blue'
     elif sitem8 in seq:
@@ -76,21 +82,6 @@ def get_color_old(sitem8, seq):
         return 'orange'
     elif (sitem8[1:]) in seq:
         return 'red'
-    else:
-        return 'grey'
-
-
-def get_color(sitem8, seq):
-    if seq[2:-2] == (sitem8 + 'A'):
-        return 'blue'
-    elif seq[2:-3] == sitem8:
-        return 'green'
-    elif seq[3:-2] == (sitem8[1:] + 'A'):
-        return 'orange'
-    elif seq[3:-3] == (sitem8[1:]):
-        return 'red'
-    elif sitem8[1:] in seq:
-        return 'offcenter'
     else:
         return 'grey'
 
@@ -117,37 +108,17 @@ def make_square(seq1, seq2):
     return square# + noise
 
 
-def get_seqs(utr, site):
-    locs1 = [m.start() for m in re.finditer(site[:-1], utr)]
-    locs2 = [(m.start() - 1) for m in re.finditer(site[1:], utr)]
-    locs = list(set(locs1 + locs2))
+def get_seqs(utr, site, only_canon=False):
+    if only_canon:
+        locs = [m.start() + 1 for m in re.finditer(site, utr)]
+
+    else:
+        locs1 = [m.start() for m in re.finditer(site[1:-1], utr)]
+        locs2 = [(m.start() - 1) for m in re.finditer(site[2:], utr)]
+        locs = list(set(locs1 + locs2))
+
     seqs = [utr[loc-4:loc+8] for loc in locs if (loc-4 >=0) and (loc+8 <= len(utr))]
     return seqs
-
-def get_tpm_seqs(utr, mirs):
-    all_seqs = []
-    num_sites = 0
-    for mir in mirs:
-        site = SITE_DICT[mir]
-        seqs = get_seqs(utr, site)
-        if len(seqs) > num_sites:
-            num_sites = len(seqs)
-        all_seqs.append(seqs)
-
-    return num_sites, all_seqs
-
-
-def empty_array_fill_list(shape, fill_shape):
-    myarray = np.empty(shape, dtype=object)
-    for index, val in np.ndenumerate(myarray):
-        myarray[index] = np.zeros(fill_shape).tolist()
-    return myarray
-
-
-def get_mask(v):
-    lens = np.array([len(item) for item in v])
-    mask = lens[:,None] > np.arange(lens.max())
-    return mask
 
 
 def generate_random_seq(len):
@@ -159,8 +130,8 @@ def generate_random_seq(len):
 def make_pretrain_data(size, mirlen, seqlen=12):
 
     mirseqs = [generate_random_seq(mirlen) for _ in range(size)]
-    stypes = np.random.choice(['8mer','7m8','7a1','6mer', 'other'], size=size, replace=True)
-    stype_dict = {'8mer': 6, '7m8': 4.8, '7a1': 3.6, '6mer': 2.4, 'other': 0.7}
+    stypes = np.random.choice(['8mer','7m8','7a1','6mer', '5mer','4mer'], size=size, replace=True)
+    stype_dict = {'8mer': 6, '7m8': 4.8, '7a1': 3.6, '6mer': 2.4, '5mer': 0.7, '4mer': -0.3}
     nts = ['A','T','C','G']
     sites, upflanks, downflanks = [], [], []
     for stype, m in zip(stypes, mirseqs):
@@ -187,11 +158,28 @@ def make_pretrain_data(size, mirlen, seqlen=12):
             upflanks.append(generate_random_seq(2) + np.random.choice(possibilities))
             downflanks.append(np.random.choice(['T','C','G']) + generate_random_seq(2))
 
-        else:
+        elif stype == '5mer':
             temp_site = list(complementary(m[-7:-1]))
-            random_mutation_site = np.random.randint(6)
+            random_mutation_site = np.random.choice([0,5])
             possibilities = [nt for nt in nts if nt != temp_site[random_mutation_site]]
             temp_site[random_mutation_site] = np.random.choice(possibilities)
+
+            sites.append(''.join(temp_site))
+
+            upflanks.append(generate_random_seq(3))
+            downflanks.append(generate_random_seq(3))
+
+        else:
+            temp_site = list(complementary(m[-7:-1]))
+            which_4mer = np.random.choice([0,1])
+            if which_4mer == 0:
+                random_mutation_sites = [0,5]
+            else:
+                random_mutation_sites = [0,1]
+
+            for rms in random_mutation_sites:
+                possibilities = [nt for nt in nts if nt != temp_site[rms]]
+                temp_site[rms] = np.random.choice(possibilities)
 
             sites.append(''.join(temp_site))
 
@@ -203,9 +191,9 @@ def make_pretrain_data(size, mirlen, seqlen=12):
         flanks.append(x+z)
         seqs.append(x+y+z)
 
-    flanking_AU = [((f.count('A') + f.count('T'))*1.4 / len(f)) - 0.7 for f in flanks]
+    flanking_AU = [((f.count('A') + f.count('T'))*1.6 / len(f)) - 0.8 for f in flanks]
 
-    batch_y = np.array([stype_dict[s] for s in stypes]) + np.array(flanking_AU)
+    batch_y = np.array([stype_dict[s] for s in stypes]) + np.array(flanking_AU) + ((np.random.random(size=size) - 0.5))
 
     batch_x = np.zeros((size, 4*mirlen, 4*seqlen))
     for i, (mirseq, seq) in enumerate(zip(mirseqs, seqs)):
@@ -215,19 +203,6 @@ def make_pretrain_data(size, mirlen, seqlen=12):
 
 
 ### TF functions ###
-
-# def weight_variable(shape, n_in, name=None):
-#     # print(n_in)
-#     # initial = tf.random_normal(shape, stddev=np.sqrt(2/n_in))
-#     initial = tf.truncated_normal(shape, stddev=0.1)
-#     # initial = tf.constant(0.1, shape=shape)
-#     return tf.get_variable(initial, name=name)
-
-
-# def bias_variable(shape, name=None):
-#     initial = tf.constant(0.1, shape=shape)
-#     return tf.Variable(initial, name=name)
-
 
 def get_conv_params(dim1, dim2, in_channels, out_channels, layer_name):
 
@@ -273,17 +248,6 @@ def graph_convolutions(conv_weights, xlabels, ylabels, fname):
             ax = plt.subplot(nrows, ncols, plot_num)
             sns.heatmap(v, xticklabels=xlabels, yticklabels=ylabels,
                         cmap=plt.cm.bwr, vmin=vmin, vmax=vmax)
-            # heatmap = ax.pcolor(v, cmap=plt.cm.bwr, , alpha=0.8)
-            # ax.set_frame_on(False)
-            # ax.set_xticks(np.arange(w) + 0.5, minor=False)
-            # ax.set_yticks(np.arange(h) + 0.5, minor=False)
-
-            # ax.invert_yaxis()
-            # ax.xaxis.tick_top()
-            # ax.set_xticklabels(xlabels, minor=False)
-            # ax.set_yticklabels(ylabels, minor=False)
-            # ax.grid(False)
-
             plot_num += 1
 
     # plt.colorbar()

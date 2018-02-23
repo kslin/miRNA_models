@@ -1,63 +1,20 @@
 from optparse import OptionParser
 import os
-import re
+import sys
+import time
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from scipy import stats
-# import seaborn as sns
+import seaborn as sns
 import tensorflow as tf
 
 import helpers
+import objects
 
 np.set_printoptions(threshold=np.inf, linewidth=200)
 pd.options.mode.chained_assignment = None
-
-
-def weight_variable(shape, n_in, name=None):
-    # print(n_in)
-    # initial = tf.random_normal(shape, stddev=np.sqrt(2/n_in))
-    initial = tf.truncated_normal(shape, stddev=0.1)
-    # initial = tf.constant(0.1, shape=shape)
-    return tf.Variable(initial, name=name)
-
-
-def bias_variable(shape, name=None):
-    initial = tf.constant(0.1, shape=shape)
-    return tf.Variable(initial, name=name)
-
-
-def get_conv_params(dim1, dim2, in_channels, out_channels, layer_name):
-
-    # create variables for weights and biases
-    with tf.name_scope('weights'):
-        weights = weight_variable([dim1, dim2, in_channels, out_channels], dim1*dim2, name="{}_weight".format(layer_name))
-
-        # add variable to collection of variables
-        tf.add_to_collection('weight', weights)
-    with tf.name_scope('biases'):
-        biases = bias_variable([out_channels], name="{}_bias".format(layer_name))
-
-        # add variable to collection of variables
-        tf.add_to_collection('bias', biases)
-
-    return weights, biases
-
-def get_tpm_seqs(utr, mirs):
-    all_seqs = []
-    num_sites = 0
-    for mir in mirs:
-        site = helpers.SITE_DICT[mir]
-        locs1 = [m.start() for m in re.finditer(site[:-1], utr)]
-        locs2 = [(m.start() - 1) for m in re.finditer(site[1:], utr)]
-        locs = list(set(locs1 + locs2))
-        seqs = [utr[loc-4:loc+8] for loc in locs if (loc-4 >=0) and (loc+8 <= len(utr))]
-        if len(seqs) > num_sites:
-            num_sites = len(seqs)
-        all_seqs.append(seqs)
-
-    return num_sites, all_seqs
 
 
 if __name__ == '__main__':
@@ -67,359 +24,532 @@ if __name__ == '__main__':
     parser.add_option("-t", "--tpmfile", dest="TPM_FILE", help="tpm data")
     parser.add_option("-i", "--init_baselines", dest="BASELINE_FILE", help="initial baseline data")
     parser.add_option("-m", "--mirna", dest="TEST_MIRNA", help="testing miRNA")
-    parser.add_option("-l", "--logdir", dest="LOGDIR", help="directory for writing logs", default=None)
+    parser.add_option("-l", "--logdir", dest="LOGDIR", help="directory for writing logs")
+    parser.add_option("-d", "--do_training", dest="DO_TRAINING", help="toggle training", action="store_true", default=False)
+    parser.add_option("-p", "--pretrain", dest="PRETRAIN", help="directory with pretrained weights", default=None)
 
     (options, args) = parser.parse_args()
 
     MIRLEN = 12
     SEQLEN = 12
-    BATCH_SIZE = 100
+    BATCH_SIZE_BIOCHEM = 100
+    BATCH_SIZE_REPRESSION = 10
     KEEP_PROB_TRAIN = 0.5
-    STARTING_LEARNING_RATE = 0.001
-    LAMBDA = 0.005
-    NUM_EPOCHS = 2
-    REPORT_INT = 250
+    STARTING_LEARNING_RATE = 0.002
+    LAMBDA = 0.001
+    NUM_EPOCHS = 100
+    REPORT_INT = 50
+    REPRESSION_WEIGHT = 1.0
+    ZERO_OFFSET = 0.0
+    NORM_RATIO = 4.0
 
     HIDDEN1 = 4
     HIDDEN2 = 8
     HIDDEN3 = 16
 
+    PRETRAIN_SAVE_PATH = os.path.join(options.LOGDIR, 'pretrain_saved')
+    SAVE_PATH = os.path.join(options.LOGDIR, 'saved')
+
     if not os.path.isdir(options.LOGDIR):
         os.makedirs(options.LOGDIR)
 
-    # metafile = open(os.path.join(options.LOGDIR, 'params.txt'), 'w')
-    # for key in sorted(params.keys()):
-    #     metafile.write('{}: {}\n'.format(key, params[key]))
+
+    # make dictionary of reverse miRNA sequences trimmed to MIRLEN
+    MIRSEQ_DICT_MIRLEN = {x: y[:MIRLEN][::-1] for (x,y) in helpers.MIRSEQ_DICT.items()}
 
     ### READ EXPRESSION DATA ###
     tpm = pd.read_csv(options.TPM_FILE, sep='\t', index_col=0)
-    print(tpm.head())
 
     MIRS = [x for x in tpm.columns if ('mir' in x) or ('lsy' in x)]
-
     assert options.TEST_MIRNA in MIRS
 
+    # split miRNAs into training and testing
     train_mirs = [m for m in MIRS if m != options.TEST_MIRNA]
     test_mirs = [options.TEST_MIRNA]
-    print(train_mirs)
-    print(test_mirs)
+    print('Train miRNAs: {}'.format(train_mirs))
+    print('Test miRNAs: {}'.format(test_mirs))
     NUM_TRAIN = len(train_mirs)
     NUM_TEST = len(test_mirs)
 
+    # split tpm data into training and testing
     train_tpm = tpm[train_mirs + ['Sequence']]
     test_tpm = tpm[test_mirs + ['Sequence']]
 
     ### READ KD DATA ###
     data = pd.read_csv(options.KD_FILE, sep='\t')
     data.columns = ['mir','mirseq_full','seq','log kd','stype']
-    data['log ka'] = -1 * data['log kd']
-    data['mirseq'] = [x[:MIRLEN][::-1] for x in data['mirseq_full']]
+
+    print(data['mir'].unique())
+    data = data[data['mir'] != 'mir7']
+    print(data['mir'].unique())
+
+    # zero-center and normalize Ka's
+    data['log ka'] = ((-1.0 * data['log kd']) + ZERO_OFFSET) / NORM_RATIO
+    data['mirseq'] = [MIRSEQ_DICT_MIRLEN[mir] for mir in data['mir']]
     data['sitem8'] = [helpers.rev_comp(mirseq[1:8]) for mirseq in data['mirseq_full']]
-    data['color'] = [helpers.get_color_old(sitem8, seq) for (sitem8, seq) in zip(data['sitem8'], data['seq'])]
-    data['color2'] = [helpers.get_color_old(sitem8, seq[2:10]) for (sitem8, seq) in zip(data['sitem8'], data['seq'])]
+    data['color'] = [helpers.get_color(sitem8, seq) for (sitem8, seq) in zip(data['sitem8'], data['seq'])]
+    data['color2'] = [helpers.get_color(sitem8, seq[2:10]) for (sitem8, seq) in zip(data['sitem8'], data['seq'])]
 
     # get rid of sequences with sites out of register
     print(len(data))
     data = data[data['color'] == data['color2']].drop('color2',1)
     print(len(data))
 
-    # shuffle data
-    shuffle_ix = np.random.permutation(len(data))
-    data_temp = data.iloc[shuffle_ix]
-    data_temp['keep'] = [(np.random.random() > 0.9) if x == 'grey' else True for x in data_temp['color']]
-    data_temp = data_temp[data_temp['keep']]
+    # create data object
+    biochem_train_data = objects.BiochemData(data, cutoff=0.9)
+    biochem_train_data.shuffle()
 
-
-    # ## READ INITIAL BASELINE ###
+    ### READ INITIAL BASELINE ###
     baseline_init = pd.read_csv(options.BASELINE_FILE, sep='\t', index_col=0)
     assert (len(baseline_init) == len(tpm))
     NUM_GENES = len(baseline_init)
     baseline_init = baseline_init.loc[tpm.index]['nosite_tpm'].values.reshape([NUM_GENES, 1])
-    # baseline_init = baseline_init['nosite_tpm'].values.reshape([NUM_GENES])
 
     train_tpm[train_mirs] = train_tpm[train_mirs].values - baseline_init
     test_tpm[test_mirs] = test_tpm[test_mirs].values - baseline_init
 
-    subset = np.random.choice(np.arange(len(test_tpm)), size=400)
-    test_tpm = test_tpm.iloc[subset]
+    # make data objects for repression training data
+    repression_train_data = objects.RepressionData(train_tpm)
+    repression_train_data.shuffle()
+
+    # test on a subset of the test data to speed up testing
+    # subset = np.random.choice(np.arange(len(test_tpm)), size=500)
+    # test_tpm = test_tpm.iloc[subset]
     test_logfc_labels = test_tpm[test_mirs].values
 
-    test_mirseq = helpers.MIRSEQ_DICT[options.TEST_MIRNA][:MIRLEN][::-1]
+    test_mirseq = MIRSEQ_DICT_MIRLEN[options.TEST_MIRNA]
     test_seqs = []
+    test_site = helpers.SITE_DICT[options.TEST_MIRNA]
+    num_total_test_seqs = 0
     for utr in test_tpm['Sequence']:
-        _, seqs = get_tpm_seqs(utr, [options.TEST_MIRNA])
-        test_seqs.append(seqs[0])
+        seqs = helpers.get_seqs(utr, test_site, only_canon=False)
+        test_seqs.append(seqs)
+        num_total_test_seqs += len(seqs)
+
+    test_combined_x = np.zeros([num_total_test_seqs, 4*MIRLEN, 4*SEQLEN])
+    test_seq_utr_boundaries = [0]
+    current_ix = 0
+    for seq_list in test_seqs:
+
+        if len(seq_list) == 0:
+            test_seq_utr_boundaries.append(current_ix)
+
+        else:
+            for seq in seq_list:
+                test_combined_x[current_ix, :, :] = helpers.make_square(test_mirseq, seq)
+                current_ix += 1
+
+            test_seq_utr_boundaries.append(current_ix)
+    
+    test_combined_x = np.expand_dims(test_combined_x, 3)
     
 
     ### DEFINE MODEL ###
 
     # reset and build the neural network
     tf.reset_default_graph()
+
+    # start session
     with tf.Session(config=tf.ConfigProto(intra_op_parallelism_threads=24)) as sess:
 
-        keep_prob = tf.placeholder(tf.float32, name='keep_prob')
-        phase_train = tf.placeholder(tf.bool, name='phase_train')
-        # phase_train2 = tf.placeholder(tf.bool, name='phase_train2')
-        # gene_num = tf.placeholder(tf.float32, shape=[NUM_GENES], name='gene_num')
+        # create placeholders for input data
+        _keep_prob = tf.placeholder(tf.float32, name='keep_prob')
+        _phase_train = tf.placeholder(tf.bool, name='phase_train')
+        _repression_weight = tf.placeholder(tf.float32, name='repression_weight')
+        _combined_x = tf.placeholder(tf.float32, shape=[None, 4 * MIRLEN, 4 * SEQLEN, 1], name='biochem_x')
+        _biochem_y = tf.placeholder(tf.float32, shape=[None, 1], name='biochem_y')
+        _repression_mask = tf.placeholder(tf.float32, shape=[None, None, None], name='repression_mask')
+        _repression_y = tf.placeholder(tf.float32, shape=[None, None], name='repression_y')
+        _pretrain_y =  tf.placeholder(tf.float32, shape=[None, 1], name='pretrain_y')
 
-        kd_x = tf.placeholder(tf.float32, shape=[None, 4 * MIRLEN, 4 * SEQLEN, 1], name='kd_x')
-        kd_y = tf.placeholder(tf.float32, shape=[None, 1], name='kd_y')
-        tpm_x = tf.placeholder(tf.float32, shape=[None, 4 * MIRLEN, 4 * SEQLEN, 1], name='tpm_x')
-        tpm_mask = tf.placeholder(tf.float32, shape=[None, None], name='tpm_mask')
-        tpm_y = tf.placeholder(tf.float32, shape=[None], name='tpm_y')
+        # initialize global variables
+        _freeAGO = tf.get_variable('freeAGO', shape=[1,NUM_TRAIN,1], initializer=tf.constant_initializer(-5.0 - ZERO_OFFSET))
+        _slope = tf.get_variable('slope', shape=(), initializer=tf.constant_initializer(-0.51023716), trainable=False)
 
-        freeAGO = tf.get_variable('freeAGO', shape=[NUM_TRAIN,1], initializer=tf.constant_initializer(-5.0), trainable=False)
-        slope = tf.get_variable('slope', shape=(), initializer=tf.constant_initializer(-0.51023716), trainable=False)
-        # intercept = tf.get_variable('intercept', shape=[NUM_GENES],
-        #                             initializer=tf.constant_initializer(baseline_init), trainable=False)
-
+        # add layer 1
         with tf.name_scope('layer1'):
-            w1, b1 = get_conv_params(4, 4, 1, HIDDEN1, 'layer1')
-            preactivate1_kd = tf.nn.conv2d(kd_x, w1, strides=[1, 4, 4, 1], padding='VALID') + b1
-            preactivate1_tpm = tf.nn.conv2d(tpm_x, w1, strides=[1, 4, 4, 1], padding='VALID') + b1
+            _w1, _b1 = helpers.get_conv_params(4, 4, 1, HIDDEN1, 'layer1')
+            _preactivate1 = tf.nn.conv2d(_combined_x, _w1, strides=[1, 4, 4, 1], padding='VALID') + _b1
 
-            # preactivate1_kd_bn = tf.layers.batch_normalization(preactivate1_kd, axis=1, training=phase_train)
-            # preactivate1_tpm_bn = tf.layers.batch_normalization(preactivate1_tpm, axis=1, training=phase_train)
+            _preactivate1_bn = tf.layers.batch_normalization(_preactivate1, axis=1, training=_phase_train)
 
-            layer1_kd = tf.nn.relu(preactivate1_kd)
-            layer1_tpm = tf.nn.relu(preactivate1_tpm)
+            _layer1 = tf.nn.relu(_preactivate1_bn)
 
+        # add layer 2
         with tf.name_scope('layer2'):
-            w2, b2 = get_conv_params(2, 2, HIDDEN1, HIDDEN2, 'layer2')
-            preactivate2_kd = tf.nn.conv2d(layer1_kd, w2, strides=[1, 1, 1, 1], padding='SAME') + b2
-            preactivate2_tpm = tf.nn.conv2d(layer1_tpm, w2, strides=[1, 1, 1, 1], padding='SAME') + b2
+            _w2, _b2 = helpers.get_conv_params(2, 2, HIDDEN1, HIDDEN2, 'layer2')
+            _preactivate2 = tf.nn.conv2d(_layer1, _w2, strides=[1, 1, 1, 1], padding='SAME') + _b2
 
-            # preactivate2_kd_bn = tf.layers.batch_normalization(preactivate2_kd, axis=1, training=phase_train)
-            # preactivate2_tpm_bn = tf.layers.batch_normalization(preactivate2_tpm, axis=1, training=phase_train)
+            _preactivate2_bn = tf.layers.batch_normalization(_preactivate2, axis=1, training=_phase_train)
 
-            layer2_kd = tf.nn.relu(preactivate2_kd)
-            layer2_tpm = tf.nn.relu(preactivate2_tpm)
+            _layer2 = tf.nn.relu(_preactivate2_bn)
 
+        # add layer 3
         with tf.name_scope('layer3'):
-            w3, b3 = get_conv_params(MIRLEN, SEQLEN, HIDDEN2, HIDDEN3, 'layer3')
-            preactivate3_kd = tf.nn.conv2d(layer2_kd, w3, strides=[1, MIRLEN, SEQLEN, 1], padding='VALID') + b3
-            preactivate3_tpm = tf.nn.conv2d(layer2_tpm, w3, strides=[1, MIRLEN, SEQLEN, 1], padding='VALID') + b3
+            _w3, _b3 = helpers.get_conv_params(MIRLEN, SEQLEN, HIDDEN2, HIDDEN3, 'layer3')
+            _preactivate3 = tf.nn.conv2d(_layer2, _w3, strides=[1, MIRLEN, SEQLEN, 1], padding='VALID') + _b3
 
-            # preactivate3_kd_bn = tf.layers.batch_normalization(preactivate3_kd, axis=1, training=phase_train)
-            # preactivate3_tpm_bn = tf.layers.batch_normalization(preactivate3_tpm, axis=1, training=phase_train)
+            _preactivate3_bn = tf.layers.batch_normalization(_preactivate3, axis=1, training=_phase_train)
 
-            layer3_kd = tf.nn.relu(preactivate3_kd)
-            layer3_tpm = tf.nn.relu(preactivate3_tpm)
+            _layer3 = tf.nn.relu(_preactivate3_bn)
 
         # add dropout
         with tf.name_scope('dropout'):
-            dropout_kd = tf.nn.dropout(layer3_kd, keep_prob)
-            dropout_tpm = tf.nn.dropout(layer3_tpm, keep_prob)
+            _dropout = tf.nn.dropout(_layer3, _keep_prob)
 
         # reshape to 1D tensor
-        layer_flat_kd = tf.reshape(dropout_kd, [-1, HIDDEN3])
-        layer_flat_tpm = tf.reshape(dropout_tpm, [-1, HIDDEN3])
+        _layer_flat = tf.reshape(_dropout, [-1, HIDDEN3])
 
         # add last layer
         with tf.name_scope('final_layer'):
             with tf.name_scope('weights'):
-                w4 = weight_variable([HIDDEN3, 1], HIDDEN3)
-
-                # add variable to collection of variables
-                tf.add_to_collection('weight', w4)
+                _w4 = tf.get_variable("final_layer_weight", shape=[HIDDEN3, 1],
+                                            initializer=tf.truncated_normal_initializer(stddev=0.1))
+                tf.add_to_collection('weight', _w4)
             with tf.name_scope('biases'):
-                b4 = bias_variable([1])
+                _b4 = tf.get_variable("final_layer_bias", shape=[1],
+                                    initializer=tf.constant_initializer(0.0))
+                tf.add_to_collection('bias', _b4)
 
-                # add variable to collection of variables
-                tf.add_to_collection('bias', b4)
+            # split into biochem outputs and repression outputs
+            _pred_ind_values = tf.matmul(_layer_flat, _w4) + _b4
+            _pred_biochem = _pred_ind_values[-1 * BATCH_SIZE_BIOCHEM:, :1]
+            _pred_repression_flat = _pred_ind_values[:-1 * BATCH_SIZE_BIOCHEM, :1] * NORM_RATIO
+            _pred_repression = tf.reshape(_pred_repression_flat, [BATCH_SIZE_REPRESSION, NUM_TRAIN, -1])
 
-            pred_kd = tf.matmul(layer_flat_kd, w4) + b4
-            pred_kd_ind = tf.matmul(layer_flat_tpm, w4) + b4
-            pred_kd_ind_flat = tf.reshape(pred_kd_ind, [NUM_TRAIN, -1])
+        # calculate predicted number bound and predicted log fold-change
+        _pred_nbound = tf.reduce_sum(tf.multiply(tf.nn.sigmoid(_freeAGO + _pred_repression), _repression_mask), axis=2)
+        _pred_logfc = (_pred_nbound * _slope)
 
-        pred_nbound = tf.reduce_sum(tf.multiply(tf.nn.sigmoid(freeAGO - pred_kd_ind_flat), tpm_mask), axis=1)
-        pred_tpm = (pred_nbound * slope)
-            
+        _weight_regularize = tf.multiply(tf.nn.l2_loss(_w1) \
+                                + tf.nn.l2_loss(_w2) \
+                                + tf.nn.l2_loss(_w3) \
+                                + tf.nn.l2_loss(_w4), LAMBDA)
 
-        weight_regularize = tf.multiply(tf.nn.l2_loss(w1) \
-                                + tf.nn.l2_loss(w2) \
-                                + tf.nn.l2_loss(w3) \
-                                + tf.nn.l2_loss(w4), LAMBDA)
+        _biochem_loss = tf.nn.l2_loss(tf.subtract(_pred_biochem, _biochem_y)) / BATCH_SIZE_BIOCHEM
+        _repression_loss = _repression_weight * tf.nn.l2_loss(tf.subtract(_pred_logfc, _repression_y)) / NUM_TRAIN
+        _pretrain_loss = tf.nn.l2_loss(tf.subtract(_pred_ind_values, _pretrain_y))
+
+        _loss = _biochem_loss + _repression_loss + _weight_regularize
+        # _loss = _repression_loss + _weight_regularize
+        # _loss = _biochem_loss + _weight_regularize
+
+        _update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
+        with tf.control_dependencies(_update_ops):
+            _train_step = tf.train.AdamOptimizer(STARTING_LEARNING_RATE).minimize(_loss)
+            _train_step_pretrain = tf.train.AdamOptimizer(0.01).minimize(_pretrain_loss)
+            # _last_layers = [_w3, _b3, _w4, _b4]
+            # _train_step_last_layers = tf.train.AdamOptimizer(STARTING_LEARNING_RATE).minimize(_loss, var_list=last_layers)
 
 
-        kd_loss = tf.nn.l2_loss(tf.subtract(pred_kd, kd_y)) / BATCH_SIZE
-        tpm_loss = 100 * tf.nn.l2_loss(tf.subtract(pred_tpm, tpm_y)) / NUM_TRAIN
+        merged = tf.summary.merge_all()
+        saver = tf.train.Saver()
 
-        loss = kd_loss + tpm_loss + weight_regularize
 
-        train_step = tf.train.AdamOptimizer(STARTING_LEARNING_RATE).minimize(loss)
-
-        # update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
-        # with tf.control_dependencies(update_ops):
-        #     train_step = tf.train.AdamOptimizer(STARTING_LEARNING_RATE).minimize(loss)
-
+        ### PRETRAIN MODEL ###
+    
         sess.run(tf.global_variables_initializer())
 
-        # TOY DATA
-        # toy_mirseq = 'GGATGATGGAGA'
-        # toy_seqs = ['CCTACTACCTCT',
-        #             'GAATCTACCTCT',
-        #             'GTACGATCGATC']
+        if options.PRETRAIN is None:
 
-        # toy_kd_y = [[-5.0], [-4.0], [-1.0]]
-        # toy_tpm_y = [-1.0, -2.0]
-        # toy_kd_x = np.array([helpers.make_square(toy_mirseq, t) for t in toy_seqs]).reshape(3,48,48,1)
-        # toy_tpm_x = np.array([helpers.make_square(toy_mirseq, toy_seqs[0]), helpers.make_square(toy_mirseq, toy_seqs[1]),
-        #                       helpers.make_square(toy_mirseq, toy_seqs[2]), np.zeros((48,48)).tolist()]).reshape(4,48,48,1)
-        # toy_tpm_mask = np.array([[1,1],[1,0]])
-        # feed_dict = {
-        #                 keep_prob: KEEP_PROB_TRAIN,
-        #                 phase_train: True,
-        #                 gene_num: np.array([0,1,0]),
-        #                 kd_x: toy_kd_x,
-        #                 kd_y: toy_kd_y,
-        #                 tpm_x: toy_tpm_x,
-        #                 tpm_mask: toy_tpm_mask,
-        #                 tpm_y: toy_tpm_y
-        #             }
-        # a1, a2, f = sess.run([pred_kd_ind, pred_nbound, pred_tpm], feed_dict=feed_dict)
-        # a3 = 1.0 / (1.0 + np.exp(a1 + 5))
-        # print(a1)
-        # print(a3)
-        # print(a2)
-        # print((a2 * -1) + baseline_init[1])
-        # print(f)
+            print("Doing pre-training")
 
-        kd_ix = 0
-        for epoch_counter in range(NUM_EPOCHS):
+            # plot random initialized weights
+            conv_weights = sess.run(_w1)
+            xlabels = ['U','A','G','C']
+            ylabels = ['A','U','C','G']
+            helpers.graph_convolutions(conv_weights, xlabels, ylabels, os.path.join(options.LOGDIR, 'convolution1_start.pdf'))
 
-            for gene_ix, tpm_row in enumerate(train_tpm.iterrows()):
+            # pretrain on generated site-type-based data
+            losses = []
+            for pretrain_step in range(2000):
+                pretrain_batch_x, pretrain_batch_y = helpers.make_pretrain_data(100, MIRLEN, SEQLEN)
+                pretrain_batch_y = (pretrain_batch_y + ZERO_OFFSET) / NORM_RATIO
 
-                num_sites, all_seqs = get_tpm_seqs(tpm_row[1]['Sequence'], train_mirs)
+                feed_dict = {
+                                _keep_prob: KEEP_PROB_TRAIN,
+                                _phase_train: True,
+                                _repression_weight: REPRESSION_WEIGHT,
+                                _combined_x: pretrain_batch_x,
+                                _pretrain_y: pretrain_batch_y
+                            }
+
+                _, l = sess.run([_train_step_pretrain, _pretrain_loss], feed_dict=feed_dict)
+                losses.append(l)
+
+                if (pretrain_step % 100) == 0:
+                    print(pretrain_step)
+
+            train_pred = sess.run(_pred_ind_values, feed_dict=feed_dict)
+
+            fig = plt.figure(figsize=(7,7))
+            plt.scatter(train_pred.flatten(), pretrain_batch_y.flatten())
+            plt.savefig(os.path.join(options.LOGDIR, 'pretrain_train_scatter.png'))
+            plt.close()
+
+            test_x, test_y = helpers.make_pretrain_data(100, MIRLEN, SEQLEN)
+            test_y = (test_y + ZERO_OFFSET) / NORM_RATIO
+            feed_dict = {
+                            _keep_prob: 1.0,
+                            _phase_train: False,
+                            _combined_x: test_x
+                        }
+            pred_pretrain = sess.run(_pred_ind_values, feed_dict=feed_dict)
+
+
+            fig = plt.figure(figsize=(7,7))
+            plt.scatter(train_pred.flatten(), pretrain_batch_y.flatten())
+            plt.savefig(os.path.join(options.LOGDIR, 'pretrain_train_scatter.png'))
+            plt.close()
+
+            fig = plt.figure(figsize=(7,7))
+            plt.scatter(pred_pretrain.flatten(), test_y.flatten())
+            plt.savefig(os.path.join(options.LOGDIR, 'pretrain_test_scatter.png'))
+            plt.close()
+
+            fig = plt.figure(figsize=(7,5))
+            plt.plot(losses)
+            plt.savefig(os.path.join(options.LOGDIR, 'pretrain_losses.png'))
+            plt.close()
+
+            saver.save(sess, os.path.join(PRETRAIN_SAVE_PATH, 'model'))
+
+            print("Finished pre-training")
+
+        else:
+            # restore previously pretrained weights
+            latest = tf.train.latest_checkpoint(options.PRETRAIN)
+            print('Restoring from {}'.format(latest))
+            saver.restore(sess, latest)
+
+        # plot weights after pre-training
+        conv_weights = sess.run(_w1)
+        xlabels = ['U','A','G','C']
+        ylabels = ['A','U','C','G']
+        helpers.graph_convolutions(conv_weights, xlabels, ylabels, os.path.join(options.LOGDIR, 'convolution1_pretrained.pdf'))
+
+        conv_weights = np.abs(sess.run(_w3))
+        conv_weights = np.sum(conv_weights, axis=(2,3))
+        vmin, vmax = np.min(conv_weights), np.max(conv_weights)
+        xlabels = ['s{}'.format(i+1) for i in range(SEQLEN)]
+        ylabels = ['m{}'.format(i+1) for i in list(range(MIRLEN))[::-1]]
+        fig = plt.figure(figsize=(4,4))
+        sns.heatmap(conv_weights, xticklabels=xlabels, yticklabels=ylabels,
+                    cmap=plt.cm.plasma, vmin=vmin, vmax=vmax)
+        plt.savefig(os.path.join(options.LOGDIR, 'convolution3_pretrained.pdf'))
+        plt.close()
+
+        ### TRAIN MODEL ###
+
+        if options.DO_TRAINING:
+            print("Training now on {}".format(options.TEST_MIRNA))
+
+            # reset later variables
+            # sess.run(_w3.initializer)
+            # sess.run(_b3.initializer)
+            # sess.run(_w4.initializer)
+            # sess.run(_b4.initializer)
+
+            step_list = []
+            train_losses = []
+            test_losses = []
+            last_batch = False
+
+            step = 0
+            current_epoch = 1
+            while True:
+
+                # get repression data batch
+                next_epoch, repression_train_batch = repression_train_data.get_next_batch(BATCH_SIZE_REPRESSION)
+                if next_epoch:
+                    current_epoch += 1
+                    # REPRESSION_WEIGHT += 0.2
+                    if repression_train_data.num_epochs >= NUM_EPOCHS:
+                        last_batch = True
+
+                all_seqs = []
+                num_sites = 0
+                for repression_row in repression_train_batch.iterrows():
+                    utr = repression_row[1]['Sequence']
+                    gene_seqs = []
+                    for mir in train_mirs:
+
+                        seqs = helpers.get_seqs(utr, helpers.SITE_DICT[mir], only_canon=False)
+                        # if current_epoch == 1:
+                        #     seqs = helpers.get_seqs(utr, helpers.SITE_DICT[mir], only_canon=True)
+                        # else:
+                        #     seqs = helpers.get_seqs(utr, helpers.SITE_DICT[mir], only_canon=False)
+                        gene_seqs.append(seqs)
+                        len_temp = len(seqs)
+
+                        if len_temp > num_sites:
+                            num_sites = len_temp
+                    all_seqs.append(gene_seqs)
+
                 if num_sites == 0:
                     continue
 
-                batch_tpm_x = []
-                batch_tpm_mask = []
-                for mir, seq_list in zip(train_mirs, all_seqs):
-                    mask_temp = []
-                    mirseq = helpers.MIRSEQ_DICT[mir][:MIRLEN][::-1]
-                    for seq in seq_list:
-                        batch_tpm_x.append(helpers.make_square(mirseq, seq))
-                        mask_temp.append(1.0)
-                    for _ in range(num_sites - len(seq_list)):
-                        batch_tpm_x.append(np.zeros((4*MIRLEN,4*SEQLEN)).tolist())
-                        mask_temp.append(0.0)
-                    batch_tpm_mask.append(mask_temp)
+                # get biochem data batch
+                _, biochem_train_batch = biochem_train_data.get_next_batch(BATCH_SIZE_BIOCHEM)
 
-                batch_tpm_x = np.array(batch_tpm_x).reshape(NUM_TRAIN*num_sites, 4*MIRLEN,4*SEQLEN, 1)
-                batch_tpm_mask = np.array(batch_tpm_mask)
-                batch_tpm_y = tpm_row[1][train_mirs].values.reshape([NUM_TRAIN])
-                batch_gene_num = np.zeros(NUM_GENES)
-                batch_gene_num[gene_ix] = 1.0
+                batch_combined_x = np.zeros([(BATCH_SIZE_REPRESSION * NUM_TRAIN * num_sites) + BATCH_SIZE_BIOCHEM, 4*MIRLEN, 4*SEQLEN])
+                batch_repression_mask = np.zeros([BATCH_SIZE_REPRESSION, NUM_TRAIN, num_sites])
+                for counter1, big_seq_list in enumerate(all_seqs):
 
-                # print(batch_tpm_x.shape, batch_tpm_mask.shape, batch_tpm_y.shape)
-                # print(np.sum(batch_gene_num))
+                    for counter2, (mir, seq_list) in enumerate(zip(train_mirs, big_seq_list)):
 
+                        if len(seq_list) == 0:
+                            continue
 
-                if (len(data_temp) - kd_ix) < BATCH_SIZE:
-                    shuffle_ix = np.random.permutation(len(data))
-                    data_temp = data.iloc[shuffle_ix]
-                    data_temp['keep'] = [(np.random.random() > 0.9) if x == 'grey' else True for x in data_temp['color']]
-                    data_temp = data_temp[data_temp['keep']]
-                    print('new epoch')
-                    kd_ix = 0
+                        mirseq = MIRSEQ_DICT_MIRLEN[mir]
+                        current = (counter1 * NUM_TRAIN * num_sites) + (counter2 * num_sites)
+                        for seq in seq_list:
+                            batch_combined_x[current, :, :] = helpers.make_square(mirseq, seq)
+                            current += 1
+                        batch_repression_mask[counter1, counter2, :len(seq_list)] = 1.0
 
-                kd_subdf = data_temp.iloc[kd_ix: kd_ix+BATCH_SIZE]
-                kd_ix += BATCH_SIZE
+                batch_repression_y = repression_train_batch[train_mirs].values
 
-                batch_kd_x = []
-                batch_kd_y = []
-                for row in kd_subdf.iterrows():
-                    batch_kd_x.append(helpers.make_square(row[1]['mirseq'], row[1]['seq']))
-                    batch_kd_y.append(row[1]['log kd'])
+                current = BATCH_SIZE_REPRESSION * NUM_TRAIN * num_sites
+                for mirseq, seq in zip(biochem_train_batch['mirseq'], biochem_train_batch['seq']):
+                    batch_combined_x[current, :, :] = helpers.make_square(mirseq, seq)
+                    current += 1
 
-                batch_kd_x = np.array(batch_kd_x).reshape(BATCH_SIZE, 4*MIRLEN, 4*SEQLEN, 1)
-                batch_kd_y = np.array(batch_kd_y).reshape(BATCH_SIZE, 1)
+                batch_combined_x = np.expand_dims(batch_combined_x, 3)
+                batch_biochem_y = biochem_train_batch[['log ka']].values
 
-                # print(batch_kd_x.shape, batch_kd_y.shape)
-
+                # make feed dict for training
                 feed_dict = {
-                        keep_prob: KEEP_PROB_TRAIN,
-                        phase_train: True,
-                        # gene_num: batch_gene_num,
-                        kd_x: batch_kd_x,
-                        kd_y: batch_kd_y,
-                        tpm_x: batch_tpm_x,
-                        tpm_mask: batch_tpm_mask,
-                        tpm_y: batch_tpm_y
+                        _keep_prob: KEEP_PROB_TRAIN,
+                        _phase_train: True,
+                        _repression_weight: REPRESSION_WEIGHT,
+                        _combined_x: batch_combined_x,
+                        _biochem_y: batch_biochem_y,
+                        _repression_mask: batch_repression_mask,
+                        _repression_y: batch_repression_y
                     }
 
-                _, l1, l2, l3 = sess.run([train_step, kd_loss, tpm_loss, weight_regularize], feed_dict=feed_dict)
+                # run train step
+                _, l1, l2, l3 = sess.run([_train_step, _biochem_loss, _repression_loss, _weight_regularize], feed_dict=feed_dict)
+                # _, l1, l2, l3 = sess.run([_train_step, _biochem_loss, _loss, _weight_regularize], feed_dict=feed_dict)
 
-                if (gene_ix % REPORT_INT) == 0:
+                # if (step % REPORT_INT) == 0:
+                if next_epoch:
+
+                    # save model
+                    saver.save(sess, os.path.join(SAVE_PATH, 'model'), global_step=step)
+
+
                     print(l1, l2, l3)
+                    step_list.append(current_epoch - 1)
+                    train_losses.append(l1+l2+l3)
 
-                    train_kd_preds = sess.run(pred_kd, feed_dict=feed_dict)
+                    feed_dict = {
+                        _keep_prob: 1.0,
+                        _phase_train: False,
+                        _combined_x: batch_combined_x,
+                        _repression_mask: batch_repression_mask
+                    }
+
+                    train_biochem_preds = sess.run(_pred_biochem, feed_dict=feed_dict)
 
                     fig = plt.figure(figsize=(7,7))
-                    plt.scatter(train_kd_preds.flatten(), batch_kd_y.flatten())
-                    plt.savefig(os.path.join(options.LOGDIR, 'train_scatter.png'))
+                    plt.scatter(train_biochem_preds.flatten(), batch_biochem_y.flatten())
+                    plt.savefig(os.path.join(options.LOGDIR, 'train_biochem_scatter.png'))
                     plt.close()
 
+                    train_repression_preds = sess.run(_pred_logfc, feed_dict=feed_dict)
 
-                    conv_weights = sess.run(w1)
+                    fig = plt.figure(figsize=(7,7))
+                    plt.scatter(train_repression_preds, batch_repression_y)
+                    plt.savefig(os.path.join(options.LOGDIR, 'train_repression_scatter.png'))
+                    plt.close()
+
+                    # plot weights
+                    conv_weights = sess.run(_w1)
                     xlabels = ['U','A','G','C']
                     ylabels = ['A','U','C','G']
                     helpers.graph_convolutions(conv_weights, xlabels, ylabels, os.path.join(options.LOGDIR, 'convolution1.pdf'))
 
-                    pred_nbound_test = []
-                    current_freeAGO = np.mean(sess.run(freeAGO))
-                    current_slope = sess.run(slope)
+                    # conv_weights = np.abs(sess.run(_w2))
+                    # conv_weights = np.sum(conv_weights, axis=(2,3))
+                    # vmin, vmax = np.min(conv_weights), np.max(conv_weights)
+                    # xlabels = ['s1', 's2']
+                    # ylabels = ['m2', 'm1']
+                    # fig = plt.figure(figsize=(4,4))
+                    # sns.heatmap(conv_weights, xticklabels=xlabels, yticklabels=ylabels,
+                    #             cmap=plt.cm.bwr, vmin=vmin, vmax=vmax)
+                    # plt.savefig(os.path.join(options.LOGDIR, 'convolution2.pdf'))
+                    # plt.close()
+
+                    conv_weights = np.abs(sess.run(_w3))
+                    conv_weights = np.sum(conv_weights, axis=(2,3))
+                    vmin, vmax = np.min(conv_weights), np.max(conv_weights)
+                    xlabels = ['s{}'.format(i+1) for i in range(SEQLEN)]
+                    ylabels = ['m{}'.format(i+1) for i in list(range(MIRLEN))[::-1]]
+                    fig = plt.figure(figsize=(4,4))
+                    sns.heatmap(conv_weights, xticklabels=xlabels, yticklabels=ylabels,
+                                cmap=plt.cm.plasma, vmin=vmin, vmax=vmax)
+                    plt.savefig(os.path.join(options.LOGDIR, 'convolution3.pdf'))
+                    plt.close()
+
+                    current_freeAGO = np.mean(sess.run(_freeAGO))
+                    current_slope = sess.run(_slope)
                     print('current free AGO: {:.3}'.format(current_freeAGO))
                     print('current slope: {:.3}'.format(current_slope))
 
+                    feed_dict = {
+                                    _keep_prob: 1.0,
+                                    _phase_train: False,
+                                    _combined_x: test_combined_x
+                                }
 
-                    pred_test_mir_kds = []
-                    pred_test_mir_seqs = []
-                    for seq_list in test_seqs:
-
-                        pred_test_mir_seqs += seq_list
-
-                        if len(seq_list) == 0:
-                            pred_nbound_test.append(0.0)
-                            continue 
-
-                        batch_tpm_x = []
-                        for seq in seq_list:
-                            batch_tpm_x.append(helpers.make_square(test_mirseq, seq))
-
-                        batch_tpm_x = np.array(batch_tpm_x).reshape(len(seq_list), 4*MIRLEN,4*SEQLEN, 1)
-
-                        feed_dict = {
-                                        keep_prob: 1.0,
-                                        phase_train: False,
-                                        tpm_x: batch_tpm_x
-                                    }
-
-                        pred_kd_test = sess.run(pred_kd_ind, feed_dict=feed_dict)
-                        pred_test_mir_kds += list(pred_kd_test.flatten())
-                        pred_nbound_test.append(np.sum(1.0 / (1.0 + np.exp(pred_kd_test - current_freeAGO))))
+                    pred_ind_values_test = sess.run(_pred_ind_values, feed_dict=feed_dict)
+                    pred_ind_nbound_test = 1.0 / (1.0 + np.exp((-1.0 * pred_ind_values_test.flatten() * NORM_RATIO) - current_freeAGO))
+                    pred_nbound_test = []
+                    prev = test_seq_utr_boundaries[0]
+                    for bound in test_seq_utr_boundaries[1:]:
+                        pred_nbound_test.append(np.sum(pred_ind_nbound_test[prev:bound]))
+                        prev = bound
 
                     pred_nbound_test = np.array(pred_nbound_test)
-                    print(stats.linregress(pred_nbound_test.flatten(), test_logfc_labels.flatten()))
+                    pred_logfc_test = pred_nbound_test * current_slope
+
+                    test_losses.append(np.sum((pred_logfc_test - test_logfc_labels.flatten())**2)/len(test_logfc_labels))
+
+                    fig = plt.figure(figsize=(7,5))
+                    plt.plot(step_list, test_losses)
+                    plt.savefig(os.path.join(options.LOGDIR, 'test_losses.png'))
+                    plt.close()
+
+                    fig = plt.figure(figsize=(7,5))
+                    plt.plot(step_list, np.log(np.array(train_losses)))
+                    plt.savefig(os.path.join(options.LOGDIR, 'train_losses_log.png'))
+                    plt.close()
 
                     fig = plt.figure(figsize=(7,7))
-                    plt.scatter(pred_nbound_test.flatten(), test_logfc_labels.flatten())
+                    plt.scatter(pred_logfc_test, test_logfc_labels.flatten(), s=30)
+                    rsq = helpers.calc_rsq(pred_logfc_test, test_logfc_labels.flatten())
+                    rsq2 = stats.linregress(pred_nbound_test, test_logfc_labels.flatten())[2]**2
+                    plt.title('R2 = {:.3}, {:.3}'.format(rsq, rsq2))
                     plt.savefig(os.path.join(options.LOGDIR, 'test_scatter.png'))
                     plt.close()
 
-
-                    actual_test_mir_kds = data[data['mir'] == options.TEST_MIRNA].set_index('seq').loc[pred_test_mir_seqs]['log kd']
                     fig = plt.figure(figsize=(7,7))
-                    plt.scatter(pred_test_mir_kds, actual_test_mir_kds)
-                    plt.savefig(os.path.join(options.LOGDIR, 'test_scatter_kds.png'))
+                    plt.hist(pred_ind_values_test, bins=100)
+                    plt.savefig(os.path.join(options.LOGDIR, 'test_biochem_hist.png'))
                     plt.close()
 
-                    # fig = plt.figure(figsize=(7,7))
-                    # plt.hist(pred_test_mir_kds, bins=100)
-                    # plt.savefig(os.path.join(options.LOGDIR, 'test_kds_hist.png'))
-                    # plt.close()
+                    if last_batch:
+                        print(stats.linregress(pred_nbound_test.flatten(), test_logfc_labels.flatten()))
+                        print('Repression epochs: {}'.format(repression_train_data.num_epochs))
+                        print('Biochem epochs: {}'.format(biochem_train_data.num_epochs))
+                        trained_freeAGO = sess.run(_freeAGO).flatten()
+                        for m, f in zip(train_mirs, trained_freeAGO):
+                            print('{}: {:.3}'.format(m, f))
+                        break
+
+                step += 1
 
                     
 
