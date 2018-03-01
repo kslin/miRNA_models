@@ -10,8 +10,7 @@ from scipy import stats
 import seaborn as sns
 import tensorflow as tf
 
-import helpers
-import objects
+import config, helpers, objects
 
 np.set_printoptions(threshold=np.inf, linewidth=200)
 pd.options.mode.chained_assignment = None
@@ -37,7 +36,7 @@ if __name__ == '__main__':
     KEEP_PROB_TRAIN = 0.5
     STARTING_LEARNING_RATE = 0.002
     LAMBDA = 0.001
-    NUM_EPOCHS = 50
+    NUM_EPOCHS = 30
     REPORT_INT = 50
     REPRESSION_WEIGHT = 1.0
     ZERO_OFFSET = 0.0
@@ -45,7 +44,7 @@ if __name__ == '__main__':
 
     HIDDEN1 = 4
     HIDDEN2 = 8
-    HIDDEN3 = 8
+    HIDDEN3 = 16
 
     PRETRAIN_SAVE_PATH = os.path.join(options.LOGDIR, 'pretrain_saved')
     SAVE_PATH = os.path.join(options.LOGDIR, 'saved')
@@ -57,7 +56,7 @@ if __name__ == '__main__':
     SEQ_NTS = np.array(['T','A','G','C'])
 
     # make dictionary of reverse miRNA sequences trimmed to MIRLEN
-    MIRSEQ_DICT_MIRLEN = {x: y[:MIRLEN][::-1] for (x,y) in helpers.MIRSEQ_DICT.items()}
+    MIRSEQ_DICT_MIRLEN = {x: y[:MIRLEN][::-1] for (x,y) in config.MIRSEQ_DICT.items()}
     ONE_HOT_DICT = {x: helpers.one_hot_encode_nt_new(y, MIR_NTS) for (x,y) in MIRSEQ_DICT_MIRLEN.items()}
 
     ### READ EXPRESSION DATA ###
@@ -82,9 +81,9 @@ if __name__ == '__main__':
     data = pd.read_csv(options.KD_FILE, sep='\t')
     data.columns = ['mir','mirseq_full','seq','log kd','stype']
 
-    print(data['mir'].unique())
-    data = data[data['mir'] != 'mir7']
-    print(data['mir'].unique())
+    # print(data['mir'].unique())
+    # data = data[data['mir'] != 'mir7']
+    # print(data['mir'].unique())
 
     # zero-center and normalize Ka's
     data['log ka'] = ((-1.0 * data['log kd']) + ZERO_OFFSET) / NORM_RATIO
@@ -112,18 +111,17 @@ if __name__ == '__main__':
     test_tpm[test_mirs] = test_tpm[test_mirs].values - baseline_init
 
     # make data objects for repression training data
-    repression_train_data = objects.RepressionDataNew(train_tpm)
+    repression_train_data = objects.RepressionDataNew_with_passenger(train_tpm)
     repression_train_data.shuffle()
     repression_train_data.get_seqs(train_mirs)
 
-    # test on a subset of the test data to speed up testing
-    # subset = np.random.choice(np.arange(len(test_tpm)), size=500)
-    # test_tpm = test_tpm.iloc[subset]
+    # get test miRNA labels
     test_logfc_labels = test_tpm[test_mirs].values
 
+    # get test sequences for sense strand
     test_mirseq = MIRSEQ_DICT_MIRLEN[options.TEST_MIRNA]
     test_seqs = []
-    test_site = helpers.SITE_DICT[options.TEST_MIRNA]
+    test_site = config.SITE_DICT[options.TEST_MIRNA]
     num_total_test_seqs = 0
     for utr in test_tpm['Sequence']:
         seqs = helpers.get_seqs(utr, test_site, only_canon=False)
@@ -146,6 +144,37 @@ if __name__ == '__main__':
             test_seq_utr_boundaries.append(current_ix)
     
     test_combined_x = np.expand_dims(test_combined_x, 3)
+
+    # get test sequences for passenger strand
+    test_mirseq = MIRSEQ_DICT_MIRLEN[options.TEST_MIRNA + '*']
+    test_seqs = []
+    test_site = config.SITE_DICT[options.TEST_MIRNA + '*']
+    num_total_test_seqs = 0
+    for utr in test_tpm['Sequence']:
+        seqs = helpers.get_seqs(utr, test_site, only_canon=False)
+        test_seqs.append(seqs)
+        num_total_test_seqs += len(seqs)
+
+    test_combined_x_pass = np.zeros([num_total_test_seqs, 4*MIRLEN, 4*SEQLEN])
+    test_seq_utr_boundaries_pass = [0]
+    current_ix = 0
+    for seq_list in test_seqs:
+
+        if len(seq_list) == 0:
+            test_seq_utr_boundaries_pass.append(current_ix)
+
+        else:
+            for seq in seq_list:
+                test_combined_x_pass[current_ix, :, :] = helpers.make_square(test_mirseq, seq)
+                current_ix += 1
+
+            test_seq_utr_boundaries_pass.append(current_ix)
+    
+    test_combined_x_pass = np.expand_dims(test_combined_x_pass, 3)
+
+    test_freeAGO_site = config.FREEAGO_SITE_DICT[options.TEST_MIRNA]
+    test_freeAGO_pass = config.FREEAGO_PASS_DICT[options.TEST_MIRNA]
+    test_freeAGO_diff = test_freeAGO_site - test_freeAGO_pass
     
 
     ### DEFINE MODEL ###
@@ -159,16 +188,8 @@ if __name__ == '__main__':
         # create placeholders for input data
         _keep_prob = tf.placeholder(tf.float32, name='keep_prob')
         _phase_train = tf.placeholder(tf.bool, name='phase_train')
-        _repression_weight = tf.placeholder(tf.float32, name='repression_weight')
         _combined_x = tf.placeholder(tf.float32, shape=[None, 4 * MIRLEN, 4 * SEQLEN, 1], name='biochem_x')
-        _biochem_y = tf.placeholder(tf.float32, shape=[None, 1], name='biochem_y')
-        _repression_mask = tf.placeholder(tf.float32, shape=[None, None, None], name='repression_mask')
-        _repression_y = tf.placeholder(tf.float32, shape=[None, None], name='repression_y')
         _pretrain_y =  tf.placeholder(tf.float32, shape=[None, 1], name='pretrain_y')
-
-        # initialize global variables
-        _freeAGO = tf.get_variable('freeAGO', shape=[1,NUM_TRAIN,1], initializer=tf.constant_initializer(-5.0 - ZERO_OFFSET))
-        _slope = tf.get_variable('slope', shape=(), initializer=tf.constant_initializer(-0.51023716), trainable=False)
 
         # add layer 1
         with tf.name_scope('layer1'):
@@ -215,116 +236,137 @@ if __name__ == '__main__':
                                     initializer=tf.constant_initializer(0.0))
                 tf.add_to_collection('bias', _b4)
 
-            # split into biochem outputs and repression outputs
+            # apply final layer
             _pred_ind_values = tf.matmul(_layer_flat, _w4) + _b4
-            _pred_biochem = _pred_ind_values[-1 * BATCH_SIZE_BIOCHEM:, :1]
-            _pred_repression_flat = _pred_ind_values[:-1 * BATCH_SIZE_BIOCHEM, :1] * NORM_RATIO
-            _pred_repression = tf.reshape(_pred_repression_flat, [BATCH_SIZE_REPRESSION, NUM_TRAIN, -1])
 
-        # calculate predicted number bound and predicted log fold-change
-        _pred_nbound = tf.reduce_sum(tf.multiply(tf.nn.sigmoid(_freeAGO + _pred_repression), _repression_mask), axis=2)
-        _pred_logfc = (_pred_nbound * _slope)
-
-        _weight_regularize = tf.multiply(tf.nn.l2_loss(_w1) \
-                                + tf.nn.l2_loss(_w2) \
-                                + tf.nn.l2_loss(_w3) \
-                                + tf.nn.l2_loss(_w4), LAMBDA)
-
-        _biochem_loss = tf.nn.l2_loss(tf.subtract(_pred_biochem, _biochem_y)) / BATCH_SIZE_BIOCHEM
-        _repression_loss = _repression_weight * tf.nn.l2_loss(tf.subtract(_pred_logfc, _repression_y)) / NUM_TRAIN
         _pretrain_loss = tf.nn.l2_loss(tf.subtract(_pred_ind_values, _pretrain_y))
-
-        _loss = _biochem_loss + _repression_loss + _weight_regularize
-        # _loss = _repression_loss + _weight_regularize
-        # _loss = _biochem_loss + _weight_regularize
-
         _update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
         with tf.control_dependencies(_update_ops):
-            _train_step = tf.train.AdamOptimizer(STARTING_LEARNING_RATE).minimize(_loss)
             _train_step_pretrain = tf.train.AdamOptimizer(0.01).minimize(_pretrain_loss)
-            # _last_layers = [_w3, _b3, _w4, _b4]
-            # _train_step_last_layers = tf.train.AdamOptimizer(STARTING_LEARNING_RATE).minimize(_loss, var_list=last_layers)
 
+        saver_pretrain = tf.train.Saver()
 
-        merged = tf.summary.merge_all()
-        saver = tf.train.Saver()
+        if options.DO_TRAINING:
+
+            # make variables for real training
+            _repression_weight = tf.placeholder(tf.float32, name='repression_weight')
+            _biochem_y = tf.placeholder(tf.float32, shape=[None, 1], name='biochem_y')
+            _repression_mask_site = tf.placeholder(tf.float32, shape=[None, None, None], name='repression_mask_site')
+            _repression_mask_pass = tf.placeholder(tf.float32, shape=[None, None, None], name='repression_mask_pass')
+            _repression_y = tf.placeholder(tf.float32, shape=[None, None], name='repression_y')
+        
+            _freeAGO_site = tf.get_variable('freeAGO_site', shape=[1,NUM_TRAIN,1],
+                                            initializer=tf.constant_initializer(-5.0 - ZERO_OFFSET))
+            _freeAGO_pass = tf.get_variable('freeAGO_pass', shape=[1,NUM_TRAIN,1],
+                                            initializer=tf.constant_initializer(-7.0 - ZERO_OFFSET))
+            _slope = tf.get_variable('slope', shape=(), initializer=tf.constant_initializer(-0.51023716))
+
+            _pred_biochem = _pred_ind_values[-1 * BATCH_SIZE_BIOCHEM:, :1]
+            _pred_repression_flat = _pred_ind_values[:-1 * BATCH_SIZE_BIOCHEM, :1] * NORM_RATIO
+            _pred_repression = tf.reshape(_pred_repression_flat, [BATCH_SIZE_REPRESSION*2, NUM_TRAIN, -1])
+
+            _pred_repression_site = _pred_repression[:BATCH_SIZE_REPRESSION, :, :]
+            _pred_repression_pass = _pred_repression[BATCH_SIZE_REPRESSION:, :, :]
+
+            # calculate predicted number bound and predicted log fold-change
+            _pred_nbound_site = tf.reduce_sum(tf.multiply(tf.nn.sigmoid(_freeAGO_site + _pred_repression_site), _repression_mask_site), axis=2)
+            _pred_nbound_pass = tf.reduce_sum(tf.multiply(tf.nn.sigmoid(_freeAGO_pass + _pred_repression_pass), _repression_mask_pass), axis=2)
+            _pred_logfc = (_pred_nbound_site + _pred_nbound_pass) * _slope
+
+            _weight_regularize = tf.multiply(tf.nn.l2_loss(_w1) \
+                                    + tf.nn.l2_loss(_w2) \
+                                    + tf.nn.l2_loss(_w3) \
+                                    + tf.nn.l2_loss(_w4), LAMBDA)
+
+            _biochem_loss = tf.nn.l2_loss(tf.subtract(_pred_biochem, _biochem_y)) / BATCH_SIZE_BIOCHEM
+            _repression_loss = _repression_weight * tf.nn.l2_loss(tf.subtract(_pred_logfc, _repression_y)) / NUM_TRAIN
+
+            _loss = _biochem_loss + _repression_loss + _weight_regularize
+
+            _update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
+            with tf.control_dependencies(_update_ops):
+                _train_step = tf.train.AdamOptimizer(STARTING_LEARNING_RATE).minimize(_loss)
+
+            saver = tf.train.Saver(max_to_keep=NUM_EPOCHS)
 
 
         ### PRETRAIN MODEL ###
     
         sess.run(tf.global_variables_initializer())
 
-        if options.PRETRAIN is None:
+        if options.PRETRAIN is not None:
 
-            print("Doing pre-training")
+            if options.PRETRAIN  == 'pretrain':
 
-            # plot random initialized weights
-            conv_weights = sess.run(_w1)
-            xlabels = ['U','A','G','C']
-            ylabels = ['A','U','C','G']
-            helpers.graph_convolutions(conv_weights, xlabels, ylabels, os.path.join(options.LOGDIR, 'convolution1_start.pdf'))
+                print("Doing pre-training")
 
-            # pretrain on generated site-type-based data
-            losses = []
-            for pretrain_step in range(2000):
-                pretrain_batch_x, pretrain_batch_y = helpers.make_pretrain_data(100, MIRLEN, SEQLEN)
-                pretrain_batch_y = (pretrain_batch_y + ZERO_OFFSET) / NORM_RATIO
+                # plot random initialized weights
+                conv_weights = sess.run(_w1)
+                xlabels = ['U','A','G','C']
+                ylabels = ['A','U','C','G']
+                helpers.graph_convolutions(conv_weights, xlabels, ylabels, os.path.join(options.LOGDIR, 'convolution1_start.pdf'))
 
+                # pretrain on generated site-type-based data
+                losses = []
+                for pretrain_step in range(2000):
+                    pretrain_batch_x, pretrain_batch_y = helpers.make_pretrain_data(100, MIRLEN, SEQLEN)
+                    pretrain_batch_y = (pretrain_batch_y + ZERO_OFFSET) / NORM_RATIO
+
+                    feed_dict = {
+                                    _keep_prob: KEEP_PROB_TRAIN,
+                                    _phase_train: True,
+                                    _repression_weight: REPRESSION_WEIGHT,
+                                    _combined_x: pretrain_batch_x,
+                                    _pretrain_y: pretrain_batch_y
+                                }
+
+                    _, l = sess.run([_train_step_pretrain, _pretrain_loss], feed_dict=feed_dict)
+                    losses.append(l)
+
+                    if (pretrain_step % 100) == 0:
+                        print(pretrain_step)
+
+                train_pred = sess.run(_pred_ind_values, feed_dict=feed_dict)
+
+                fig = plt.figure(figsize=(7,7))
+                plt.scatter(train_pred.flatten(), pretrain_batch_y.flatten())
+                plt.savefig(os.path.join(options.LOGDIR, 'pretrain_train_scatter.png'))
+                plt.close()
+
+                test_x, test_y = helpers.make_pretrain_data(100, MIRLEN, SEQLEN)
+                test_y = (test_y + ZERO_OFFSET) / NORM_RATIO
                 feed_dict = {
-                                _keep_prob: KEEP_PROB_TRAIN,
-                                _phase_train: True,
-                                _repression_weight: REPRESSION_WEIGHT,
-                                _combined_x: pretrain_batch_x,
-                                _pretrain_y: pretrain_batch_y
+                                _keep_prob: 1.0,
+                                _phase_train: False,
+                                _combined_x: test_x
                             }
-
-                _, l = sess.run([_train_step_pretrain, _pretrain_loss], feed_dict=feed_dict)
-                losses.append(l)
-
-                if (pretrain_step % 100) == 0:
-                    print(pretrain_step)
-
-            train_pred = sess.run(_pred_ind_values, feed_dict=feed_dict)
-
-            fig = plt.figure(figsize=(7,7))
-            plt.scatter(train_pred.flatten(), pretrain_batch_y.flatten())
-            plt.savefig(os.path.join(options.LOGDIR, 'pretrain_train_scatter.png'))
-            plt.close()
-
-            test_x, test_y = helpers.make_pretrain_data(100, MIRLEN, SEQLEN)
-            test_y = (test_y + ZERO_OFFSET) / NORM_RATIO
-            feed_dict = {
-                            _keep_prob: 1.0,
-                            _phase_train: False,
-                            _combined_x: test_x
-                        }
-            pred_pretrain = sess.run(_pred_ind_values, feed_dict=feed_dict)
+                pred_pretrain = sess.run(_pred_ind_values, feed_dict=feed_dict)
 
 
-            fig = plt.figure(figsize=(7,7))
-            plt.scatter(train_pred.flatten(), pretrain_batch_y.flatten())
-            plt.savefig(os.path.join(options.LOGDIR, 'pretrain_train_scatter.png'))
-            plt.close()
+                fig = plt.figure(figsize=(7,7))
+                plt.scatter(train_pred.flatten(), pretrain_batch_y.flatten())
+                plt.savefig(os.path.join(options.LOGDIR, 'pretrain_train_scatter.png'))
+                plt.close()
 
-            fig = plt.figure(figsize=(7,7))
-            plt.scatter(pred_pretrain.flatten(), test_y.flatten())
-            plt.savefig(os.path.join(options.LOGDIR, 'pretrain_test_scatter.png'))
-            plt.close()
+                fig = plt.figure(figsize=(7,7))
+                plt.scatter(pred_pretrain.flatten(), test_y.flatten())
+                plt.savefig(os.path.join(options.LOGDIR, 'pretrain_test_scatter.png'))
+                plt.close()
 
-            fig = plt.figure(figsize=(7,5))
-            plt.plot(losses)
-            plt.savefig(os.path.join(options.LOGDIR, 'pretrain_losses.png'))
-            plt.close()
+                fig = plt.figure(figsize=(7,5))
+                plt.plot(losses)
+                plt.savefig(os.path.join(options.LOGDIR, 'pretrain_losses.png'))
+                plt.close()
 
-            saver.save(sess, os.path.join(PRETRAIN_SAVE_PATH, 'model'))
+                saver.save(sess, os.path.join(PRETRAIN_SAVE_PATH, 'model'))
 
-            print("Finished pre-training")
+                print("Finished pre-training")
 
-        else:
-            # restore previously pretrained weights
-            latest = tf.train.latest_checkpoint(options.PRETRAIN)
-            print('Restoring from {}'.format(latest))
-            saver.restore(sess, latest)
+            else:
+                # restore previously pretrained weights
+                latest = tf.train.latest_checkpoint(options.PRETRAIN)
+                print('Restoring from {}'.format(latest))
+                saver_pretrain.restore(sess, latest)
 
         # plot weights after pre-training
         conv_weights = sess.run(_w1)
@@ -364,7 +406,7 @@ if __name__ == '__main__':
             while True:
 
                 # get repression data batch
-                next_epoch, all_seqs, num_sites, batch_repression_y = repression_train_data.get_next_batch(BATCH_SIZE_REPRESSION, train_mirs)
+                _, next_epoch, all_seqs_site, all_seqs_pass, num_sites, batch_repression_y = repression_train_data.get_next_batch(BATCH_SIZE_REPRESSION, train_mirs)
 
                 if next_epoch:
                     current_epoch += 1
@@ -380,9 +422,12 @@ if __name__ == '__main__':
                 _, biochem_train_batch = biochem_train_data.get_next_batch(BATCH_SIZE_BIOCHEM)
 
                 # fill feature arrays
-                batch_combined_x = np.zeros([(BATCH_SIZE_REPRESSION * NUM_TRAIN * num_sites) + BATCH_SIZE_BIOCHEM, 4*MIRLEN, 4*SEQLEN])
-                batch_repression_mask = np.zeros([BATCH_SIZE_REPRESSION, NUM_TRAIN, num_sites])
-                for counter1, big_seq_list in enumerate(all_seqs):
+                batch_combined_x = np.zeros([(BATCH_SIZE_REPRESSION * 2 * NUM_TRAIN * num_sites) + BATCH_SIZE_BIOCHEM, 4*MIRLEN, 4*SEQLEN])
+                batch_repression_mask_site = np.zeros([BATCH_SIZE_REPRESSION, NUM_TRAIN, num_sites])
+                batch_repression_mask_pass = np.zeros([BATCH_SIZE_REPRESSION, NUM_TRAIN, num_sites])
+
+                # put in site sequences
+                for counter1, big_seq_list in enumerate(all_seqs_site):
 
                     for counter2, (mir, seq_list) in enumerate(zip(train_mirs, big_seq_list)):
 
@@ -395,9 +440,25 @@ if __name__ == '__main__':
                             temp = np.outer(mirseq_one_hot, helpers.one_hot_encode_nt_new(seq, SEQ_NTS))
                             batch_combined_x[current, :, :] = temp - 0.25
                             current += 1
-                        batch_repression_mask[counter1, counter2, :len(seq_list)] = 1.0
+                        batch_repression_mask_site[counter1, counter2, :len(seq_list)] = 1.0
 
-                current = BATCH_SIZE_REPRESSION * NUM_TRAIN * num_sites
+                # put in passenger strand sequences
+                for counter1, big_seq_list in enumerate(all_seqs_pass):
+
+                    for counter2, (mir, seq_list) in enumerate(zip(train_mirs, big_seq_list)):
+
+                        if len(seq_list) == 0:
+                            continue
+
+                        mirseq_one_hot = ONE_HOT_DICT[mir + '*']
+                        current = ((counter1 + BATCH_SIZE_REPRESSION) * NUM_TRAIN * num_sites) + (counter2 * num_sites)
+                        for seq in seq_list:
+                            temp = np.outer(mirseq_one_hot, helpers.one_hot_encode_nt_new(seq, SEQ_NTS))
+                            batch_combined_x[current, :, :] = temp - 0.25
+                            current += 1
+                        batch_repression_mask_pass[counter1, counter2, :len(seq_list)] = 1.0
+
+                current = BATCH_SIZE_REPRESSION * 2 * NUM_TRAIN * num_sites
                 for mir, seq in zip(biochem_train_batch['mir'], biochem_train_batch['seq']):
                     mirseq_one_hot = ONE_HOT_DICT[mir]
                     temp = np.outer(mirseq_one_hot, helpers.one_hot_encode_nt_new(seq, SEQ_NTS))
@@ -414,30 +475,37 @@ if __name__ == '__main__':
                         _repression_weight: REPRESSION_WEIGHT,
                         _combined_x: batch_combined_x,
                         _biochem_y: batch_biochem_y,
-                        _repression_mask: batch_repression_mask,
+                        _repression_mask_site: batch_repression_mask_site,
+                        _repression_mask_pass: batch_repression_mask_pass,
                         _repression_y: batch_repression_y
                     }
 
                 # run train step
                 _ = sess.run(_train_step, feed_dict=feed_dict)
                 # _, l1, l2, l3 = sess.run([_train_step, _biochem_loss, _loss, _weight_regularize], feed_dict=feed_dict)
+                step += 1
 
-                # if (step % REPORT_INT) == 0:
-                if next_epoch:
+                if (step % REPORT_INT) == 0:
+                # if next_epoch:
 
                     # save model
-                    saver.save(sess, os.path.join(SAVE_PATH, 'model'), global_step=current_epoch)
+                    saver.save(sess, os.path.join(SAVE_PATH, 'model'), global_step=step)
+                    # saver.save(sess, os.path.join(SAVE_PATH, 'model'), global_step=current_epoch)
 
                     l1, l2, l3 = sess.run([_biochem_loss, _repression_loss, _weight_regularize], feed_dict=feed_dict)
                     print(l1, l2, l3)
-                    step_list.append(current_epoch - 1)
+
+                    step_list.append(step)
+                    # step_list.append(current_epoch - 1)
+                    
                     train_losses.append(l1+l2+l3)
 
                     feed_dict = {
                         _keep_prob: 1.0,
                         _phase_train: False,
                         _combined_x: batch_combined_x,
-                        _repression_mask: batch_repression_mask
+                        _repression_mask_site: batch_repression_mask_site,
+                        _repression_mask_pass: batch_repression_mask_pass
                     }
 
                     train_biochem_preds = sess.run(_pred_biochem, feed_dict=feed_dict)
@@ -482,11 +550,14 @@ if __name__ == '__main__':
                     plt.savefig(os.path.join(options.LOGDIR, 'convolution3.pdf'))
                     plt.close()
 
-                    current_freeAGO = np.mean(sess.run(_freeAGO))
+                    current_freeAGO = np.mean(sess.run(_freeAGO_site))
                     current_slope = sess.run(_slope)
-                    print('current free AGO: {:.3}'.format(current_freeAGO))
-                    print('current slope: {:.3}'.format(current_slope))
+                    # print('current free AGO: {:.3}'.format(current_freeAGO))
+                    # print('current slope: {:.3}'.format(current_slope))
 
+                    print(current_freeAGO, current_freeAGO - test_freeAGO_diff)
+
+                    # get nbound for miRNA strand
                     feed_dict = {
                                     _keep_prob: 1.0,
                                     _phase_train: False,
@@ -501,8 +572,29 @@ if __name__ == '__main__':
                         pred_nbound_test.append(np.sum(pred_ind_nbound_test[prev:bound]))
                         prev = bound
 
-                    pred_nbound_test = np.array(pred_nbound_test)
-                    pred_logfc_test = pred_nbound_test * current_slope
+                    pred_nbound_test_site = np.array(pred_nbound_test)
+
+                    # get nbound for passenger strand
+                    feed_dict = {
+                                    _keep_prob: 1.0,
+                                    _phase_train: False,
+                                    _combined_x: test_combined_x_pass
+                                }
+
+                    pred_ind_values_test = sess.run(_pred_ind_values, feed_dict=feed_dict)
+                    pred_ind_nbound_test = 1.0 / (1.0 + np.exp((-1.0 * pred_ind_values_test.flatten() * NORM_RATIO) - (current_freeAGO - test_freeAGO_diff)))
+                    pred_nbound_test = []
+                    prev = test_seq_utr_boundaries[0]
+                    for bound in test_seq_utr_boundaries[1:]:
+                        pred_nbound_test.append(np.sum(pred_ind_nbound_test[prev:bound]))
+                        prev = bound
+
+                    pred_nbound_test_pass = np.array(pred_nbound_test)
+
+                    pred_nbound_test = pred_nbound_test_site + pred_nbound_test_pass
+
+
+                    pred_logfc_test = (pred_nbound_test) * current_slope
 
                     test_losses.append(np.sum((pred_logfc_test - test_logfc_labels.flatten())**2)/len(test_logfc_labels))
 
@@ -533,17 +625,10 @@ if __name__ == '__main__':
                         print(stats.linregress(pred_nbound_test.flatten(), test_logfc_labels.flatten()))
                         print('Repression epochs: {}'.format(repression_train_data.num_epochs))
                         print('Biochem epochs: {}'.format(biochem_train_data.num_epochs))
-                        trained_freeAGO = sess.run(_freeAGO).flatten()
-                        for m, f in zip(train_mirs, trained_freeAGO):
-                            print('{}: {:.3}'.format(m, f))
+                        print('Global slope: {:.3}'.format(sess.run(_slope)))
+                        trained_freeAGO_site = sess.run(_freeAGO_site).flatten()
+                        trained_freeAGO_pass = sess.run(_freeAGO_pass).flatten()
+                        print('Fitted free AGO:')
+                        for m, f1, f2 in zip(train_mirs, trained_freeAGO_site, trained_freeAGO_pass):
+                            print('{}: {:.3}, {:.3}'.format(m, f1, f2))
                         break
-
-                    
-
-
-
-
-
-
-
-

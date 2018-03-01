@@ -6,6 +6,7 @@ import seaborn as sns
 import tensorflow as tf
 import regex
 
+
 def calc_rsq(predicted, actual):
     SS_res = np.sum((predicted - actual)**2)
     SS_tot = np.sum((actual - np.mean(actual))**2)
@@ -31,48 +32,6 @@ def complementary(seq):
     return ''.join([match_dict[x] for x in seq])
 
 
-MIRSEQ_DICT = {
-                  'mir137': 'TTATTGCTTAAGAATACGCGTAG',
-                  'mir137*': 'ACGCGTATTCTTAAGCAATAAAT',
-                  'mir205': 'TCCTTCATTCCACCGGAGTCTG',
-                  'mir205*': 'GACTCCGGTGGAATGAAGCAAT',
-                  'mir155': 'TTAATGCTAATCGTGATAGGGGT',
-                  'mir155*': 'CCCTATCACGATTAGCATTAAAT',
-                  'mir223': 'TGTCAGTTTGTCAAATACCCCA',
-                  'mir223*': 'GGGTATTTGACAAACTGATAAT',
-                  'mir144': 'TACAGTATAGATGATGTACT',
-                  'mir144*': 'TACATCATCTATACTCTAAT',
-                  'mir143': 'TGAGATGAAGCACTGTAGCTC',
-                  'mir143*': 'GCTACAGTGCTTCATCTTAAT',
-                  'mir153': 'TTGCATAGTCACAAAAGTGATC',
-                  'mir153*': 'TCACTTTTGTGACTATGTAAAT',
-                  'mir216b': 'AAATCTCTGCAGGCAAATGTGA',
-                  'mir216b*': 'ACATTTGCCTGCAGAGATTTAT',
-                  'mir199a': 'CCCAGTGTTCAGACTACCTGTTC',
-                  'mir199a*': 'ACAGGTAGTCTGAACACTGCGAT',
-                  'mir204': 'TTCCCTTTGTCATCCTATGCCT',
-                  'mir204*': 'GCATAGGATGACAAAGGCAAAT',
-                  'mir139': 'TCTACAGTGCACGTGTCTCCAGT',
-                  'mir139*': 'TGGAGACACGTGCACTGTACAAT',
-                  'mir182': 'TTTGGCAATGGTAGAACTCACACT',
-                  'mir182*': 'TGTGAGTTCTACCATTGCTAAAAT',
-                  'mir7': 'TGGAAGACTAGTGATTTTGTTGT',
-                  'mir7*': 'AACAAAATCACTAGTCTTCTAAT',
-                  'let7': 'TGAGGTAGTAGGTTGTATAGTT',
-                  'let7*': 'CTATACAACCTACTACCTTAAT',
-                  'mir1': 'TGGAATGTAAAGAAGTATGTAT',
-                  'mir1*': 'ACATACTTCTTTACATTCTAAT',
-                  'mir124': 'TAAGGCACGCGGTGAATGCCAA',
-                  'mir124*': 'GGCATTCACCGCGTGCTTTAAT',
-                  'lsy6': 'TTTTGTATGAGACGCATTTCGA',
-                  'lsy6*': 'GAAATGCGTCTCATACAAAAAT',
-                  'mir7-24nt': 'TGGAAGACTAGTGATTTTGTTGTT',
-                  'mir7-25nt': 'TGGAAGACTAGTGATTTTGTTGTTT'
-            }
-
-SITE_DICT = {x: rev_comp(y[1:7]) for (x,y) in MIRSEQ_DICT.items()}
-
-
 def get_color(sitem8, seq):
     if (sitem8 + 'A') in seq:
         return 'blue'
@@ -95,6 +54,16 @@ def one_hot_encode_nt(seq, nt_order):
     return np.array(one_hot)
 
 
+def one_hot_encode_nt_new(seq, nt_order):
+    """Convert RNA sequence to one-hot encoding"""
+    
+    one_hot = np.zeros([len(seq) * 4])
+    for i, nt in enumerate(seq):
+        one_hot[i*4 + np.argmax(nt_order == nt)] = 2.0
+    
+    return one_hot
+
+
 def make_square(seq1, seq2):
     """Given two sequences, calculate outer product of one-hot encodings"""
 
@@ -108,14 +77,32 @@ def make_square(seq1, seq2):
     return square# + noise
 
 
+# def get_seqs(utr, site, only_canon=False):
+#     if only_canon:
+#         locs = [m.start() + 1 for m in re.finditer(site, utr)]
+
+#     else:
+#         locs1 = [m.start() for m in re.finditer(site[1:-1], utr)]
+#         locs2 = [(m.start() - 1) for m in re.finditer(site[2:], utr)]
+#         locs = list(set(locs1 + locs2))
+
+#     seqs = [utr[loc-4:loc+8] for loc in locs if (loc-4 >=0) and (loc+8 <= len(utr))]
+#     return seqs
+
 def get_seqs(utr, site, only_canon=False):
     if only_canon:
         locs = [m.start() + 1 for m in re.finditer(site, utr)]
 
+    # else:
+    #     locs1 = [m.start() for m in re.finditer(site[1:], utr)]
+    #     locs2 = [(m.start() + 1) for m in re.finditer(site[:-1], utr)]
+    #     locs = list(set(locs1 + locs2))
+
     else:
-        locs1 = [m.start() for m in re.finditer(site[1:-1], utr)]
-        locs2 = [(m.start() - 1) for m in re.finditer(site[2:], utr)]
-        locs = list(set(locs1 + locs2))
+        locs1 = [m.start() - 1 for m in re.finditer(site[2:], utr)]
+        locs2 = [(m.start()) for m in re.finditer(site[1:-1], utr)]
+        locs3 = [(m.start() + 1) for m in re.finditer(site[1:-2], utr)]
+        locs = list(set(locs1 + locs2 + locs3))
 
     seqs = [utr[loc-4:loc+8] for loc in locs if (loc-4 >=0) and (loc+8 <= len(utr))]
     return seqs
@@ -224,7 +211,7 @@ def get_conv_params(dim1, dim2, in_channels, out_channels, layer_name):
     return weights, biases
 
 
-### GRAPHING FUNCTIONS ###
+### GRAPHING FUNCTION ###
 
 
 def graph_convolutions(conv_weights, xlabels, ylabels, fname):
