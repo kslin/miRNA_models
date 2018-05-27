@@ -9,6 +9,10 @@ import regex
 MIR_NTS = np.array(['A','T','C','G'])
 SEQ_NTS = np.array(['T','A','G','C'])
 
+MIR_NT_DICT = {nt:ix for (ix, nt) in enumerate(MIR_NTS)}
+SEQ_NT_DICT = {nt:ix for (ix, nt) in enumerate(SEQ_NTS)}
+TARGETS = np.eye(4)
+
 
 def calc_rsq(predicted, actual):
     SS_res = np.sum((predicted - actual)**2)
@@ -69,36 +73,41 @@ def get_color(sitem8, seq):
         return 'grey'
 
 
-def one_hot_encode_nt(seq, nt_order):
-    """Convert RNA sequence to one-hot encoding"""
+def one_hot_encode(seq, nt_dict, targets):
+    seq = [nt_dict[nt] for nt in seq]
+    return targets[seq].flatten()
+
+
+# def one_hot_encode_nt(seq, nt_order):
+#     """Convert RNA sequence to one-hot encoding"""
     
-    one_hot = [list(np.array(nt_order == nt, dtype=int)) for nt in seq]
-    one_hot = [item for sublist in one_hot for item in sublist]
+#     one_hot = [list(np.array(nt_order == nt, dtype=int)) for nt in seq]
+#     one_hot = [item for sublist in one_hot for item in sublist]
     
-    return np.array(one_hot)
+#     return np.array(one_hot)
 
 
-def one_hot_encode_nt_new(seq, nt_order):
-    """Convert RNA sequence to one-hot encoding"""
+# def one_hot_encode_nt_new(seq, nt_order):
+#     """Convert RNA sequence to one-hot encoding"""
     
-    one_hot = np.zeros([len(seq) * 4])
-    for i, nt in enumerate(seq):
-        one_hot[i*4 + np.argmax(nt_order == nt)] = 2.0
+#     one_hot = np.zeros([len(seq) * 4])
+#     for i, nt in enumerate(seq):
+#         one_hot[i*4 + np.argmax(nt_order == nt)] = 2.0
     
-    return one_hot
+#     return one_hot
 
 
-def make_square(seq1, seq2):
-    """Given two sequences, calculate outer product of one-hot encodings"""
+# def make_square(seq1, seq2):
+#     """Given two sequences, calculate outer product of one-hot encodings"""
 
-    # noise = np.random.normal(loc=0, scale=0.01, size=16*len(seq1)*len(seq2)).reshape((4*len(seq1), 4*len(seq2)))
+#     # noise = np.random.normal(loc=0, scale=0.01, size=16*len(seq1)*len(seq2)).reshape((4*len(seq1), 4*len(seq2)))
 
-    square = np.outer(one_hot_encode_nt(seq1, np.array(['A','T','C','G'])),
-                    one_hot_encode_nt(seq2, np.array(['T','A','G','C'])))
+#     square = np.outer(one_hot_encode_nt(seq1, np.array(['A','T','C','G'])),
+#                     one_hot_encode_nt(seq2, np.array(['T','A','G','C'])))
 
-    square = ((square*4) - 0.25)#.reshape((4*len(seq1), 4*len(seq2), 1))
+#     square = ((square*4) - 0.25)#.reshape((4*len(seq1), 4*len(seq2), 1))
 
-    return square# + noise
+#     return square# + noise
 
 
 # def get_seqs(utr, site, only_canon=False):
@@ -134,7 +143,7 @@ def remove_overlaps(locs, distance=6):
 
 def get_seqs(utr, site, seqlen=12):
     utr_len = len(utr)
-    utr_ext = utr + 'UUU'
+    utr_ext = utr + 'TTT'
 
     locs1 = remove_overlaps([m.start() - 1 for m in re.finditer(site[3:], utr)])
     locs2 = remove_overlaps([(m.start()) for m in re.finditer(site[2:-1], utr)])
@@ -212,8 +221,8 @@ def make_pretrain_data(size, mirlen, seqlen=12):
 
     batch_x = np.zeros((size, 4*mirlen, 4*seqlen))
     for i, (mirseq, seq) in enumerate(zip(mirseqs, seqs)):
-        batch_x[i, :, :] = np.outer(one_hot_encode_nt_new(mirseq, MIR_NTS),
-                                    one_hot_encode_nt_new(seq, SEQ_NTS)) - 0.25
+        batch_x[i, :, :] = (np.outer(one_hot_encode(mirseq, MIR_NT_DICT, TARGETS),
+                                            one_hot_encode(seq, SEQ_NT_DICT, TARGETS))*4) - 0.25
 
     return np.expand_dims(batch_x, 3), np.expand_dims(batch_y, 1)
 

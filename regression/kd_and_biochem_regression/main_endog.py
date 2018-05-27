@@ -116,10 +116,10 @@ if __name__ == '__main__':
     test_kds_combined_x = np.zeros([len(data_test), 48, 48])
     for i, row in enumerate(data_test.iterrows()):
         mirseq_one_hot = config.ONE_HOT_DICT[row[1]['mir']]
-        seq_one_hot = helpers.one_hot_encode_nt_new(row[1]['seq'], config.SEQ_NTS)
-        test_kds_combined_x[i,:,:] = np.outer(mirseq_one_hot, seq_one_hot)# - 0.25
+        seq_one_hot = helpers.one_hot_encode(row[1]['seq'], config.SEQ_NT_DICT, config.TARGETS)
+        test_kds_combined_x[i,:,:] = np.outer(mirseq_one_hot, seq_one_hot)
     
-    test_kds_combined_x = np.expand_dims(test_kds_combined_x - 0.25, 3)   
+    test_kds_combined_x = np.expand_dims((test_kds_combined_x*4) - 0.25, 3)   
     test_kds_labels = data_test['log ka'].values + config.ZERO_OFFSET # OFFSET
     
     data = data[~data['mir'].isin(test_mirs)]
@@ -132,8 +132,7 @@ if __name__ == '__main__':
     # make data objects for repression training data
     repression_train_data = data_objects_endog.RepressionData(train_tpm)
     repression_train_data.shuffle()
-    repression_train_data.get_seqs(train_mirs)
-    
+    repression_train_data.get_seqs(train_mirs)    
 
     ### DEFINE MODEL ###
 
@@ -455,25 +454,25 @@ if __name__ == '__main__':
                 mirseq_one_hot_pass = config.ONE_HOT_DICT[mir + '*']
 
                 for seq in seq_list_guide:
-                    temp = np.outer(mirseq_one_hot_guide, helpers.one_hot_encode_nt_new(seq, config.SEQ_NTS))
-                    batch_combined_x[current_ix, :, :] = temp# - 0.25
+                    temp = np.outer(mirseq_one_hot_guide, helpers.one_hot_encode(seq, config.SEQ_NT_DICT, config.TARGETS))
+                    batch_combined_x[current_ix, :, :] = temp
                     current_ix += 1
 
                 for seq in seq_list_pass:
-                    temp = np.outer(mirseq_one_hot_pass, helpers.one_hot_encode_nt_new(seq, config.SEQ_NTS))
-                    batch_combined_x[current_ix, :, :] = temp# - 0.25
+                    temp = np.outer(mirseq_one_hot_pass, helpers.one_hot_encode(seq, config.SEQ_NT_DICT, config.TARGETS))
+                    batch_combined_x[current_ix, :, :] = temp
                     current_ix += 1
 
             # fill in features for biochem data
             for mir, seq in zip(biochem_train_batch['mir'], biochem_train_batch['seq']):
                 mirseq_one_hot = config.ONE_HOT_DICT[mir]
-                temp = np.outer(mirseq_one_hot, helpers.one_hot_encode_nt_new(seq, config.SEQ_NTS))
-                batch_combined_x[current_ix, :, :] = temp# - 0.25
+                temp = np.outer(mirseq_one_hot, helpers.one_hot_encode(seq, config.SEQ_NT_DICT, config.TARGETS))
+                batch_combined_x[current_ix, :, :] = temp
                 current_ix += 1
 
             assert(current_ix == batch_combined_x.shape[0])
 
-            batch_combined_x = np.expand_dims(batch_combined_x - 0.25, 3)
+            batch_combined_x = np.expand_dims((batch_combined_x*4) - 0.25, 3)
             batch_biochem_y = biochem_train_batch[['log ka']].values + config.ZERO_OFFSET # OFFSET
 
             # run train step

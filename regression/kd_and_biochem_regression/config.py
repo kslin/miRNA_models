@@ -12,7 +12,7 @@ STARTING_LEARNING_RATE = 0.001
 LAMBDA = 0.001
 NUM_EPOCHS = 50
 REPORT_INT = 50
-REPRESSION_WEIGHT = 10.0
+REPRESSION_WEIGHT = 20.0
 ZERO_OFFSET = 0
 NORM_RATIO = 10.0
 SWITCH_EPOCH = -1
@@ -23,6 +23,10 @@ SWITCH_EPOCH = -1
 
 MIR_NTS = np.array(['A','T','C','G'])
 SEQ_NTS = np.array(['T','A','G','C'])
+
+MIR_NT_DICT = {nt:ix for (ix, nt) in enumerate(MIR_NTS)}
+SEQ_NT_DICT = {nt:ix for (ix, nt) in enumerate(SEQ_NTS)}
+TARGETS = np.eye(4)
 
 MIRSEQ_DICT = {
                   'mir137': 'TTATTGCTTAAGAATACGCGTAG',
@@ -67,7 +71,7 @@ SITE_DICT = {x: helpers.rev_comp(y[1:8]) for (x,y) in MIRSEQ_DICT.items()}
 
 # make dictionary of reverse miRNA sequences trimmed to MIRLEN
 MIRSEQ_DICT_MIRLEN = {x: y[:MIRLEN][::-1] for (x,y) in MIRSEQ_DICT.items()}
-ONE_HOT_DICT = {x: helpers.one_hot_encode_nt_new(y, MIR_NTS) for (x,y) in MIRSEQ_DICT_MIRLEN.items()}
+ONE_HOT_DICT = {x: helpers.one_hot_encode(y, MIR_NT_DICT, TARGETS) for (x,y) in MIRSEQ_DICT_MIRLEN.items()}
 
 FREEAGO_SITE_DICT = {
                         'mir223': -3.16,

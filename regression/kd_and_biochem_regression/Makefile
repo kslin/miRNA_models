@@ -17,9 +17,6 @@ train_no_pretrain:
 train_pass_no_baseline:
 	python main_with_pass_no_baseline.py -k $(data_dir)/kds.txt -t $(data_dir)/tpms.txt -i $(data_dir)/baselines.txt --hidden1 4 --hidden2 8 --hidden3 16 -m none -l /lab/bartel4_ata/kathyl/NeuralNet/logdirs/tpms_and_kds/run_pass_fit_baseline_no_pretrain_testing/all_mirs_no_pretrain -d -p /lab/bartel4_ata/kathyl/NeuralNet/logdirs/tpms_and_kds/pretrain_0_centered_normed_16_last_pass/pretrain_saved
 
-optimize:
-	python optimize.py -k $(data_dir)/kds.txt -t $(data_dir)/tpms.txt -i $(data_dir)/baselines_cutoff_0.txt -m mir139
-
 test:
 	python main_labmeeting.py -k $(final_data_dir)/kds.txt -t $(final_data_dir)/merged.txt -i $(final_data_dir)/baselines.txt --hidden1 4 --hidden2 8 --hidden3 16 -m none -l /lab/bartel4_ata/kathyl/NeuralNet/logdirs/tpms_and_kds/run_pass_fit_baseline_second_run/testing -d
 
@@ -36,6 +33,9 @@ endog_use_pretrain:
 
 endog_no_pretrain:
 	python main_endog.py -k $(final_data_dir)/kds.txt -t $(final_data_dir)/merged.txt --let7_sites $(final_data_dir)/let7_sites.txt --let7_mask $(final_data_dir)/let7_mask.txt -p $(final_data_dir)/prefit.txt --hidden1 4 --hidden2 16 --hidden3 16 -m mir1 -l /lab/bartel4_ata/kathyl/NeuralNet/logdirs/tpms_and_kds/endog_mir1_pretrain --pretrain none
+
+optimize:
+	python optimize.py -k $(final_data_dir)/kds.txt -t $(final_data_dir)/merged.txt --let7_sites $(final_data_dir)/let7_sites.txt --let7_mask $(final_data_dir)/let7_mask.txt -p $(final_data_dir)/prefit.txt --hidden1 4 --hidden2 16 --hidden3 16 -m mir1 -l /lab/bartel4_ata/kathyl/NeuralNet/logdirs/tpms_and_kds/endog_mir1_pretrain --pretrain none
 
 
 endog_cross_val:
