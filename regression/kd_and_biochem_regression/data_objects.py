@@ -56,7 +56,7 @@ class RepressionDataNew(Data):
             for mir in mirs:
                 utr = row[1]['Sequence']
 
-                seqs = helpers.get_seqs(utr, config.SITE_DICT[mir], only_canon=False)
+                seqs = helpers.get_seqs(utr, config.SITE_DICT[mir], seqlen=config.SEQLEN)
                 # gene_dict[mir] = [helpers.one_hot_encode_nt(seq, np.array(['T','A','G','C'])) for seq in seqs]
                 gene_dict[mir] = seqs
 
@@ -105,8 +105,8 @@ class RepressionDataNew_with_passenger(Data):
             for mir in mirs:
                 utr = row[1]['Sequence']
 
-                seqs = helpers.get_seqs(utr, config.SITE_DICT[mir], only_canon=False)
-                seqs_pass = helpers.get_seqs(utr, config.SITE_DICT[mir + '*'], only_canon=False)
+                seqs = helpers.get_seqs(utr, config.SITE_DICT[mir], seqlen=config.SEQLEN)
+                seqs_pass = helpers.get_seqs(utr, config.SITE_DICT[mir + '*'], seqlen=config.SEQLEN)
                 gene_dict[mir] = seqs
                 gene_dict[mir + '*'] = seqs_pass
 
@@ -138,6 +138,30 @@ class RepressionDataNew_with_passenger(Data):
         batch_y = next_batch[mirs].values
 
         return genes, new_epoch, all_seqs_site, all_seqs_pass, num_sites, batch_y
+
+    def get_next_batch2(self, batch_size, mirs):
+        new_epoch = False
+        if (self.length - self.current_ix) < batch_size:
+            self.shuffle()
+            self.current_ix = 0
+            self.num_epochs += 1
+            new_epoch = True
+
+        next_batch = self.data.iloc[self.current_ix: self.current_ix + batch_size]
+        self.current_ix += batch_size
+
+        genes = list(next_batch.index)
+        all_seqs, num_sites = [], []
+        for gene in genes:
+            for mir in mirs:
+                seqs_guide, seqs_pass = self.seq_dict[gene][mir], self.seq_dict[gene][mir + '*']
+                all_seqs.append((seqs_guide, seqs_pass))
+                num_sites += [len(seqs_guide), len(seqs_pass)]
+        
+        max_sites = np.max(num_sites)
+        batch_y = next_batch[mirs].values
+
+        return genes, new_epoch, all_seqs, np.array(num_sites), max_sites, batch_y
 
 
 class BiochemData(Data):

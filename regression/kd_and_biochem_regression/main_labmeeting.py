@@ -73,11 +73,14 @@ if __name__ == '__main__':
 
     ### READ KD DATA ###
     data = pd.read_csv(options.KD_FILE, sep='\t')
-    data.columns = ['mir','mirseq_full','seq','log kd','stype']
+    # data.columns = ['mir','mirseq_full','seq','log kd','stype']
+    data.columns = ['seq','log_kd','mir','mirseq_full','stype']
     data = data[~data['mir'].isin(test_mirs)]
 
+    print(data.head())
+
     # zero-center and normalize Ka's
-    data['log ka'] = (-1.0 * data['log kd'])
+    data['log ka'] = (-1.0 * data['log_kd'])
     data['mirseq'] = [config.MIRSEQ_DICT_MIRLEN[mir] for mir in data['mir']]
     data['sitem8'] = [helpers.rev_comp(mirseq[1:8]) for mirseq in data['mirseq_full']]
     data['color'] = [helpers.get_color(sitem8, seq) for (sitem8, seq) in zip(data['sitem8'], data['seq'])]
@@ -104,6 +107,30 @@ if __name__ == '__main__':
     repression_train_data = data_objects.RepressionDataNew_with_passenger(train_tpm)
     repression_train_data.shuffle()
     repression_train_data.get_seqs(train_mirs)
+
+    # seq_dict = repression_train_data.seq_dict
+    # mir_seq_dict = {mir: [] for mir in (train_mirs + [(m + '*') for m in train_mirs])}
+    # for key, val in seq_dict.items():
+    #     for mir, val2 in val.items():
+    #         mir_seq_dict[mir] += val2
+
+    # all_guide, all_pass, all_unq_guide, all_unq_pass = 0,0,0,0
+    # for mir in train_mirs:
+    #     # print(mir)
+    #     # print('guide_seqs:{}'.format(len(mir_seq_dict[mir])))
+    #     # print('pass_seqs:{}'.format(len(mir_seq_dict[mir + '*'])))
+    #     # print('unique_guide_seqs:{}'.format(len(list(set(list(mir_seq_dict[mir]))))))
+    #     # print('unique_pass_seqs:{}'.format(len(list(set(list(mir_seq_dict[mir + '*']))))))
+    #     all_guide += len(mir_seq_dict[mir])
+    #     all_pass += len(mir_seq_dict[mir + '*'])
+    #     all_unq_guide += len(list(set(list(mir_seq_dict[mir]))))
+    #     all_unq_pass += len(list(set(list(mir_seq_dict[mir + '*']))))
+
+    # print(all_guide, all_pass)
+    # print(all_unq_guide, all_unq_pass)
+
+    # sys.exit()
+
 
     # test on a subset of the test data to speed up testing
     subset = np.random.choice(np.arange(len(test_tpm)), size=400)
@@ -182,116 +209,27 @@ if __name__ == '__main__':
         # add layer 2
         with tf.name_scope('layer2'):
             _w2, _b2 = helpers.get_conv_params(2, 2, options.HIDDEN1, options.HIDDEN2, 'layer2')
-            _preactivate2 = tf.nn.conv2d(_layer1, _w2, strides=[1, 1, 1, 1], padding='VALID') + _b2
+            _preactivate2 = tf.nn.conv2d(_layer1, _w2, strides=[1, 1, 1, 1], padding='SAME') + _b2
 
             _preactivate2_bn = tf.layers.batch_normalization(_preactivate2, axis=1, training=_phase_train)
 
             _layer2 = tf.nn.relu(_preactivate2_bn)
 
-        # add layer 2
+        # add layer 3
         with tf.name_scope('layer3'):
-            _w3, _b3 = helpers.get_conv_params(2, 2, options.HIDDEN2, options.HIDDEN2, 'layer3')
-            _preactivate3 = tf.nn.conv2d(_layer2, _w3, strides=[1, 1, 1, 1], padding='VALID') + _b3
+            _w3, _b3 = helpers.get_conv_params(config.MIRLEN, config.SEQLEN, options.HIDDEN2, options.HIDDEN3, 'layer3')
+            _preactivate3 = tf.nn.conv2d(_layer2, _w3, strides=[1, config.MIRLEN, config.SEQLEN, 1], padding='VALID') + _b3
 
             _preactivate3_bn = tf.layers.batch_normalization(_preactivate3, axis=1, training=_phase_train)
 
             _layer3 = tf.nn.relu(_preactivate3_bn)
 
-
-        # add layer 2
-        with tf.name_scope('layer4'):
-            _w4, _b4 = helpers.get_conv_params(2, 2, options.HIDDEN2, options.HIDDEN2, 'layer4')
-            _preactivate4 = tf.nn.conv2d(_layer3, _w4, strides=[1, 1, 1, 1], padding='VALID') + _b4
-
-            _preactivate4_bn = tf.layers.batch_normalization(_preactivate4, axis=1, training=_phase_train)
-
-            _layer4 = tf.nn.relu(_preactivate4_bn)
-
-
-        # add layer 2
-        with tf.name_scope('layer5'):
-            _w5, _b5 = helpers.get_conv_params(2, 2, options.HIDDEN2, options.HIDDEN2, 'layer5')
-            _preactivate5 = tf.nn.conv2d(_layer4, _w5, strides=[1, 1, 1, 1], padding='VALID') + _b5
-
-            _preactivate5_bn = tf.layers.batch_normalization(_preactivate5, axis=1, training=_phase_train)
-
-            _layer5 = tf.nn.relu(_preactivate5_bn)
-
-
-        # add layer 2
-        with tf.name_scope('layer6'):
-            _w6, _b6 = helpers.get_conv_params(2, 2, options.HIDDEN2, options.HIDDEN2, 'layer6')
-            _preactivate6 = tf.nn.conv2d(_layer5, _w6, strides=[1, 1, 1, 1], padding='VALID') + _b6
-
-            _preactivate6_bn = tf.layers.batch_normalization(_preactivate6, axis=1, training=_phase_train)
-
-            _layer6 = tf.nn.relu(_preactivate6_bn)
-
-
-        # add layer 2
-        with tf.name_scope('layer7'):
-            _w7, _b7 = helpers.get_conv_params(2, 2, options.HIDDEN2, options.HIDDEN2, 'layer7')
-            _preactivate7 = tf.nn.conv2d(_layer6, _w7, strides=[1, 1, 1, 1], padding='VALID') + _b7
-
-            _preactivate7_bn = tf.layers.batch_normalization(_preactivate7, axis=1, training=_phase_train)
-
-            _layer7 = tf.nn.relu(_preactivate7_bn)
-
-
-        # add layer 2
-        with tf.name_scope('layer8'):
-            _w8, _b8 = helpers.get_conv_params(2, 2, options.HIDDEN2, options.HIDDEN2, 'layer8')
-            _preactivate8 = tf.nn.conv2d(_layer7, _w8, strides=[1, 1, 1, 1], padding='VALID') + _b8
-
-            _preactivate8_bn = tf.layers.batch_normalization(_preactivate8, axis=1, training=_phase_train)
-
-            _layer8 = tf.nn.relu(_preactivate8_bn)
-
-
-        # add layer 2
-        with tf.name_scope('layer9'):
-            _w9, _b9 = helpers.get_conv_params(2, 2, options.HIDDEN2, options.HIDDEN2, 'layer9')
-            _preactivate9 = tf.nn.conv2d(_layer8, _w9, strides=[1, 1, 1, 1], padding='VALID') + _b9
-
-            _preactivate9_bn = tf.layers.batch_normalization(_preactivate9, axis=1, training=_phase_train)
-
-            _layer9 = tf.nn.relu(_preactivate9_bn)
-
-
-        # add layer 2
-        with tf.name_scope('layer10'):
-            _w10, _b10 = helpers.get_conv_params(2, 2, options.HIDDEN2, options.HIDDEN2, 'layer10')
-            _preactivate10 = tf.nn.conv2d(_layer9, _w10, strides=[1, 1, 1, 1], padding='VALID') + _b10
-
-            _preactivate10_bn = tf.layers.batch_normalization(_preactivate10, axis=1, training=_phase_train)
-
-            _layer10 = tf.nn.relu(_preactivate10_bn)
-
-
-        # add layer 2
-        with tf.name_scope('layer11'):
-            _w11, _b11 = helpers.get_conv_params(2, 2, options.HIDDEN2, options.HIDDEN2, 'layer11')
-            _preactivate11 = tf.nn.conv2d(_layer10, _w11, strides=[1, 1, 1, 1], padding='VALID') + _b11
-
-            _preactivate11_bn = tf.layers.batch_normalization(_preactivate11, axis=1, training=_phase_train)
-
-            _layer11 = tf.nn.relu(_preactivate11_bn)
-
-        # add layer 3
-        with tf.name_scope('layer12'):
-            _w12, _b12 = helpers.get_conv_params(config.MIRLEN-10, config.SEQLEN-10, options.HIDDEN2, options.HIDDEN3, 'layer12')
-            _preactivate12 = tf.nn.conv2d(_layer11, _w12, strides=[1, config.MIRLEN, config.SEQLEN, 1], padding='VALID') + _b12
-
-            _preactivate12_bn = tf.layers.batch_normalization(_preactivate12, axis=1, training=_phase_train)
-
-            _layer12 = tf.nn.relu(_preactivate12_bn)
-
-        # # add dropout
-        # with tf.name_scope('dropout'):
-        #     _dropout = tf.nn.dropout(_layer12, _keep_prob)
+        # add dropout
+        with tf.name_scope('dropout'):
+            _dropout = tf.nn.dropout(_layer3, _keep_prob)
 
         # reshape to 1D tensor
-        _layer_flat = tf.reshape(_layer12, [-1, options.HIDDEN3])
+        _layer_flat = tf.reshape(_dropout, [-1, options.HIDDEN3])
 
         # add last layer
         with tf.name_scope('final_layer'):
@@ -310,7 +248,7 @@ if __name__ == '__main__':
         _pretrain_loss = tf.nn.l2_loss(tf.subtract(_pred_ind_values, _pretrain_y))
         _update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
         with tf.control_dependencies(_update_ops):
-            _train_step_pretrain = tf.train.AdamOptimizer(0.01).minimize(_pretrain_loss)
+            _train_step_pretrain = tf.train.AdamOptimizer(config.STARTING_LEARNING_RATE).minimize(_pretrain_loss)
 
         saver_pretrain = tf.train.Saver()
 
@@ -328,7 +266,7 @@ if __name__ == '__main__':
             _freeAGO_all = tf.get_variable('freeAGO_all', shape=[1,NUM_TRAIN*2,1],
                                             initializer=tf.constant_initializer(-6.0))
             # _slope = tf.get_variable('slope', shape=(), initializer=tf.constant_initializer(-0.54419851))
-            _decay = tf.get_variable('decay', shape=(), initializer=tf.constant_initializer(0.0), trainable=False)
+            _decay = tf.get_variable('decay', shape=(), initializer=tf.constant_initializer(0.0))
 
             # construct a mask based on the number of sites per gene
             _repression_mask = tf.reshape(tf.sequence_mask(_repression_split_sizes, dtype=tf.float32),
@@ -562,16 +500,6 @@ if __name__ == '__main__':
                 batch_combined_x = np.expand_dims(batch_combined_x, 3)
                 batch_biochem_y = biochem_train_batch[['log ka']].values
 
-                # A = np.eye(4)
-                # print(A)
-                # for i in range(batch_combined_x.shape[0]):
-                #     blah = (batch_combined_x[i, 7*4:8*4, 5*4:6*4, :].reshape([4, 4]) + 0.25) / 4
-                #     if np.sum(A * blah) != 1:
-                #         print(blah)
-                #         break
-
-                # break
-
                 # run train step
                 if current_epoch < config.SWITCH_EPOCH:
                     # make feed dict for training
@@ -641,8 +569,8 @@ if __name__ == '__main__':
                     train_losses.append(train_loss)
 
                     fig = plt.figure(figsize=(7,5))
-                    plt.plot(step_list, np.log(np.array(train_losses)))
-                    plt.savefig(os.path.join(options.LOGDIR, 'train_losses_log.png'))
+                    plt.plot(step_list, train_losses)
+                    plt.savefig(os.path.join(options.LOGDIR, 'train_losses.png'))
                     plt.close()
 
                     feed_dict = {
@@ -663,6 +591,15 @@ if __name__ == '__main__':
                     plt.close()
 
                     train_repression_preds = sess.run(_pred_logfc_fit, feed_dict=feed_dict)
+
+                    fig = plt.figure(figsize=(7,7))
+                    for i in range(config.BATCH_SIZE_REPRESSION):
+                        blah = pd.DataFrame({'pred': train_repression_preds[i,:], 'actual': batch_repression_y[i,:]})
+                        blah = blah.sort_values('pred')
+                        plt.plot(blah['pred'], blah['actual'])
+
+                    plt.savefig(os.path.join(options.LOGDIR, 'train_repression_fits.png'))
+                    plt.close()
 
                     fig = plt.figure(figsize=(7,7))
                     plt.scatter(train_repression_preds, batch_repression_y - intercept)

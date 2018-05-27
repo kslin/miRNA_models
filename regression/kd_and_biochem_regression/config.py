@@ -1,4 +1,28 @@
+import numpy as np
+
 import helpers
+
+# Set global parameters
+MIRLEN = 12
+SEQLEN = 12
+BATCH_SIZE_BIOCHEM = 100
+BATCH_SIZE_REPRESSION = 50
+KEEP_PROB_TRAIN = 0.5
+STARTING_LEARNING_RATE = 0.001
+LAMBDA = 0.001
+NUM_EPOCHS = 50
+REPORT_INT = 50
+REPRESSION_WEIGHT = 10.0
+ZERO_OFFSET = 0
+NORM_RATIO = 10.0
+SWITCH_EPOCH = -1
+
+# HIDDEN1 = 4
+# HIDDEN2 = 8
+# HIDDEN3 = 16
+
+MIR_NTS = np.array(['A','T','C','G'])
+SEQ_NTS = np.array(['T','A','G','C'])
 
 MIRSEQ_DICT = {
                   'mir137': 'TTATTGCTTAAGAATACGCGTAG',
@@ -39,7 +63,11 @@ MIRSEQ_DICT = {
                   'mir7-25nt': 'TGGAAGACTAGTGATTTTGTTGTTT'
             }
 
-SITE_DICT = {x: helpers.rev_comp(y[1:7]) for (x,y) in MIRSEQ_DICT.items()}
+SITE_DICT = {x: helpers.rev_comp(y[1:8]) for (x,y) in MIRSEQ_DICT.items()}
+
+# make dictionary of reverse miRNA sequences trimmed to MIRLEN
+MIRSEQ_DICT_MIRLEN = {x: y[:MIRLEN][::-1] for (x,y) in MIRSEQ_DICT.items()}
+ONE_HOT_DICT = {x: helpers.one_hot_encode_nt_new(y, MIR_NTS) for (x,y) in MIRSEQ_DICT_MIRLEN.items()}
 
 FREEAGO_SITE_DICT = {
                         'mir223': -3.16,
