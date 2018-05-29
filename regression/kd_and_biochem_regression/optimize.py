@@ -81,13 +81,11 @@ if __name__ == '__main__':
         train_mirs = MIRS
         test_mirs = ['mir139']
         TEST_MIRNA = 'mir139'
-        # train_mirs = [m for m in MIRS if m != TEST_MIRNA]
     else:
         assert options.TEST_MIRNA in MIRS
         TEST_MIRNA = options.TEST_MIRNA
         train_mirs = [m for m in MIRS if m != TEST_MIRNA]
         test_mirs = [TEST_MIRNA]
-        
 
     print('Train miRNAs: {}'.format(train_mirs))
     print('Test miRNAs: {}'.format(test_mirs))

@@ -5,21 +5,21 @@ import helpers
 # Set global parameters
 MIRLEN = 12
 SEQLEN = 12
-BATCH_SIZE_BIOCHEM = 100
-BATCH_SIZE_REPRESSION = 50
+BATCH_SIZE_BIOCHEM = 50
+BATCH_SIZE_REPRESSION = 25
 KEEP_PROB_TRAIN = 0.5
-STARTING_LEARNING_RATE = 0.001
+STARTING_LEARNING_RATE = 0.0025
 LAMBDA = 0.001
-NUM_EPOCHS = 50
+NUM_EPOCHS = 100
 REPORT_INT = 50
 REPRESSION_WEIGHT = 20.0
-ZERO_OFFSET = 0
+# ZERO_OFFSET = 0
 NORM_RATIO = 10.0
-SWITCH_EPOCH = -1
-
-# HIDDEN1 = 4
-# HIDDEN2 = 8
-# HIDDEN3 = 16
+SWITCH_EPOCH = 25
+UTR_COEF_INIT = -8.6379089
+# DECAY_INIT = -0.6194858
+DECAY_INIT = 0
+LET7_INIT = -7.48320436
 
 MIR_NTS = np.array(['A','T','C','G'])
 SEQ_NTS = np.array(['T','A','G','C'])
@@ -72,58 +72,3 @@ SITE_DICT = {x: helpers.rev_comp(y[1:8]) for (x,y) in MIRSEQ_DICT.items()}
 # make dictionary of reverse miRNA sequences trimmed to MIRLEN
 MIRSEQ_DICT_MIRLEN = {x: y[:MIRLEN][::-1] for (x,y) in MIRSEQ_DICT.items()}
 ONE_HOT_DICT = {x: helpers.one_hot_encode(y, MIR_NT_DICT, TARGETS) for (x,y) in MIRSEQ_DICT_MIRLEN.items()}
-
-FREEAGO_SITE_DICT = {
-                        'mir223': -3.16,
-                        'mir153': -3.33,
-                        'mir216b': -2.9,
-                        'mir205': -3.14,
-                        'mir139': -4.34,
-                        'mir199a': -3.46,
-                        'mir155': -4.19,
-                        'mir1': -4.13,
-                        'mir182': -4.09,
-                        'mir204': -3.28,
-                        'mir144': -5.5,
-                        'mir137': -3.27,
-                        'lsy6': -4.8,
-                        'mir124': -4.7,
-                        'mir143': -3.57,
-                        'mir7': -4.76
-                  }
-
-FREEAGO_PASS_DICT = {
-                        'mir223':  -7.03,
-                        'mir153': -5.87,
-                        'mir216b': -6.48,
-                        'mir205': -7.46,
-                        'mir139': -5.08,
-                        'mir199a': -7.1,
-                        'mir155': -7.74,
-                        'mir1': -3.82,
-                        'mir182': -4.66,
-                        'mir204': -4.41,
-                        'mir144': -5.8,
-                        'mir137': -9.03,
-                        'lsy6': -7.66,
-                        'mir124': -10.7,
-                        'mir143': -6.32,
-                        'mir7': -9.47
-                  }
-
-# mir223: -3.16, -7.03
-# mir153: -3.33, -5.87
-# mir216b: -2.9, -6.48
-# mir205: -3.14, -7.46
-# mir139: -4.34, -5.08
-# mir199a: -3.46, -7.1
-# mir155: -4.19, -7.74
-# mir1: -4.13, -3.82
-# mir182: -4.09, -4.66
-# mir204: -3.28, -4.41
-# mir144: -5.5, -5.8
-# mir137: -3.27, -9.03
-# lsy6: -4.8, -7.66
-# mir124: -4.7, -10.7
-# mir143: -3.57, -6.32
-# mir7: -4.76, -9.47

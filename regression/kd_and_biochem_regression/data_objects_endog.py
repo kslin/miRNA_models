@@ -79,7 +79,32 @@ class RepressionData(Data):
             self.num_sites_dict_pass[row[0]] = num_sites_gene_pass  
             self.seq_dict[row[0]] = gene_dict
 
-    def get_next_batch2(self, batch_size, mirs):
+    def get_next_batch_no_shuffle(self, batch_size, mirs):
+        new_epoch = False
+        if (self.length - self.current_ix) < batch_size:
+            next_batch = self.data.iloc[self.current_ix:]
+            self.current_ix = None
+            self.num_epochs += 1
+            new_epoch = True
+
+        else:
+            next_batch = self.data.iloc[self.current_ix: self.current_ix + batch_size]
+            self.current_ix += batch_size
+
+        genes = list(next_batch.index)
+        all_seqs, num_sites = [], []
+        for gene in genes:
+            for mir in mirs:
+                seqs_guide, seqs_pass = self.seq_dict[gene][mir], self.seq_dict[gene][mir + '*']
+                all_seqs.append((seqs_guide, seqs_pass))
+                num_sites += [len(seqs_guide), len(seqs_pass)]
+        
+        max_sites = np.max(num_sites)
+        batch_y = next_batch[mirs].values
+
+        return genes, new_epoch, all_seqs, np.array(num_sites), max_sites, batch_y
+
+    def get_next_batch(self, batch_size, mirs):
         new_epoch = False
         if (self.length - self.current_ix) < batch_size:
             self.shuffle()
