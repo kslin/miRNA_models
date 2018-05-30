@@ -49,7 +49,7 @@ def rev_comp(seq):
                   'C': 'G',
                   'G': 'C'}
 
-    return ''.join([match_dict[x] for x in seq])[::-1]
+    return ''.join([match_dict[x] for x in seq][::-1])
 
 def complementary(seq):
     match_dict = {'A': 'T',
@@ -145,13 +145,14 @@ def get_seqs(utr, site, seqlen=12):
     utr_len = len(utr)
     utr_ext = utr + 'TTT'
 
-    locs1 = remove_overlaps([m.start() - 1 for m in re.finditer(site[3:], utr)])
-    locs2 = remove_overlaps([(m.start()) for m in re.finditer(site[2:-1], utr)])
-    locs3 = remove_overlaps([(m.start() + 1) for m in re.finditer(site[1:-2], utr)])
-    locs4 = remove_overlaps([(m.start() + 2) for m in re.finditer(site[:-3], utr)])
+    locs0 = remove_overlaps([m.start() - 2 for m in re.finditer(site[4:], utr)])
+    locs1 = remove_overlaps([m.start() - 1 for m in re.finditer(site[3:-1], utr)])
+    locs2 = remove_overlaps([(m.start()) for m in re.finditer(site[2:-2], utr)])
+    locs3 = remove_overlaps([(m.start() + 1) for m in re.finditer(site[1:-3], utr)])
+    locs4 = remove_overlaps([(m.start() + 2) for m in re.finditer(site[:-4], utr)])
     # locs = sorted(list(set(locs1 + locs2 + locs3 + locs4)))
 
-    locs = np.array(locs1 + locs2 + locs3 + locs4)
+    locs = np.array(locs0 + locs1 + locs2 + locs3 + locs4)
 
     if len(locs) == 0:
         return []

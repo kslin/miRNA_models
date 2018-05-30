@@ -1,6 +1,6 @@
-import json
 from optparse import OptionParser
 import os
+import pickle
 import sys
 import time
 
@@ -50,7 +50,7 @@ if __name__ == '__main__':
     parser.add_option("-t", "--tpmfile", dest="TPM_FILE", help="tpm data")
     parser.add_option("-m", "--mir", dest="MIR", help="tpm data")
     parser.add_option("-l", "--logdir", dest="LOGDIR", help="directory for writing logs")
-    parser.add_option("-o", "--outfile", dest="OUTFILE", help="output file")
+    parser.add_option("-o", "--outdir", dest="OUTDIR", help="output file")
 
     (options, args) = parser.parse_args()
 
@@ -60,32 +60,24 @@ if __name__ == '__main__':
     if not os.path.isdir(options.LOGDIR):
         os.makedirs(options.LOGDIR)
 
-    ### READ PREFIT DATA ###
-    prefit = pd.read_csv(options.PREFIT, sep='\t', index_col=0)
-
-    ### READ let-7 sites ###
-    let7_sites = pd.read_csv(options.LET7_SITES, sep='\t', index_col=0)
-    let7_mask = pd.read_csv(options.LET7_MASK, sep='\t', index_col=0)
-    let7_num_kds = len(let7_sites.columns)
-
     ### READ EXPRESSION DATA ###
     tpm = pd.read_csv(options.TPM_FILE, sep='\t', index_col=0)
+
+    MIRS = [x for x in tpm.columns if ('mir' in x) or ('lsy' in x)]
+    train_mirs = [m for m in MIRS if m != options.MIR]
+    NUM_TRAIN = len(train_mirs)
 
     assert(options.MIR in tpm.columns)
 
     all_utrs = tpm['sequence'].values
     batch_size = 50
-    current_ix = 0
-    last_batch = False
-    output_dict = {options.MIR: {'KDs': [], 'num_seqs': []}, options.MIR+'*': {'KDs': [], 'num_seqs': []}}
-    starting_ix_guide = 0
-    starting_ix_pass = 0
+    output_dict = {}
 
     with tf.Session() as sess:
 
         sess.run(tf.global_variables_initializer())
-        latest = tf.train.latest_checkpoint('{}/{}/saved'.format(LOGDIR, mir))
-
+        latest = tf.train.latest_checkpoint('{}/{}/saved'.format(options.LOGDIR, options.MIR))
+        # print(latest)
         saver = tf.train.import_meta_graph(latest + '.meta')
         saver.restore(sess, latest)
 
@@ -93,39 +85,70 @@ if __name__ == '__main__':
         _phase_train = tf.get_default_graph().get_tensor_by_name('phase_train:0')
         _combined_x = tf.get_default_graph().get_tensor_by_name('biochem_x:0')
         _prediction = tf.get_default_graph().get_tensor_by_name('final_layer/add:0')
+        _freeAGO_all_trainable = tf.get_default_graph().get_tensor_by_name('freeAGO_all_trainable:0')
+        _decay_trainable = tf.get_default_graph().get_tensor_by_name('decay_trainable:0')
+        _utr_coef_trainable = tf.get_default_graph().get_tensor_by_name('utr_coef_trainable:0')
+        _freeAGO_let7_trainable = tf.get_default_graph().get_tensor_by_name('freeAGO_let7_trainable:0')
 
-        while True:
-            if (current_ix + batch_size) >= len(all_utrs):
-                last_batch = True
-                current_utrs = utrs[current_ix:]
-            else:
-                current_utrs = utrs[current_ix: current_ix + batch_size]
-                current_ix += batch_size
+        current_freeAGO = sess.run(_freeAGO_all_trainable)
+        current_freeAGO_let7 = sess.run(_freeAGO_let7_trainable)
+        current_decay = sess.run(_decay_trainable)
+        current_utr_coef = sess.run(_utr_coef_trainable)
 
-            combined_x_guide, utr_num_seqs_guide = get_features(options.MIR, utrs, config.MIRLEN, config.SEQLEN)
-            combined_x_pass, utr_num_seqs_pass = get_features(options.MIR + '*', utrs, config.MIRLEN, config.SEQLEN)
+        current_freeAGO = current_freeAGO.reshape([NUM_TRAIN, 2])
+        freeAGO_df = pd.DataFrame({'mir': train_mirs,
+                                   'guide': current_freeAGO[:, 0],
+                                   'passenger': current_freeAGO[:, 1]})
 
-            feed_dict = {
-                            _keep_prob: 1.0,
-                            _phase_train: False,
-                            _combined_x: combined_x_guide
-                        }
+        freeAGO_df.to_csv(os.path.join(options.OUTDIR, 'freeAGO_final_{}.txt'.format(options.MIR)), sep='\t', index=False)
+        with open(os.path.join(options.OUTDIR, 'fitted_params_{}.txt'.format(options.MIR)), 'w') as outfile:
+            outfile.write('freeAGO_let7\t{}\n'.format(current_freeAGO_let7.flatten()[0]))
+            outfile.write('decay\t{}\n'.format(current_decay))
+            outfile.write('utr_coef\t{}\n'.format(current_utr_coef))
 
-            pred_guide = sess.run(_prediction, feed_dict=feed_dict) * config.NORM_RATIO
-            output_dict[options.MIR]['KDs'] += list(pred_guide.flatten())
-            output_dict[options.MIR]['num_seqs'] += utr_num_seqs_guide
+        # print(current_utr_coef)
+        for mir in MIRS:
+            current_ix = 0
+            last_batch = False
+            output_dict[mir] = {'KDs': [], 'num_seqs': []}
+            output_dict[mir+'*'] = {'KDs': [], 'num_seqs': []}
 
-            feed_dict = {
-                            _keep_prob: 1.0,
-                            _phase_train: False,
-                            _combined_x: combined_x_pass
-                        }
+            while True:
+                if (current_ix + batch_size) >= len(all_utrs):
+                    last_batch = True
+                    current_utrs = all_utrs[current_ix:]
+                else:
+                    current_utrs = all_utrs[current_ix: current_ix + batch_size]
+                    current_ix += batch_size
 
-            pred_pass = sess.run(_prediction, feed_dict=feed_dict) * config.NORM_RATIO
-            output_dict[options.MIR+'*']['KDs'] += list(pred_pass.flatten())
-            output_dict[options.MIR+'*']['num_seqs'] += utr_num_seqs_pass
+                combined_x_guide, utr_num_seqs_guide = get_features(mir, current_utrs, config.MIRLEN, config.SEQLEN)
+                combined_x_pass, utr_num_seqs_pass = get_features(mir + '*', current_utrs, config.MIRLEN, config.SEQLEN)
 
-    with open(options.OUTFILE, 'w') as outfile:
-        json.dump(output_dict, outfile)
+                feed_dict = {
+                                _keep_prob: 1.0,
+                                _phase_train: False,
+                                _combined_x: combined_x_guide
+                            }
+
+                pred_guide = sess.run(_prediction, feed_dict=feed_dict) * config.NORM_RATIO
+                output_dict[mir]['KDs'] += list(pred_guide.flatten())
+                output_dict[mir]['num_seqs'] += utr_num_seqs_guide
+
+                feed_dict = {
+                                _keep_prob: 1.0,
+                                _phase_train: False,
+                                _combined_x: combined_x_pass
+                            }
+
+                pred_pass = sess.run(_prediction, feed_dict=feed_dict) * config.NORM_RATIO
+                output_dict[mir+'*']['KDs'] += list(pred_pass.flatten())
+                output_dict[mir+'*']['num_seqs'] += utr_num_seqs_pass
+
+                if last_batch:
+                    break
+
+    with open(os.path.join(options.OUTDIR, '{}.pickle'.format(options.MIR)), 'wb') as outfile:
+        pickle.dump(output_dict, outfile)
+
 
 

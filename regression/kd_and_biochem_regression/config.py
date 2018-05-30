@@ -3,22 +3,22 @@ import numpy as np
 import helpers
 
 # Set global parameters
-MIRLEN = 12
+MIRLEN = 10
 SEQLEN = 12
-BATCH_SIZE_BIOCHEM = 50
+BATCH_SIZE_BIOCHEM = 10
 BATCH_SIZE_REPRESSION = 25
 KEEP_PROB_TRAIN = 0.5
-STARTING_LEARNING_RATE = 0.0025
+STARTING_LEARNING_RATE = 0.001
 LAMBDA = 0.001
-NUM_EPOCHS = 100
+NUM_EPOCHS = 50
 REPORT_INT = 50
-REPRESSION_WEIGHT = 20.0
+REPRESSION_WEIGHT = 50.0
 # ZERO_OFFSET = 0
 NORM_RATIO = 10.0
 SWITCH_EPOCH = 25
 UTR_COEF_INIT = -8.6379089
 # DECAY_INIT = -0.6194858
-DECAY_INIT = 0
+DECAY_INIT = 0.0
 LET7_INIT = -7.48320436
 
 MIR_NTS = np.array(['A','T','C','G'])
@@ -67,7 +67,8 @@ MIRSEQ_DICT = {
                   'mir7-25nt': 'TGGAAGACTAGTGATTTTGTTGTTT'
             }
 
-SITE_DICT = {x: helpers.rev_comp(y[1:8]) for (x,y) in MIRSEQ_DICT.items()}
+SITE_DICT = {x: helpers.rev_comp(y[1:8]) + 'A' for (x,y) in MIRSEQ_DICT.items()}
+print(SITE_DICT['let7'])
 
 # make dictionary of reverse miRNA sequences trimmed to MIRLEN
 MIRSEQ_DICT_MIRLEN = {x: y[:MIRLEN][::-1] for (x,y) in MIRSEQ_DICT.items()}

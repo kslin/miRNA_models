@@ -29,7 +29,7 @@ endog_pretrain:
 
 
 endog_use_pretrain:
-	python main_endog.py -k $(final_data_dir)/kds.txt -t $(final_data_dir)/merged.txt --let7_sites $(final_data_dir)/let7_sites.txt --let7_mask $(final_data_dir)/let7_mask.txt -p $(final_data_dir)/prefit.txt --hidden1 4 --hidden2 16 --hidden3 32 -m mir1 -l /lab/bartel4_ata/kathyl/NeuralNet/logdirs/tpms_and_kds/endog_mir1_pretrain_passrange1 --pretrain /lab/bartel4_ata/kathyl/NeuralNet/logdirs/tpms_and_kds/endog_pretrain_just_weights/pretrain_saved
+	python main_endog.py -k $(final_data_dir)/kds.txt -t $(final_data_dir)/merged.txt --let7_sites $(final_data_dir)/let7_sites.txt --let7_mask $(final_data_dir)/let7_mask.txt -p $(final_data_dir)/prefit.txt --hidden1 4 --hidden2 16 --hidden3 16 -m mir7 -l /lab/bartel4_ata/kathyl/NeuralNet/logdirs/tpms_and_kds/endog_mir7_pretrain_passrange --pretrain /lab/bartel4_ata/kathyl/NeuralNet/logdirs/tpms_and_kds/endog_pretrain_just_weights/pretrain_saved
 
 endog_no_pretrain:
 	python main_endog.py -k $(final_data_dir)/kds.txt -t $(final_data_dir)/merged.txt --let7_sites $(final_data_dir)/let7_sites.txt --let7_mask $(final_data_dir)/let7_mask.txt -p $(final_data_dir)/prefit.txt --hidden1 4 --hidden2 16 --hidden3 16 -m mir1 -l /lab/bartel4_ata/kathyl/NeuralNet/logdirs/tpms_and_kds/endog_mir1_none --pretrain none
@@ -43,11 +43,18 @@ optimize:
 #/lab/bartel4_ata/kathyl/NeuralNet/logdirs/tpms_and_kds/endog_pretrain/pretrain_saved
 
 endog_cross_val:
-	mkdir /lab/bartel4_ata/kathyl/NeuralNet/logdirs/tpms_and_kds/endog_xval_trainable
-	cp config.py /lab/bartel4_ata/kathyl/NeuralNet/logdirs/tpms_and_kds/endog_xval_trainable/config.txt
+	mkdir /lab/bartel4_ata/kathyl/NeuralNet/logdirs/tpms_and_kds/endog_xval_trainable2
+	cp config.py /lab/bartel4_ata/kathyl/NeuralNet/logdirs/tpms_and_kds/endog_xval_trainable2/config.txt
 	for mirname in none mir1 mir124 mir155 mir7 lsy6 mir153 mir139 mir204 mir216b mir223 mir137 mir199a mir205 mir182 mir143 mir144 ; do \
-		bsub -o /lab/bartel4_ata/kathyl/NeuralNet/logdirs/tpms_and_kds/endog_xval_trainable/$${mirname}/output.txt python main_endog.py -k $(final_data_dir)/kds.txt -t $(final_data_dir)/merged.txt --let7_sites $(final_data_dir)/let7_sites.txt --let7_mask $(final_data_dir)/let7_mask.txt -p $(final_data_dir)/prefit.txt --hidden1 4 --hidden2 16 --hidden3 32 -m $${mirname} -l /lab/bartel4_ata/kathyl/NeuralNet/logdirs/tpms_and_kds/endog_xval_trainable/$${mirname} --pretrain /lab/bartel4_ata/kathyl/NeuralNet/logdirs/tpms_and_kds/endog_pretrain_just_weights/pretrain_saved; \
+		bsub -o /lab/bartel4_ata/kathyl/NeuralNet/logdirs/tpms_and_kds/endog_xval_trainable2/output_$${mirname}.txt python main_endog.py -k $(final_data_dir)/kds.txt -t $(final_data_dir)/merged.txt --let7_sites $(final_data_dir)/let7_sites.txt --let7_mask $(final_data_dir)/let7_mask.txt -p $(final_data_dir)/prefit.txt --hidden1 4 --hidden2 16 --hidden3 16 -m $${mirname} -l /lab/bartel4_ata/kathyl/NeuralNet/logdirs/tpms_and_kds/endog_xval_trainable2/$${mirname} --pretrain /lab/bartel4_ata/kathyl/NeuralNet/logdirs/tpms_and_kds/endog_pretrain_just_weights/pretrain_saved; \
 	done
+
+predictions:
+	# mkdir $(final_data_dir)/predictions_endog_pretrain_xval_trainable1/
+	for mirname in mir1 mir124 mir155 mir7 lsy6 mir153 mir139 mir204 mir216b mir223 mir137 mir199a mir205 mir182 mir143 mir144 ; do \
+		python predict.py -t $(final_data_dir)/merged.txt -m $${mirname} -l /lab/bartel4_ata/kathyl/NeuralNet/logdirs/tpms_and_kds/endog_xval_trainable -o $(final_data_dir)/predictions_endog_pretrain_xval_trainable1; \
+	done
+
 
 
 lab_meeting_version_cross_val:
