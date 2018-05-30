@@ -26,6 +26,7 @@ def get_features(mir, utrs, mirlen, seqlen):
     utr_num_seqs = []
     for utr in utrs:
         seqs = helpers.get_seqs(utr, site)
+        print(seqs)
         all_seqs.append(seqs)
         utr_num_seqs.append(len(seqs))
 
@@ -48,7 +49,7 @@ if __name__ == '__main__':
 
     parser = OptionParser()
     parser.add_option("-t", "--tpmfile", dest="TPM_FILE", help="tpm data")
-    parser.add_option("-m", "--mir", dest="MIR", help="tpm data")
+    parser.add_option("-m", "--mir", dest="MIR", help="left_out_mir")
     parser.add_option("-l", "--logdir", dest="LOGDIR", help="directory for writing logs")
     parser.add_option("-o", "--outdir", dest="OUTDIR", help="output file")
 
@@ -64,10 +65,6 @@ if __name__ == '__main__':
     tpm = pd.read_csv(options.TPM_FILE, sep='\t', index_col=0)
 
     MIRS = [x for x in tpm.columns if ('mir' in x) or ('lsy' in x)]
-    train_mirs = [m for m in MIRS if m != options.MIR]
-    NUM_TRAIN = len(train_mirs)
-
-    assert(options.MIR in tpm.columns)
 
     all_utrs = tpm['sequence'].values
     batch_size = 50
@@ -84,27 +81,27 @@ if __name__ == '__main__':
         _keep_prob = tf.get_default_graph().get_tensor_by_name('keep_prob:0')
         _phase_train = tf.get_default_graph().get_tensor_by_name('phase_train:0')
         _combined_x = tf.get_default_graph().get_tensor_by_name('biochem_x:0')
-        _prediction = tf.get_default_graph().get_tensor_by_name('final_layer/add:0')
-        _freeAGO_all_trainable = tf.get_default_graph().get_tensor_by_name('freeAGO_all_trainable:0')
-        _decay_trainable = tf.get_default_graph().get_tensor_by_name('decay_trainable:0')
-        _utr_coef_trainable = tf.get_default_graph().get_tensor_by_name('utr_coef_trainable:0')
-        _freeAGO_let7_trainable = tf.get_default_graph().get_tensor_by_name('freeAGO_let7_trainable:0')
+        _prediction = tf.get_default_graph().get_tensor_by_name('final_layer/pred_kd:0')
+        # _freeAGO_all_trainable = tf.get_default_graph().get_tensor_by_name('freeAGO_all_trainable:0')
+        # _decay_trainable = tf.get_default_graph().get_tensor_by_name('decay_trainable:0')
+        # _utr_coef_trainable = tf.get_default_graph().get_tensor_by_name('utr_coef_trainable:0')
+        # _freeAGO_let7_trainable = tf.get_default_graph().get_tensor_by_name('freeAGO_let7_trainable:0')
 
-        current_freeAGO = sess.run(_freeAGO_all_trainable)
-        current_freeAGO_let7 = sess.run(_freeAGO_let7_trainable)
-        current_decay = sess.run(_decay_trainable)
-        current_utr_coef = sess.run(_utr_coef_trainable)
+        # current_freeAGO = sess.run(_freeAGO_all_trainable)
+        # current_freeAGO_let7 = sess.run(_freeAGO_let7_trainable)
+        # current_decay = sess.run(_decay_trainable)
+        # current_utr_coef = sess.run(_utr_coef_trainable)
 
-        current_freeAGO = current_freeAGO.reshape([NUM_TRAIN, 2])
-        freeAGO_df = pd.DataFrame({'mir': train_mirs,
-                                   'guide': current_freeAGO[:, 0],
-                                   'passenger': current_freeAGO[:, 1]})
+        # current_freeAGO = current_freeAGO.reshape([NUM_TRAIN, 2])
+        # freeAGO_df = pd.DataFrame({'mir': train_mirs,
+        #                            'guide': current_freeAGO[:, 0],
+        #                            'passenger': current_freeAGO[:, 1]})
 
-        freeAGO_df.to_csv(os.path.join(options.OUTDIR, 'freeAGO_final_{}.txt'.format(options.MIR)), sep='\t', index=False)
-        with open(os.path.join(options.OUTDIR, 'fitted_params_{}.txt'.format(options.MIR)), 'w') as outfile:
-            outfile.write('freeAGO_let7\t{}\n'.format(current_freeAGO_let7.flatten()[0]))
-            outfile.write('decay\t{}\n'.format(current_decay))
-            outfile.write('utr_coef\t{}\n'.format(current_utr_coef))
+        # freeAGO_df.to_csv(os.path.join(options.OUTDIR, 'freeAGO_final_{}.txt'.format(options.MIR)), sep='\t', index=False)
+        # with open(os.path.join(options.OUTDIR, 'fitted_params_{}.txt'.format(options.MIR)), 'w') as outfile:
+        #     outfile.write('freeAGO_let7\t{}\n'.format(current_freeAGO_let7.flatten()[0]))
+        #     outfile.write('decay\t{}\n'.format(current_decay))
+        #     outfile.write('utr_coef\t{}\n'.format(current_utr_coef))
 
         # print(current_utr_coef)
         for mir in MIRS:
@@ -130,7 +127,7 @@ if __name__ == '__main__':
                                 _combined_x: combined_x_guide
                             }
 
-                pred_guide = sess.run(_prediction, feed_dict=feed_dict) * config.NORM_RATIO
+                pred_guide = sess.run(_prediction, feed_dict=feed_dict)
                 output_dict[mir]['KDs'] += list(pred_guide.flatten())
                 output_dict[mir]['num_seqs'] += utr_num_seqs_guide
 
@@ -140,7 +137,7 @@ if __name__ == '__main__':
                                 _combined_x: combined_x_pass
                             }
 
-                pred_pass = sess.run(_prediction, feed_dict=feed_dict) * config.NORM_RATIO
+                pred_pass = sess.run(_prediction, feed_dict=feed_dict)
                 output_dict[mir+'*']['KDs'] += list(pred_pass.flatten())
                 output_dict[mir+'*']['num_seqs'] += utr_num_seqs_pass
 

@@ -47,13 +47,17 @@ if __name__ == '__main__':
 
     ### READ let-7 sites ###
     let7_sites = pd.read_csv(options.LET7_SITES, sep='\t', index_col=0)
+    # convert KDs to KAs
+    let7_sites *= -1
     let7_mask = pd.read_csv(options.LET7_MASK, sep='\t', index_col=0)
     let7_num_kds = len(let7_sites.columns)
 
     ### READ EXPRESSION DATA ###
     tpm = pd.read_csv(options.TPM_FILE, sep='\t', index_col=0)
-
     MIRS = [x for x in tpm.columns if ('mir' in x) or ('lsy' in x)]
+    # tpm = tpm.dropna(subset=['nosite2'])
+    # for tm in MIRS:
+    #     tpm[tm] -= tpm['nosite2']
 
     # split miRNAs into training and testing
     if options.TEST_MIRNA == 'none':
@@ -83,18 +87,28 @@ if __name__ == '__main__':
     data = pd.read_csv(options.KD_FILE, sep='\t')
     data.columns = ['seq','log_kd','mir','mirseq_full','stype']
 
+    color_dict = {
+        '8mer': 'red',
+        '7mer-m8': 'orange',
+        '7mer-a1': 'yellow',
+        '6mer': 'green',
+        '6mer-m8': 'blue',
+        '6mer-a1': 'purple',
+        'no site': 'grey'
+    }
+
     # zero-center and normalize Ka's
     data['keep_prob'] = (1 / (1 + np.exp(data['log_kd'] + 3)))
     data['log ka'] = (-1.0 * data['log_kd'])
     data['mirseq'] = [config.MIRSEQ_DICT_MIRLEN[mir] for mir in data['mir']]
     data['sitem8'] = [helpers.rev_comp(mirseq[1:8]) for mirseq in data['mirseq_full']]
-    data['color'] = [helpers.get_color(sitem8, seq) for (sitem8, seq) in zip(data['sitem8'], data['seq'])]
-    data['color2'] = [helpers.get_color(sitem8, seq[2:10]) for (sitem8, seq) in zip(data['sitem8'], data['seq'])]
+    data['color'] = [color_dict[stype] for stype in data['stype']]
+    # data['color2'] = [helpers.get_color(sitem8, seq[2:10]) for (sitem8, seq) in zip(data['sitem8'], data['seq'])]
 
     # get rid of sequences with sites out of register
     print('Length of KD data: {}'.format(len(data)))
-    data = data[data['color'] == data['color2']].drop('color2',1)
-    print('Length of KD data, in register: {}'.format(len(data)))
+    # data = data[data['color'] == data['color2']].drop('color2',1)
+    # print('Length of KD data, in register: {}'.format(len(data)))
 
     if TEST_MIRNA in data['mir'].values:
         print('Testing on {}'.format(TEST_MIRNA))
@@ -118,9 +132,10 @@ if __name__ == '__main__':
     
     test_kds_combined_x = np.expand_dims((test_kds_combined_x*4) - 0.25, 3)   
     test_kds_labels = data_test['log ka'].values
+    test_kds_colors = data_test['color'].values
     
     data = data[~data['mir'].isin(test_mirs)]
-    data = data[data['log ka'] > 0]
+    # data = data[data['log ka'] > 0]
     print(len(data))
 
     test_mir2 = data['mir'].unique()[0]
@@ -138,6 +153,7 @@ if __name__ == '__main__':
     
     test_kds_combined_x2 = np.expand_dims((test_kds_combined_x2*4) - 0.25, 3)   
     test_kds_labels2 = data_test2['log ka'].values
+    test_kds_colors2 = data_test2['color'].values
 
 
     # create data object
@@ -147,7 +163,11 @@ if __name__ == '__main__':
     # make data objects for repression training data
     repression_train_data = data_objects_endog.RepressionData(train_tpm)
     repression_train_data.shuffle()
-    repression_train_data.get_seqs(train_mirs)    
+    repression_train_data.get_seqs(train_mirs)
+
+    repression_test_data = data_objects_endog.RepressionData(test_tpm)
+    repression_test_data.shuffle()
+    repression_test_data.get_seqs(test_mirs)    
 
     ### DEFINE MODEL ###
 
@@ -257,9 +277,9 @@ if __name__ == '__main__':
         # _freeAGO_tile = tf.constant([1, NUM_TRAIN, 1])
         # _freeAGO_all = tf.tile(_freeAGO_init, _freeAGO_tile)
 
-        _freeAGO_guide = tf.tile(tf.get_variable('freeAGO_guide', shape=[1,1], initializer=tf.constant_initializer(-3.0)),
-                                 tf.constant([NUM_TRAIN, 1]))
-        _freeAGO_pass_offset = tf.get_variable('freeAGO_pass_offset', shape=[NUM_TRAIN,1], initializer=tf.constant_initializer(-1.0))
+        _freeAGO_init = tf.get_variable('freeAGO_guide', shape=[1,1], initializer=tf.constant_initializer(config.FREEAGO_INIT))
+        _freeAGO_guide = tf.tile(_freeAGO_init, tf.constant([NUM_TRAIN, 1]))
+        _freeAGO_pass_offset = tf.get_variable('freeAGO_pass_offset', shape=[NUM_TRAIN,1], initializer=tf.constant_initializer(config.PASS_OFFSET_INIT))
         _freeAGO_all = tf.reshape(tf.concat([_freeAGO_guide, _freeAGO_pass_offset + _freeAGO_guide], axis=1), [1,NUM_TRAIN*2,1])
 
         _decay = tf.get_variable('decay', shape=(), initializer=tf.constant_initializer(config.DECAY_INIT))
@@ -296,10 +316,11 @@ if __name__ == '__main__':
         _pred_nbound_split = tf.reduce_sum(tf.multiply(tf.nn.sigmoid(_freeAGO_all + _pred_repression), _repression_mask), axis=2)
         _pred_nbound = tf.reduce_sum(tf.reshape(_pred_nbound_split, [config.BATCH_SIZE_REPRESSION, NUM_TRAIN, 2]), axis=2)
         _pred_nbound_let7 = tf.reduce_sum(tf.multiply(tf.nn.sigmoid(_freeAGO_let7 + _let7_sites), _let7_mask), axis=2)
-        _pred_nbound_init = tf.exp(_utr_coef) * _utr_len
-        _pred_nbound_total = _pred_nbound + _pred_nbound_let7 + _pred_nbound_init
+        _pred_nbound_utr = tf.exp(_utr_coef) * _utr_len
+        _pred_nbound_init = _pred_nbound_let7 + _pred_nbound_utr
+        _pred_nbound_total = _pred_nbound + _pred_nbound_init
 
-        _pred_logfc = -1.0 * tf.log1p(_pred_nbound_total / tf.exp(_decay))
+        _pred_logfc = -1.0 * (tf.log1p(_pred_nbound_total / tf.exp(_decay)))# - tf.log1p(_pred_nbound_init / tf.exp(_decay)))
         _pred_logfc_normed = _pred_logfc - tf.reshape(tf.reduce_mean(_pred_logfc, axis=1), [-1,1])
 
         _repression_y_normed = _repression_y - tf.reshape(tf.reduce_mean(_repression_y, axis=1), [-1,1])
@@ -312,9 +333,9 @@ if __name__ == '__main__':
         if config.BATCH_SIZE_BIOCHEM == 0:
             _biochem_loss = tf.constant(0.0)
         else:
-            _biochem_loss = tf.nn.l2_loss(tf.subtract(_pred_biochem, _biochem_y))
+            _biochem_loss = (tf.nn.l2_loss(tf.subtract(_pred_biochem, _biochem_y))) / config.BATCH_SIZE_BIOCHEM
         
-        _repression_loss = _repression_weight * tf.nn.l2_loss(tf.subtract(_pred_logfc_normed, _repression_y_normed))
+        _repression_loss = (_repression_weight * tf.nn.l2_loss(tf.subtract(_pred_logfc_normed, _repression_y_normed))) / config.BATCH_SIZE_REPRESSION
         _loss = _biochem_loss + _repression_loss + _weight_regularize
 
         _update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
@@ -448,7 +469,7 @@ if __name__ == '__main__':
             pred_test_kds = sess.run(_pred_ind_values, feed_dict=feed_dict)
 
             fig = plt.figure(figsize=(7,7))
-            plt.scatter(pred_test_kds, test_kds_labels, s=20)
+            plt.scatter(pred_test_kds, test_kds_labels, s=20, c=test_kds_colors)
             plt.savefig(os.path.join(options.LOGDIR, 'test_kd_scatter.png'))
             plt.close()
 
@@ -496,6 +517,7 @@ if __name__ == '__main__':
         train_losses = []
         test_losses = []
         last_batch = False
+        prev_freeago = config.FREEAGO_INIT
 
         step = -1
         current_epoch = 0
@@ -596,6 +618,20 @@ if __name__ == '__main__':
 
                 print(np.mean(times), np.mean(times2))
 
+                feed_dict = {
+                    _keep_prob: 1.0,
+                    _phase_train: False,
+                    _repression_weight: config.REPRESSION_WEIGHT,
+                    _combined_x: batch_combined_x,
+                    _biochem_y: batch_biochem_y,
+                    _repression_max_size: max_sites,
+                    _repression_split_sizes: train_sizes,
+                    _repression_y: batch_repression_y,
+                    _utr_len: batch_prefit[['utr_length']].values,
+                    _let7_sites: let7_sites.loc[batch_genes].values.reshape([config.BATCH_SIZE_REPRESSION,1,let7_num_kds]),
+                    _let7_mask: let7_mask.loc[batch_genes].values.reshape([config.BATCH_SIZE_REPRESSION,1,let7_num_kds])
+                }
+
                 if next_epoch:
 
                     step_list.append(current_epoch)
@@ -637,6 +673,8 @@ if __name__ == '__main__':
                 else:
                     train_repression_preds, train_repression_ys = sess.run([_pred_logfc_normed, _repression_y_normed],
                                                                         feed_dict=feed_dict)
+                    # train_repression_preds, train_repression_ys = sess.run([_pred_logfc, _repression_y],
+                    #                                                     feed_dict=feed_dict)
                     
 
                 print(train_repression_preds.shape)
@@ -692,7 +730,7 @@ if __name__ == '__main__':
                 pred_test_kds = sess.run(_pred_ind_values, feed_dict=feed_dict)
 
                 fig = plt.figure(figsize=(7,7))
-                plt.scatter(pred_test_kds, test_kds_labels, s=20)
+                plt.scatter(pred_test_kds, test_kds_labels, s=20, c=test_kds_colors)
                 plt.savefig(os.path.join(options.LOGDIR, 'test_kd_scatter.png'))
                 plt.close()
 
@@ -705,7 +743,7 @@ if __name__ == '__main__':
                 pred_test_kds2 = sess.run(_pred_ind_values, feed_dict=feed_dict)
 
                 fig = plt.figure(figsize=(7,7))
-                plt.scatter(pred_test_kds2, test_kds_labels2, s=20)
+                plt.scatter(pred_test_kds2, test_kds_labels2, s=20, c=test_kds_colors2)
                 plt.savefig(os.path.join(options.LOGDIR, 'test_kd_scatter2.png'))
                 plt.close()
 
@@ -721,22 +759,23 @@ if __name__ == '__main__':
                     current_freeAGO_let7 = sess.run(_freeAGO_let7)
                     current_utr_coef = sess.run(_utr_coef)
 
+                    current_mean_freeAGO = sess.run(_freeAGO_init)
+                    if next_epoch and (current_mean_freeAGO.flatten()[0] > prev_freeago):
+                        print('SWITCHED')
+
+                        # assign current freeAgo concentrations to trainable version
+                        assign_op = _freeAGO_all_trainable.assign(current_freeAGO)
+                        sess.run(assign_op)
+                        SWITCH_TRAINABLES = True
+                    else:
+                        prev_freeago = current_mean_freeAGO.flatten()[0]
+
                 print(current_freeAGO.reshape([NUM_TRAIN, 2]))
                 print(current_freeAGO_let7)
                 print(current_decay)
                 print(current_utr_coef)
-
-                # switch to using trainable versions of variables
-                if current_epoch == config.SWITCH_EPOCH:
-                    print('SWITCHED')
-                    print(sess.run(_freeAGO_all_trainable).reshape([NUM_TRAIN, 2]))
-
-                    # assign current freeAgo concentrations to trainable version
-                    assign_op = _freeAGO_all_trainable.assign(current_freeAGO)
-                    sess.run(assign_op)
-                    SWITCH_TRAINABLES = True
-                    print(sess.run(_freeAGO_all_trainable).reshape([NUM_TRAIN, 2]))
-
+                    
+                # if last epoch, quit and write params to a file
                 if current_epoch == config.NUM_EPOCHS:
                     current_freeAGO = current_freeAGO.reshape([NUM_TRAIN, 2])
                     freeAGO_df = pd.DataFrame({'mir': train_mirs,
