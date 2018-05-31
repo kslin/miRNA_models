@@ -14,32 +14,32 @@ SEQ_NT_DICT = {nt:ix for (ix, nt) in enumerate(SEQ_NTS)}
 TARGETS = np.eye(4)
 
 
-def calc_rsq(predicted, actual):
-    SS_res = np.sum((predicted - actual)**2)
-    SS_tot = np.sum((actual - np.mean(actual))**2)
+# def calc_rsq(predicted, actual):
+#     SS_res = np.sum((predicted - actual)**2)
+#     SS_tot = np.sum((actual - np.mean(actual))**2)
 
-    return 1.0 - (SS_res/SS_tot)
+#     return 1.0 - (SS_res/SS_tot)
 
-def sigmoid(x):
-    return 1.0 / (1.0 + np.exp(-1*x))
+# def sigmoid(x):
+#     return 1.0 / (1.0 + np.exp(-1*x))
 
-### DATA LOADING FUNCTIONS ###
+# ### DATA LOADING FUNCTIONS ###
 
-def load_biochem(filename):
-    biochem_data = pd.read_csv(filename, sep='\t')
-    biochem_data.columns = ['mir','mirseq_full','seq','log kd','stype']
+# def load_biochem(filename):
+#     biochem_data = pd.read_csv(filename, sep='\t')
+#     biochem_data.columns = ['mir','mirseq_full','seq','log kd','stype']
 
-    # compute Ka's
-    biochem_data['log ka'] = (-1.0 * biochem_data['log kd'])
-    biochem_data['mirseq'] = [config.MIRSEQ_DICT_MIRLEN[mir] for mir in biochem_data['mir']]
-    biochem_data['sitem8'] = [helpers.rev_comp(mirseq[1:8]) for mirseq in biochem_data['mirseq_full']]
-    biochem_data['color'] = [helpers.get_color(sitem8, seq) for (sitem8, seq) in zip(biochem_data['sitem8'], biochem_data['seq'])]
-    biochem_data['color2'] = [helpers.get_color(sitem8, seq[2:10]) for (sitem8, seq) in zip(biochem_data['sitem8'], biochem_data['seq'])]
+#     # compute Ka's
+#     biochem_data['log ka'] = (-1.0 * biochem_data['log kd'])
+#     biochem_data['mirseq'] = [config.MIRSEQ_DICT_MIRLEN[mir] for mir in biochem_data['mir']]
+#     biochem_data['sitem8'] = [helpers.rev_comp(mirseq[1:8]) for mirseq in biochem_data['mirseq_full']]
+#     biochem_data['color'] = [helpers.get_color(sitem8, seq) for (sitem8, seq) in zip(biochem_data['sitem8'], biochem_data['seq'])]
+#     biochem_data['color2'] = [helpers.get_color(sitem8, seq[2:10]) for (sitem8, seq) in zip(biochem_data['sitem8'], biochem_data['seq'])]
 
-    # get rid of sequences with sites out of register
-    biochem_data = biochem_data[biochem_data['color'] == biochem_data['color2']].drop('color2',1)
+#     # get rid of sequences with sites out of register
+#     biochem_data = biochem_data[biochem_data['color'] == biochem_data['color2']].drop('color2',1)
 
-    return biochem_data
+#     return biochem_data
 
 ### SEQUENCE FUNCTIONS ###
 
@@ -60,17 +60,17 @@ def complementary(seq):
     return ''.join([match_dict[x] for x in seq])
 
 
-def get_color(sitem8, seq):
-    if (sitem8 + 'A') in seq:
-        return 'blue'
-    elif sitem8 in seq:
-        return 'green'
-    elif (sitem8[1:] + 'A') in seq:
-        return 'orange'
-    elif (sitem8[1:]) in seq:
-        return 'red'
-    else:
-        return 'grey'
+# def get_color(sitem8, seq):
+#     if (sitem8 + 'A') in seq:
+#         return 'blue'
+#     elif sitem8 in seq:
+#         return 'green'
+#     elif (sitem8[1:] + 'A') in seq:
+#         return 'orange'
+#     elif (sitem8[1:]) in seq:
+#         return 'red'
+#     else:
+#         return 'grey'
 
 
 def one_hot_encode(seq, nt_dict, targets):
@@ -179,6 +179,56 @@ def generate_random_seq(len):
 
 
 def make_pretrain_data(size, mirlen, seqlen=12):
+
+    mirseqs = [generate_random_seq(mirlen) for _ in range(size)]
+    stypes = np.random.choice(['8mer','7m8','7a1','6mer', '5mer','4mer'], size=size, replace=True)
+    stype_dict = {'8mer': 6, '7m8': 4.8, '7a1': 3.6, '6mer': 2.4, '5mer': 0.7, '4mer': -0.3}
+    nts = ['A','T','C','G']
+    sites, upflanks, downflanks = [], [], []
+    for stype, m in zip(stypes, mirseqs):
+        upflanks.append(generate_random_seq(2))
+        downflanks.append(generate_random_seq(2))
+        template = complementary(m[-8:-1]) + 'A'
+        if stype == '8mer':
+            sites.append(template)
+            continue
+        elif stype == '7m8':
+            rms = [[7]]
+        elif stype == '7a1':
+            rms = [[0]]
+        elif stype == '6mer':
+            rms = [[0,1], [0,7], [6,7]]
+        elif stype == '5mer':
+            rms = [[0,1,2], [0,1,7], [0,6,7], [5,6,7]]
+        else:
+            rms = [[0,1,2,3], [0,1,2,7], [0,1,6,7], [0,5,6,7], [4,5,6,7]]
+
+        template = list(template)
+        rm = rms[np.random.choice(np.arange(len(rms)))]
+        for mut in rm:
+            possibilities = [nt for nt in nts if nt != template[mut]]
+            template[mut] = np.random.choice(possibilities)
+        
+        sites.append(''.join(template))
+
+    flanks, seqs = [], []
+    for (x, y, z) in zip(upflanks, sites, downflanks):
+        flanks.append(x+z)
+        seqs.append(x+y+z)
+
+    flanking_AU = [((f.count('A') + f.count('T'))*1.6 / len(f)) - 0.8 for f in flanks]
+
+    batch_y = np.array([stype_dict[s] for s in stypes]) + np.array(flanking_AU) + ((np.random.random(size=size) - 0.5))
+
+    batch_x = np.zeros((size, 4*mirlen, 4*seqlen))
+    for i, (mirseq, seq) in enumerate(zip(mirseqs, seqs)):
+        batch_x[i, :, :] = (np.outer(one_hot_encode(mirseq, MIR_NT_DICT, TARGETS),
+                                            one_hot_encode(seq, SEQ_NT_DICT, TARGETS))*4) - 0.25
+
+    return np.expand_dims(batch_x, 3), np.expand_dims(batch_y, 1)
+
+
+def make_pretrain_data_old(size, mirlen, seqlen=12):
 
     mirseqs = [generate_random_seq(mirlen) for _ in range(size)]
     stypes = np.random.choice(['8mer','7m8','7a1','6mer', '5mer','4mer'], size=size, replace=True)

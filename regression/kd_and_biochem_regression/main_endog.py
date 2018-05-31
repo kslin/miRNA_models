@@ -12,7 +12,7 @@ from scipy import stats
 import seaborn as sns
 import tensorflow as tf
 
-import config, helpers, data_objects_endog
+import config, helpers, data_objects_endog, tf_helpers
 
 np.set_printoptions(threshold=np.inf, linewidth=200)
 pd.options.mode.chained_assignment = None
@@ -98,7 +98,7 @@ if __name__ == '__main__':
     }
 
     # zero-center and normalize Ka's
-    data['keep_prob'] = (1 / (1 + np.exp(data['log_kd'] + 3)))
+    data['keep_prob'] = (1 / (1 + np.exp((data['log_kd'] + 1)*4)))
     data['log ka'] = (-1.0 * data['log_kd'])
     data['mirseq'] = [config.MIRSEQ_DICT_MIRLEN[mir] for mir in data['mir']]
     data['sitem8'] = [helpers.rev_comp(mirseq[1:8]) for mirseq in data['mirseq_full']]
@@ -183,209 +183,87 @@ if __name__ == '__main__':
         _combined_x = tf.placeholder(tf.float32, shape=[None, 4 * config.MIRLEN, 4 * config.SEQLEN, 1], name='biochem_x')
         _pretrain_y =  tf.placeholder(tf.float32, shape=[None, 1], name='pretrain_y')
 
-        # add layer 1
-        with tf.name_scope('layer1'):
-            _w1, _b1 = helpers.get_conv_params(4, 4, 1, options.HIDDEN1, 'layer1')
-            _preactivate1 = tf.nn.conv2d(_combined_x, _w1, strides=[1, 4, 4, 1], padding='VALID') + _b1
-
-            _preactivate1_bn = tf.contrib.layers.batch_norm(_preactivate1, is_training=_phase_train)
-
-            _layer1 = tf.nn.leaky_relu(_preactivate1_bn)
-
-        # add layer 2
-        with tf.name_scope('layer2'):
-            _w2, _b2 = helpers.get_conv_params(2, 2, options.HIDDEN1, options.HIDDEN2, 'layer2')
-            _preactivate2 = tf.nn.conv2d(_layer1, _w2, strides=[1, 1, 1, 1], padding='VALID') + _b2
-
-            _preactivate2_bn = tf.contrib.layers.batch_norm(_preactivate2, is_training=_phase_train)
-
-            _layer2 = tf.nn.leaky_relu(_preactivate2_bn)
-
-            _dropout2 = tf.nn.dropout(_layer2, _keep_prob)
-
-        # add layer 3
-        with tf.name_scope('layer3'):
-            _w3, _b3 = helpers.get_conv_params(config.MIRLEN-1, config.SEQLEN-1, options.HIDDEN2, options.HIDDEN3, 'layer3')
-            _preactivate3 = tf.nn.conv2d(_dropout2, _w3, strides=[1, config.MIRLEN-1, config.SEQLEN-1, 1], padding='VALID') + _b3
-
-            _preactivate3_bn = tf.contrib.layers.batch_norm(_preactivate3, is_training=_phase_train)
-
-            _layer3 = tf.nn.leaky_relu(_preactivate3_bn)
-
-        # # add layer 2.5
-        # with tf.name_scope('layer2_5'):
-        #     _w2_5, _b2_5 = helpers.get_conv_params(2, 2, options.HIDDEN2, options.HIDDEN2, 'layer2_5')
-        #     _preactivate2_5 = tf.nn.conv2d(_layer2, _w2_5, strides=[1, 1, 1, 1], padding='VALID') + _b2_5
-
-        #     _preactivate2_5_bn = tf.contrib.layers.batch_norm(_preactivate2_5, is_training=_phase_train)
-
-        #     _layer2_5 = tf.nn.relu(_preactivate2_5_bn)
-
-        # # add layer 3
-        # with tf.name_scope('layer3'):
-        #     _w3, _b3 = helpers.get_conv_params(config.MIRLEN-2, config.SEQLEN-2, options.HIDDEN2, options.HIDDEN3, 'layer3')
-        #     _preactivate3 = tf.nn.conv2d(_layer2_5, _w3, strides=[1, config.MIRLEN-2, config.SEQLEN-2, 1], padding='VALID') + _b3
-
-        #     _preactivate3_bn = tf.contrib.layers.batch_norm(_preactivate3, is_training=_phase_train)
-
-        #     _layer3 = tf.nn.relu(_preactivate3_bn)
-
-        # add dropout
-        with tf.name_scope('dropout'):
-            _dropout = tf.nn.dropout(_layer3, _keep_prob)
-
-        # reshape to 1D tensor
-        _layer_flat = tf.reshape(_dropout, [-1, options.HIDDEN3])
-
-        # add last layer
-        with tf.name_scope('final_layer'):
-            with tf.name_scope('weights'):
-                _w4 = tf.get_variable("final_layer_weight", shape=[options.HIDDEN3, 1],
-                                            initializer=tf.truncated_normal_initializer(stddev=0.1))
-                tf.add_to_collection('weight', _w4)
-            with tf.name_scope('biases'):
-                _b4 = tf.get_variable("final_layer_bias", shape=[1],
-                                    initializer=tf.constant_initializer(0.0))
-                tf.add_to_collection('bias', _b4)
-
-            # apply final layer
-            _norm_ratio = tf.constant(config.NORM_RATIO, name='norm_ratio')
-            _pred_ind_values = tf.multiply(tf.add(tf.matmul(_layer_flat, _w4), _b4), _norm_ratio, name='pred_kd')
-
-        _pretrain_loss = tf.nn.l2_loss(tf.subtract(_pred_ind_values, _pretrain_y))
-
-        update_ops_pretrain = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
-        with tf.control_dependencies(update_ops_pretrain):
-            _pretrain_step = tf.train.AdamOptimizer(config.STARTING_LEARNING_RATE).minimize(_pretrain_loss)
-
-        saver_pretrain = tf.train.Saver([_w1, _b1, _w2, _b2])
-
         # make variable placeholders for training
         _repression_weight = tf.placeholder(tf.float32, name='repression_weight')
         _biochem_y = tf.placeholder(tf.float32, shape=[None, 1], name='biochem_y')
         _utr_len = tf.placeholder(tf.float32, shape=[None, 1], name='utr_len')
         _let7_sites = tf.placeholder(tf.float32, shape=[None, 1, None], name='let7_sites')
         _let7_mask = tf.placeholder(tf.float32, shape=[None, 1, None], name='let7_mask')
-        _repression_max_size = tf.placeholder(tf.int32, shape=[], name='repression_max_size')
-        _repression_split_sizes = tf.placeholder(tf.int32, shape=[config.BATCH_SIZE_REPRESSION*NUM_TRAIN*2], name='repression_split_sizes')
         _repression_y = tf.placeholder(tf.float32, shape=[None, None], name='repression_y')
 
-        ### construct global variables ###
-
-        # _freeAGO_init = tf.get_variable('freeAGO_init', shape=[1,2,1],
-        #                                 initializer=tf.constant_initializer(np.array([-3.0,-4.0]).reshape([1,2,1])))
-        # _freeAGO_tile = tf.constant([1, NUM_TRAIN, 1])
-        # _freeAGO_all = tf.tile(_freeAGO_init, _freeAGO_tile)
-
-        _freeAGO_init = tf.get_variable('freeAGO_guide', shape=[1,1], initializer=tf.constant_initializer(config.FREEAGO_INIT))
-        _freeAGO_guide = tf.tile(_freeAGO_init, tf.constant([NUM_TRAIN, 1]))
-        _freeAGO_pass_offset = tf.get_variable('freeAGO_pass_offset', shape=[NUM_TRAIN,1], initializer=tf.constant_initializer(config.PASS_OFFSET_INIT))
-        _freeAGO_all = tf.reshape(tf.concat([_freeAGO_guide, _freeAGO_pass_offset + _freeAGO_guide], axis=1), [1,NUM_TRAIN*2,1])
-
-        _decay = tf.get_variable('decay', shape=(), initializer=tf.constant_initializer(config.DECAY_INIT))
-
-        _utr_coef = tf.get_variable('utr_coef', shape=(),
-                                    initializer=tf.constant_initializer(config.UTR_COEF_INIT), trainable=False)
-        _freeAGO_let7 = tf.get_variable('freeAGO_let7', shape=[1, 1, 1],
-                                        initializer=tf.constant_initializer(config.LET7_INIT), trainable=False)
-
-        # construct a mask based on the number of sites per gene
-        _repression_mask = tf.reshape(tf.sequence_mask(_repression_split_sizes, dtype=tf.float32),
-                                      [config.BATCH_SIZE_REPRESSION, NUM_TRAIN*2, -1])
-
-        # get padding dimensions
-        _repression_split_sizes_expand = tf.expand_dims(_repression_split_sizes, 1)
-        _repression_paddings = tf.concat([tf.zeros(shape=tf.shape(_repression_split_sizes_expand), dtype=tf.int32),
-                                          _repression_max_size - _repression_split_sizes_expand], axis=1)
-        
-        # split data into biochem and repression
-        if config.BATCH_SIZE_BIOCHEM == 0:
-            _pred_biochem = tf.constant(np.array([[0]]))
-            _pred_repression_flat = tf.reshape(_pred_ind_values, [-1])
-        else:
-            _pred_biochem = _pred_ind_values[-1 * config.BATCH_SIZE_BIOCHEM:, :]
-            _pred_repression_flat = tf.reshape(_pred_ind_values[:-1 * config.BATCH_SIZE_BIOCHEM, :], [-1])
-
-        # split repression data and pad into config.BATCH_SIZE_BIOCHEM x NUM_TRAIN*2 x max_size matrix
-        _pred_repression_splits = tf.split(_pred_repression_flat, _repression_split_sizes)
-        _pred_repression_splits_padded = [tf.pad(_pred_repression_splits[ix], _repression_paddings[ix:ix+1,:]) for ix in range(config.BATCH_SIZE_REPRESSION*NUM_TRAIN*2)]
-        _pred_repression_splits_padded_stacked = tf.stack(_pred_repression_splits_padded)
-        _pred_repression = tf.reshape(_pred_repression_splits_padded_stacked, [config.BATCH_SIZE_REPRESSION, NUM_TRAIN*2, -1])
-
-        # calculate predicted number bound and predicted log fold-change
-        _pred_nbound_split = tf.reduce_sum(tf.multiply(tf.nn.sigmoid(_freeAGO_all + _pred_repression), _repression_mask), axis=2)
-        _pred_nbound = tf.reduce_sum(tf.reshape(_pred_nbound_split, [config.BATCH_SIZE_REPRESSION, NUM_TRAIN, 2]), axis=2)
-        _pred_nbound_let7 = tf.reduce_sum(tf.multiply(tf.nn.sigmoid(_freeAGO_let7 + _let7_sites), _let7_mask), axis=2)
-        _pred_nbound_utr = tf.exp(_utr_coef) * _utr_len
-        _pred_nbound_init = _pred_nbound_let7 + _pred_nbound_utr
-        _pred_nbound_total = _pred_nbound + _pred_nbound_init
-
-        _pred_logfc = -1.0 * (tf.log1p(_pred_nbound_total / tf.exp(_decay)))# - tf.log1p(_pred_nbound_init / tf.exp(_decay)))
-        _pred_logfc_normed = _pred_logfc - tf.reshape(tf.reduce_mean(_pred_logfc, axis=1), [-1,1])
-
-        _repression_y_normed = _repression_y - tf.reshape(tf.reduce_mean(_repression_y, axis=1), [-1,1])
+        # add layers for predicting KA
+        _pred_ind_values, _pretrain_loss, _pretrain_step, saver_pretrain, _weights, _biases = tf_helpers.make_ka_predictor(_combined_x, _pretrain_y, _keep_prob, _phase_train)
+        _w1, _w2, _w3, _w4 = _weights
+        _b1, _b2, _b3, _b4 = _biases
 
         _weight_regularize = tf.multiply(tf.nn.l2_loss(_w1) \
                                 + tf.nn.l2_loss(_w2) \
+                                # + tf.nn.l2_loss(_w2_5) \
                                 + tf.nn.l2_loss(_w3) \
                                 + tf.nn.l2_loss(_w4), config.LAMBDA)
 
-        if config.BATCH_SIZE_BIOCHEM == 0:
-            _biochem_loss = tf.constant(0.0)
-        else:
-            _biochem_loss = (tf.nn.l2_loss(tf.subtract(_pred_biochem, _biochem_y))) / config.BATCH_SIZE_BIOCHEM
-        
-        _repression_loss = (_repression_weight * tf.nn.l2_loss(tf.subtract(_pred_logfc_normed, _repression_y_normed))) / config.BATCH_SIZE_REPRESSION
-        _loss = _biochem_loss + _repression_loss + _weight_regularize
+        init_params = [
+                    config.FREEAGO_INIT,
+                    config.GUIDE_OFFSET_INIT,
+                    config.PASS_OFFSET_INIT,
+                    config.DECAY_INIT,
+                    config.UTR_COEF_INIT,
+                    config.LET7_INIT
+                ]
 
-        _update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
-        with tf.control_dependencies(_update_ops):
-            _train_step = tf.train.AdamOptimizer(config.STARTING_LEARNING_RATE).minimize(_loss)
+        with tf.name_scope('train'):
+            # split data into biochem and repression
+            _repression_max_size = tf.placeholder(tf.int32, shape=[], name='repression_max_size')
+            _repression_split_sizes = tf.placeholder(tf.int32, shape=[config.BATCH_SIZE_REPRESSION*NUM_TRAIN*2], name='repression_split_sizes')
+            results = tf_helpers.both_steps('train', NUM_TRAIN, config.BATCH_SIZE_BIOCHEM, config.BATCH_SIZE_REPRESSION, _pred_ind_values,
+                                _repression_max_size, _repression_split_sizes, _let7_sites, _let7_mask, _utr_len, init_params)
+            _pred_biochem, _pred_repression_flat, _freeAGO_mean, _freeAGO_all, _decay, _utr_coef, _freeAGO_let7, _pred_logfc, _pred_logfc_net = results
+
+            # get biochem loss
+            if config.BATCH_SIZE_BIOCHEM == 0:
+                _biochem_loss = tf.constant(0.0)
+            else:
+                _biochem_loss = (tf.nn.l2_loss(tf.subtract(_pred_biochem, _biochem_y))) / config.BATCH_SIZE_BIOCHEM
+
+
+            _pred_logfc_normed = _pred_logfc - tf.reshape(tf.reduce_mean(_pred_logfc, axis=1), [-1,1])
+            _repression_y_normed = _repression_y - tf.reshape(tf.reduce_mean(_repression_y, axis=1), [-1,1])
+            
+            _repression_loss = (_repression_weight * tf.nn.l2_loss(tf.subtract(_pred_logfc_normed, _repression_y_normed))) / config.BATCH_SIZE_REPRESSION
+            _loss = _biochem_loss + _repression_loss + _weight_regularize
+
+            tvars = tf.trainable_variables()
+            gvars = [var for var in tvars if '_toggle' not in var.name]
+
+            _update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
+            with tf.control_dependencies(_update_ops):
+                _train_step = tf.train.AdamOptimizer(config.STARTING_LEARNING_RATE).minimize(_loss, var_list=gvars)
+                _train_step_trainable = tf.train.AdamOptimizer(config.STARTING_LEARNING_RATE).minimize(_loss)
 
         saver = tf.train.Saver(max_to_keep=config.NUM_EPOCHS+1)
 
-        # make trainable version
-        freeAGO_init = np.zeros([1, NUM_TRAIN*2, 1])
-        freeAGO_init[0,:,0] = [-5.5,-7]*NUM_TRAIN
+        init_params_test = [
+                    -5.5,
+                    np.array([[0.0]]),
+                    np.array([[-4.0]]),
+                    config.DECAY_INIT,
+                    config.UTR_COEF_INIT,
+                    config.LET7_INIT
+                ]
+        with tf.name_scope('test'):
+            # split data into biochem and repression
+            _repression_max_size_test = tf.placeholder(tf.int32, shape=[], name='repression_max_size')
+            _repression_split_sizes_test = tf.placeholder(tf.int32, shape=[config.BATCH_SIZE_REPRESSION_TEST*2], name='repression_split_sizes')
+            results_test = tf_helpers.both_steps('test', 1, 0, config.BATCH_SIZE_REPRESSION_TEST, _pred_ind_values,
+                                _repression_max_size_test, _repression_split_sizes_test, _let7_sites, _let7_mask, _utr_len, init_params_test)
+            _, _, _freeAGO_mean_test, _freeAGO_all_test, _decay_test, _utr_coef_test, _freeAGO_let7_test, _, _pred_logfc_test = results_test
 
-        _freeAGO_all_trainable = tf.get_variable('freeAGO_all_trainable', shape=[1, NUM_TRAIN*2, 1],
-                                        initializer=tf.constant_initializer(freeAGO_init))
 
-        # _decay_trainable = tf.get_variable('decay_trainable', shape=(), initializer=tf.constant_initializer(config.DECAY_INIT))
-
-        _utr_coef_trainable = tf.get_variable('utr_coef_trainable', shape=(),
-                                    initializer=tf.constant_initializer(config.UTR_COEF_INIT))
-        _freeAGO_let7_trainable = tf.get_variable('freeAGO_let7_trainable', shape=[1, 1, 1],
-                                        initializer=tf.constant_initializer(config.LET7_INIT))
-
-        # calculate predicted number bound and predicted log fold-change with trainable variables
-        _pred_nbound_split_trainable = tf.reduce_sum(tf.multiply(tf.nn.sigmoid(_freeAGO_all_trainable + _pred_repression), _repression_mask), axis=2)
-        _pred_nbound_trainable = tf.reduce_sum(tf.reshape(_pred_nbound_split_trainable, [config.BATCH_SIZE_REPRESSION, NUM_TRAIN, 2]), axis=2)
-        _pred_nbound_let7_trainable = tf.reduce_sum(tf.multiply(tf.nn.sigmoid(_freeAGO_let7_trainable + _let7_sites), _let7_mask), axis=2)
-        _pred_nbound_init_trainable = tf.exp(_utr_coef_trainable) * _utr_len
-        _pred_nbound_total_trainable = _pred_nbound_trainable + _pred_nbound_let7_trainable + _pred_nbound_init_trainable
-
-        _pred_logfc_trainable = -1.0 * tf.log1p(_pred_nbound_total_trainable / tf.exp(_decay))
-        _pred_logfc_normed_trainable = _pred_logfc_trainable - tf.reshape(tf.reduce_mean(_pred_logfc_trainable, axis=1), [-1,1])
-
-        _repression_loss_trainable = _repression_weight * tf.nn.l2_loss(tf.subtract(_pred_logfc_normed_trainable, _repression_y_normed))
-        _loss_trainable = _biochem_loss + _repression_loss_trainable + _weight_regularize
-
-        _update_ops_trainable = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
-        with tf.control_dependencies(_update_ops_trainable):
-            _train_step_trainable = tf.train.AdamOptimizer(config.STARTING_LEARNING_RATE).minimize(_loss_trainable)
-
-        saver_trainable = tf.train.Saver(max_to_keep=config.NUM_EPOCHS+1)
-
+        saver = tf.train.Saver(max_to_keep=config.NUM_EPOCHS+1)
 
         ### TRAIN MODEL ###
 
         sess.run(tf.global_variables_initializer())
-
-        # options: 'pretrain', 'none'
-        # PRETRAIN = '/lab/bartel4_ata/kathyl/NeuralNet/logdirs/tpms_and_kds/endog_pretrain/pretrain_saved'
-        # PRETRAIN = 'pretrain'
-        # PRETRAIN = 'none'
 
         if options.PRETRAIN == 'pretrain':
 
@@ -482,8 +360,8 @@ if __name__ == '__main__':
             saver_pretrain.restore(sess, latest)
 
             # reset later layers
-            # sess.run(_w3.initializer)
-            # sess.run(_b3.initializer)
+            # sess.run(_w2.initializer)
+            # sess.run(_b2.initializer)
             # sess.run(_w4.initializer)
             # sess.run(_b4.initializer)
 
@@ -497,6 +375,17 @@ if __name__ == '__main__':
         xlabels = ['U','A','G','C']
         ylabels = ['A','U','C','G']
         helpers.graph_convolutions(conv_weights, xlabels, ylabels, os.path.join(options.LOGDIR, 'convolution1_init.pdf'))
+
+        # conv_weights = np.abs(sess.run(_w2))
+        # conv_weights = np.sum(conv_weights, axis=(2,3))
+        # vmin, vmax = np.min(conv_weights), np.max(conv_weights)
+        # xlabels = ['s1', 's2']
+        # ylabels = ['m2', 'm1']
+        # fig = plt.figure(figsize=(4,4))
+        # sns.heatmap(conv_weights, xticklabels=xlabels, yticklabels=ylabels,
+        #             cmap=plt.cm.bwr, vmin=vmin, vmax=vmax)
+        # plt.savefig(os.path.join(options.LOGDIR, 'convolution2_init.pdf'))
+        # plt.close()
 
         conv_weights = np.abs(sess.run(_w3))
         conv_weights = np.sum(conv_weights, axis=(2,3))
@@ -523,7 +412,6 @@ if __name__ == '__main__':
         current_epoch = 0
 
         # save initial model
-        # saver.save(sess, os.path.join(SAVE_PATH, 'model'), global_step=current_epoch)
         times, times2 = [], []
 
         while True:
@@ -601,10 +489,9 @@ if __name__ == '__main__':
             times.append(time.time() - t0)
             t0 = time.time()
 
-            # _ = sess.run(_train_step, feed_dict=feed_dict)
             if SWITCH_TRAINABLES:
-                _, l1, l2, l3, train_loss = sess.run([_train_step_trainable, _biochem_loss, _repression_loss_trainable,
-                                                      _weight_regularize, _loss_trainable], feed_dict=feed_dict)
+                _, l1, l2, l3, train_loss = sess.run([_train_step_trainable, _biochem_loss, _repression_loss,
+                                                          _weight_regularize, _loss], feed_dict=feed_dict)
             else:
                 _, l1, l2, l3, train_loss = sess.run([_train_step, _biochem_loss, _repression_loss,
                                                       _weight_regularize, _loss], feed_dict=feed_dict)
@@ -637,11 +524,7 @@ if __name__ == '__main__':
                     step_list.append(current_epoch)
                     # step_list.append(step)
 
-                    # save model
-                    if SWITCH_TRAINABLES:
-                        saver_trainable.save(sess, os.path.join(SAVE_PATH, 'model'), global_step=current_epoch)
-                    else:
-                        saver.save(sess, os.path.join(SAVE_PATH, 'model'), global_step=current_epoch)
+                    saver.save(sess, os.path.join(SAVE_PATH, 'model'), global_step=current_epoch)
                     
                     # calculate and plot train performance
                     train_losses.append(train_loss)
@@ -667,14 +550,8 @@ if __name__ == '__main__':
                 plt.savefig(os.path.join(options.LOGDIR, 'train_repression_kds_hist.png'))
                 plt.close()
 
-                if SWITCH_TRAINABLES:
-                    train_repression_preds, train_repression_ys = sess.run([_pred_logfc_normed_trainable, _repression_y_normed],
+                train_repression_preds, train_repression_ys = sess.run([_pred_logfc_normed, _repression_y_normed],
                                                                         feed_dict=feed_dict)
-                else:
-                    train_repression_preds, train_repression_ys = sess.run([_pred_logfc_normed, _repression_y_normed],
-                                                                        feed_dict=feed_dict)
-                    # train_repression_preds, train_repression_ys = sess.run([_pred_logfc, _repression_y],
-                    #                                                     feed_dict=feed_dict)
                     
 
                 print(train_repression_preds.shape)
@@ -749,31 +626,87 @@ if __name__ == '__main__':
 
                 current_decay = sess.run(_decay)
 
-                if SWITCH_TRAINABLES:
-                    current_freeAGO = sess.run(_freeAGO_all_trainable)
-                    current_freeAGO_let7 = sess.run(_freeAGO_let7_trainable)
-                    # current_decay = sess.run(_decay_trainable)
-                    current_utr_coef = sess.run(_utr_coef_trainable)
-                else:
-                    current_freeAGO = sess.run(_freeAGO_all)
-                    current_freeAGO_let7 = sess.run(_freeAGO_let7)
-                    current_utr_coef = sess.run(_utr_coef)
-
-                    current_mean_freeAGO = sess.run(_freeAGO_init)
-                    if next_epoch and (current_mean_freeAGO.flatten()[0] > prev_freeago):
+                if SWITCH_TRAINABLES == False:
+                    freeAGO_mean = sess.run(_freeAGO_mean)
+                    if next_epoch and (freeAGO_mean > prev_freeago):
                         print('SWITCHED')
-
-                        # assign current freeAgo concentrations to trainable version
-                        assign_op = _freeAGO_all_trainable.assign(current_freeAGO)
-                        sess.run(assign_op)
                         SWITCH_TRAINABLES = True
                     else:
-                        prev_freeago = current_mean_freeAGO.flatten()[0]
+                        prev_freeago = freeAGO_mean
+
+                current_freeAGO = sess.run(_freeAGO_all)
+                current_freeAGO_let7 = sess.run(_freeAGO_let7)
+                current_utr_coef = sess.run(_utr_coef)
 
                 print(current_freeAGO.reshape([NUM_TRAIN, 2]))
                 print(current_freeAGO_let7)
                 print(current_decay)
                 print(current_utr_coef)
+
+                # check test miRNA
+                # get repression data batch
+                batch_genes, next_epoch, all_seqs, train_sizes, max_sites, batch_repression_y = repression_test_data.get_next_batch(config.BATCH_SIZE_REPRESSION_TEST, test_mirs)
+
+                # if none of the genes have sites, continue
+                if max_sites > 0:
+
+                    num_total_train_seqs = np.sum(train_sizes)
+                    batch_combined_x = np.zeros([num_total_train_seqs, 4*config.MIRLEN, 4*config.SEQLEN])
+
+                    # fill features for utr sites for both the guide and passenger strands
+                    current_ix = 0
+                    mirlist = test_mirs*config.BATCH_SIZE_REPRESSION_TEST
+                    for mir, (seq_list_guide, seq_list_pass) in zip(mirlist, all_seqs):
+                        mirseq_one_hot_guide = config.ONE_HOT_DICT[mir]
+                        mirseq_one_hot_pass = config.ONE_HOT_DICT[mir + '*']
+
+                        for seq in seq_list_guide:
+                            temp = np.outer(mirseq_one_hot_guide, helpers.one_hot_encode(seq, config.SEQ_NT_DICT, config.TARGETS))
+                            batch_combined_x[current_ix, :, :] = temp
+                            current_ix += 1
+
+                        for seq in seq_list_pass:
+                            temp = np.outer(mirseq_one_hot_pass, helpers.one_hot_encode(seq, config.SEQ_NT_DICT, config.TARGETS))
+                            batch_combined_x[current_ix, :, :] = temp
+                            current_ix += 1
+
+                    assert(current_ix == batch_combined_x.shape[0])
+                    batch_combined_x = np.expand_dims((batch_combined_x*4) - 0.25, 3)
+                
+
+                    # run train step
+                    batch_prefit = prefit.loc[batch_genes]
+
+                    # make feed dict for training
+                    feed_dict = {
+                            _keep_prob: 1.0,
+                            _phase_train: False,
+                            _combined_x: batch_combined_x,
+                            _repression_max_size: max_sites,
+                            _repression_split_sizes: train_sizes,
+                            _utr_len: batch_prefit[['utr_length']].values,
+                            _let7_sites: let7_sites.loc[batch_genes].values.reshape([config.BATCH_SIZE_REPRESSION_TEST,1,let7_num_kds]),
+                            _let7_mask: let7_mask.loc[batch_genes].values.reshape([config.BATCH_SIZE_REPRESSION_TEST,1,let7_num_kds])
+                        }
+
+                    # assign_op1 = tf.assign(_freeAGO_mean_test, -5.5)
+                    # assign_op2 = tf.assign(_freeAGO_all_test, np.array([[0.0]]))
+                    assign_op3 = tf.assign(_decay_test, current_decay)
+                    assign_op4 = tf.assign(_utr_coef_test, current_utr_coef)
+                    assign_op5 = tf.assign(_let7_test, current_freeAGO_let7)
+                    sess.run([assign_op3, assign_op4, assign_op5])
+
+                    pred_logfc_test = sess.run(_pred_logfc_test, feed_dict=feed_dict)
+                    logfc_df = tpm.loc[batch_genes][[TEST_MIRNA, 'nosite2']]
+                    logfc_df['pred'] = pred_logfc_test
+                    logfc_df = logfc_df.dropna()
+                    logfc_df['actual'] = logfc_df[TEST_MIRNA] - logfc_df['nosite2']
+
+                    fig = plt.figure(figsize=(7,7))
+                    plt.scatter(logfc_df['pred'], logfc_df['actual'], s=20)
+                    plt.title('{:.3f}'.format(stats.linregress(logfc_df['pred'], logfc_df['actual'])[2]**2))
+                    plt.savefig(os.path.join(options.LOGDIR, 'test_logfc_scatter.png'))
+                    plt.close()
                     
                 # if last epoch, quit and write params to a file
                 if current_epoch == config.NUM_EPOCHS:
