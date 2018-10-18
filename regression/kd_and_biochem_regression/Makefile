@@ -29,7 +29,10 @@ endog_pretrain:
 
 
 endog_use_pretrain:
-	python main_endog.py -k $(final_data_dir)/kds.txt -t /lab/bartel4_ata/kathyl/RNA_Seq/analysis/data/no_baseline_analysis/merged.txt --let7_sites $(final_data_dir)/let7_sites.txt --let7_mask $(final_data_dir)/let7_mask.txt -p $(final_data_dir)/prefit.txt --hidden1 4 --hidden2 16 --hidden3 16 -m mir124 -l /lab/bartel4_ata/kathyl/NeuralNet/logdirs/tpms_and_kds/endog_mir124_pretrain_passrange --pretrain /lab/bartel4_ata/kathyl/NeuralNet/logdirs/tpms_and_kds/endog_pretrain_just_weights/pretrain_saved
+	python main_endog.py -k /lab/bartel4_ata/kathyl/RNA_Seq/analysis/data/pre_final/kds.txt -t /lab/bartel4_ata/kathyl/RNA_Seq/analysis/data/no_baseline_analysis/merged.txt --let7_sites $(final_data_dir)/let7_sites.txt --let7_mask $(final_data_dir)/let7_mask.txt -p $(final_data_dir)/prefit.txt -m mir124 -l /lab/bartel4_ata/kathyl/NeuralNet/logdirs/tpms_and_kds/endog_mir124_pretrain_passrange4_16 --pretrain none
+
+endog_only_canon:
+	python main_endog.py -k /lab/bartel4_ata/kathyl/RNA_Seq/analysis/data/pre_final/kds.txt -t /lab/bartel4_ata/kathyl/RNA_Seq/analysis/data/no_baseline_analysis/merged.txt --let7_sites $(final_data_dir)/let7_sites_canon.txt --let7_mask $(final_data_dir)/let7_mask_canon.txt -p $(final_data_dir)/prefit.txt -m mir153 -l /lab/bartel4_ata/kathyl/NeuralNet/logdirs/tpms_and_kds/endog_mir153_only_canon --pretrain none
 
 endog_no_pretrain:
 	python main_endog.py -k $(final_data_dir)/kds.txt -t $(final_data_dir)/merged.txt --let7_sites $(final_data_dir)/let7_sites.txt --let7_mask $(final_data_dir)/let7_mask.txt -p $(final_data_dir)/prefit.txt --hidden1 4 --hidden2 16 --hidden3 16 -m mir1 -l /lab/bartel4_ata/kathyl/NeuralNet/logdirs/tpms_and_kds/endog_mir1_none --pretrain none
@@ -43,20 +46,31 @@ optimize:
 #/lab/bartel4_ata/kathyl/NeuralNet/logdirs/tpms_and_kds/endog_pretrain/pretrain_saved
 
 endog_cross_val:
-	mkdir /lab/bartel4_ata/kathyl/NeuralNet/logdirs/tpms_and_kds/endog_xval_trainable3
-	cp config.py /lab/bartel4_ata/kathyl/NeuralNet/logdirs/tpms_and_kds/endog_xval_trainable3/config.txt
+	mkdir /lab/bartel4_ata/kathyl/NeuralNet/logdirs/tpms_and_kds/endog_xval_only_canon_none_baseline_let7_orf_logcoef2
+	cp config.py /lab/bartel4_ata/kathyl/NeuralNet/logdirs/tpms_and_kds/endog_xval_only_canon_none_baseline_let7_orf_logcoef2/config.txt
 	for mirname in none mir1 mir124 mir155 mir7 lsy6 mir153 mir139 mir204 mir216b mir223 mir137 mir199a mir205 mir182 mir143 mir144 ; do \
-		bsub -o /lab/bartel4_ata/kathyl/NeuralNet/logdirs/tpms_and_kds/endog_xval_trainable3/output_$${mirname}.txt python main_endog.py -k $(final_data_dir)/kds.txt -t $(final_data_dir)/merged.txt --let7_sites $(final_data_dir)/let7_sites.txt --let7_mask $(final_data_dir)/let7_mask.txt -p $(final_data_dir)/prefit.txt --hidden1 4 --hidden2 16 --hidden3 16 -m $${mirname} -l /lab/bartel4_ata/kathyl/NeuralNet/logdirs/tpms_and_kds/endog_xval_trainable3/$${mirname} --pretrain /lab/bartel4_ata/kathyl/NeuralNet/logdirs/tpms_and_kds/endog_pretrain_just_weights/pretrain_saved; \
+		bsub -o /lab/bartel4_ata/kathyl/NeuralNet/logdirs/tpms_and_kds/endog_xval_only_canon_none_baseline_let7_orf_logcoef2/output_$${mirname}.txt python main_endog.py -k /lab/bartel4_ata/kathyl/RNA_Seq/analysis/data/no_baseline_analysis/kds.txt -t /lab/bartel4_ata/kathyl/RNA_Seq/analysis/data/no_baseline_analysis/merged.txt --let7_sites $(final_data_dir)/let7_sites_logcoef.txt --let7_mask $(final_data_dir)/let7_mask_logcoef.txt -p $(final_data_dir)/prefit.txt -m $${mirname} -l /lab/bartel4_ata/kathyl/NeuralNet/logdirs/tpms_and_kds/endog_xval_only_canon_none_baseline_let7_orf_logcoef2/$${mirname} --pretrain none; \
 	done
 
+simple:
+	python main_simple.py -k /lab/bartel4_ata/kathyl/RNA_Seq/analysis/data/final/kds.txt -t /lab/bartel4_ata/kathyl/RNA_Seq/analysis/data/no_baseline_analysis/merged_with_bayes.txt -m mir124 --pretrain none -l /lab/bartel4_ata/kathyl/NeuralNet/logdirs/tpms_and_kds/simple_mir124_4_16_16
+
+simple_xval:
+	mkdir /lab/bartel4_ata/kathyl/NeuralNet/logdirs/tpms_and_kds/simple_xval_4_16_16_fix_getseqs2
+	cp config.py /lab/bartel4_ata/kathyl/NeuralNet/logdirs/tpms_and_kds/simple_xval_4_16_16_fix_getseqs2/config.txt
+	for mirname in none mir1 mir124 mir155 mir7 lsy6 let7 mir153 mir139 mir204 mir216b mir223 mir137 mir199a mir205 mir182 mir143 mir144 ; do \
+		bsub -o /lab/bartel4_ata/kathyl/NeuralNet/logdirs/tpms_and_kds/simple_xval_4_16_16_fix_getseqs2/output_$${mirname}.txt python main_simple.py -k /lab/bartel4_ata/kathyl/RNA_Seq/analysis/data/final/kds.txt -t /lab/bartel4_ata/kathyl/RNA_Seq/analysis/data/no_baseline_analysis/merged_with_bayes.txt -m $${mirname} --pretrain none -l /lab/bartel4_ata/kathyl/NeuralNet/logdirs/tpms_and_kds/simple_xval_4_16_16_fix_getseqs2/$${mirname}; \
+	done
+
+
 predictions:
-	# mkdir $(final_data_dir)/predictions_endog_pretrain_xval_trainable2/
-	for mirname in none mir1 mir124 mir155 mir7 lsy6 mir153 mir139 mir204 mir216b mir223 mir137 mir199a mir205 mir182 mir143 mir144 ; do \
-		python predict.py -t $(final_data_dir)/merged.txt -m $${mirname} -l /lab/bartel4_ata/kathyl/NeuralNet/logdirs/tpms_and_kds/endog_xval_trainable2 -o $(final_data_dir)/predictions_endog_pretrain_xval_trainable2; \
+	mkdir $(final_data_dir)/predictions_simple_xval_4_16_16_fix_getseqs2/
+	for mirname in none mir1 mir124 mir155 mir7 lsy6 let7 mir153 mir139 mir204 mir216b mir223 mir137 mir199a mir205 mir182 mir143 mir144 ; do \
+		bsub python predict.py -t /lab/bartel4_ata/kathyl/RNA_Seq/analysis/data/no_baseline_analysis/merged.txt -m $${mirname} -l /lab/bartel4_ata/kathyl/NeuralNet/logdirs/tpms_and_kds/simple_xval_4_16_16_fix_getseqs2 -o $(final_data_dir)/predictions_simple_xval_4_16_16_fix_getseqs2; \
 	done
 
 prediction:
-	python predict.py -t $(final_data_dir)/merged.txt -m mir1 -l /lab/bartel4_ata/kathyl/NeuralNet/logdirs/tpms_and_kds/endog_xval_trainable2 -o $(final_data_dir)/predictions_endog_pretrain_xval_trainable2
+	python predict.py -t /lab/bartel4_ata/kathyl/RNA_Seq/analysis/data/no_baseline_analysis/merged.txt -m mir143 -l /lab/bartel4_ata/kathyl/NeuralNet/logdirs/tpms_and_kds/endog_xval_only_canon_none_baseline_let7_orf -o $(final_data_dir)/predictions_endog_xval_only_canon_none_baseline_let7_orf
 
 
 

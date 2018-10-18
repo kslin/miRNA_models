@@ -18,22 +18,23 @@ import config, helpers, data_objects_endog
 np.set_printoptions(threshold=np.inf, linewidth=200)
 pd.options.mode.chained_assignment = None
 
-def get_features(mir, utrs, mirlen, seqlen):
+def get_features(mir, utrs, mirlen, seqlen, only_canon):
     all_seqs = []
     mirseq_one_hot = config.ONE_HOT_DICT[mir]
     site = config.SITE_DICT[mir]
 
     utr_num_seqs = []
     for utr in utrs:
-        seqs = helpers.get_seqs(utr, site)
-        print(seqs)
+        seqs = helpers.get_seqs_new(utr, site, only_canon=only_canon)
         all_seqs.append(seqs)
         utr_num_seqs.append(len(seqs))
 
     combined_x = np.zeros([np.sum(utr_num_seqs), 4*mirlen, 4*seqlen])
     
+    all_seqs_list = []
     current_ix = 0
     for seq_list in all_seqs:
+        all_seqs_list += seq_list
         if len(seq_list) > 0:
             for seq in seq_list:
                 temp = np.outer(mirseq_one_hot, helpers.one_hot_encode(seq, config.SEQ_NT_DICT, config.TARGETS))
@@ -41,8 +42,10 @@ def get_features(mir, utrs, mirlen, seqlen):
                 current_ix += 1
     
     combined_x = np.expand_dims((combined_x * 4) - 0.25, 3)
+
+    # print(config.ONLY_CANON, len(combined_x))
     
-    return combined_x, utr_num_seqs
+    return combined_x, utr_num_seqs, all_seqs_list
 
 
 if __name__ == '__main__':
@@ -51,6 +54,7 @@ if __name__ == '__main__':
     parser.add_option("-t", "--tpmfile", dest="TPM_FILE", help="tpm data")
     parser.add_option("-m", "--mir", dest="MIR", help="left_out_mir")
     parser.add_option("-l", "--logdir", dest="LOGDIR", help="directory for writing logs")
+    parser.add_option("-c", "--canon_only", dest="ONLY_CANON", action="store_true", default=False)
     parser.add_option("-o", "--outdir", dest="OUTDIR", help="output file")
 
     (options, args) = parser.parse_args()
@@ -67,7 +71,7 @@ if __name__ == '__main__':
     MIRS = [x for x in tpm.columns if ('mir' in x) or ('lsy' in x)]
 
     all_utrs = tpm['sequence'].values
-    batch_size = 50
+    batch_size = 99
     output_dict = {}
 
     with tf.Session() as sess:
@@ -81,7 +85,7 @@ if __name__ == '__main__':
         _keep_prob = tf.get_default_graph().get_tensor_by_name('keep_prob:0')
         _phase_train = tf.get_default_graph().get_tensor_by_name('phase_train:0')
         _combined_x = tf.get_default_graph().get_tensor_by_name('biochem_x:0')
-        _prediction = tf.get_default_graph().get_tensor_by_name('final_layer/pred_kd:0')
+        _prediction = tf.get_default_graph().get_tensor_by_name('final_layer/pred_ka:0')
         # _freeAGO_all_trainable = tf.get_default_graph().get_tensor_by_name('freeAGO_all_trainable:0')
         # _decay_trainable = tf.get_default_graph().get_tensor_by_name('decay_trainable:0')
         # _utr_coef_trainable = tf.get_default_graph().get_tensor_by_name('utr_coef_trainable:0')
@@ -107,8 +111,8 @@ if __name__ == '__main__':
         for mir in MIRS:
             current_ix = 0
             last_batch = False
-            output_dict[mir] = {'KDs': [], 'num_seqs': []}
-            output_dict[mir+'*'] = {'KDs': [], 'num_seqs': []}
+            output_dict[mir] = {'seqs': [], 'KDs': [], 'num_seqs': []}
+            output_dict[mir+'*'] = {'seqs': [], 'KDs': [], 'num_seqs': []}
 
             while True:
                 if (current_ix + batch_size) >= len(all_utrs):
@@ -118,8 +122,8 @@ if __name__ == '__main__':
                     current_utrs = all_utrs[current_ix: current_ix + batch_size]
                     current_ix += batch_size
 
-                combined_x_guide, utr_num_seqs_guide = get_features(mir, current_utrs, config.MIRLEN, config.SEQLEN)
-                combined_x_pass, utr_num_seqs_pass = get_features(mir + '*', current_utrs, config.MIRLEN, config.SEQLEN)
+                combined_x_guide, utr_num_seqs_guide, all_seqs_guide = get_features(mir, current_utrs, config.MIRLEN, config.SEQLEN, options.ONLY_CANON)
+                combined_x_pass, utr_num_seqs_pass, all_seqs_pass = get_features(mir + '*', current_utrs, config.MIRLEN, config.SEQLEN, options.ONLY_CANON)
 
                 feed_dict = {
                                 _keep_prob: 1.0,
@@ -128,6 +132,7 @@ if __name__ == '__main__':
                             }
 
                 pred_guide = sess.run(_prediction, feed_dict=feed_dict)
+                output_dict[mir]['seqs'] += all_seqs_guide
                 output_dict[mir]['KDs'] += list(pred_guide.flatten())
                 output_dict[mir]['num_seqs'] += utr_num_seqs_guide
 
@@ -138,6 +143,7 @@ if __name__ == '__main__':
                             }
 
                 pred_pass = sess.run(_prediction, feed_dict=feed_dict)
+                output_dict[mir+'*']['seqs'] += all_seqs_pass
                 output_dict[mir+'*']['KDs'] += list(pred_pass.flatten())
                 output_dict[mir+'*']['num_seqs'] += utr_num_seqs_pass
 

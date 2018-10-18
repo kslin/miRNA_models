@@ -60,6 +60,17 @@ def complementary(seq):
     return ''.join([match_dict[x] for x in seq])
 
 
+def count_num_canon(utr, sitem8):
+    # Six canonical sites, remove double-counted sites
+    num_6m8 = utr.count(sitem8[:-1])
+    num_6a1 = utr.count(sitem8[2:] + 'A')
+    num_6 = utr.count(sitem8[1:])
+    num_7m8 = utr.count(sitem8)
+    num_7a1 = utr.count(sitem8[1:] + 'A')
+    num_8 = utr.count(sitem8 + 'A')
+    return num_6m8 + num_6a1 + num_6 - num_7m8 - num_7a1
+
+
 # def get_color(sitem8, seq):
 #     if (sitem8 + 'A') in seq:
 #         return 'blue'
@@ -130,7 +141,8 @@ def remove_overlaps(locs, distance=6):
     diffs = np.diff(locs)
     while np.min(diffs) < distance:
         overlap = np.argmax(diffs < distance)
-        keep_which = np.random.randint(2)
+        # keep_which = np.random.randint(2)
+        keep_which = 1
         del locs[overlap + keep_which]
 
         if len(locs) == 1:
@@ -141,18 +153,29 @@ def remove_overlaps(locs, distance=6):
     return locs
 
 
-def get_seqs(utr, site, seqlen=12):
+def get_seqs(utr, site, only_canon=False):
     utr_len = len(utr)
     utr_ext = utr + 'TTT'
 
-    locs0 = remove_overlaps([m.start() - 2 for m in re.finditer(site[4:], utr)])
-    locs1 = remove_overlaps([m.start() - 1 for m in re.finditer(site[3:-1], utr)])
-    locs2 = remove_overlaps([(m.start()) for m in re.finditer(site[2:-2], utr)])
-    locs3 = remove_overlaps([(m.start() + 1) for m in re.finditer(site[1:-3], utr)])
-    locs4 = remove_overlaps([(m.start() + 2) for m in re.finditer(site[:-4], utr)])
-    # locs = sorted(list(set(locs1 + locs2 + locs3 + locs4)))
+    if only_canon:
+        locs2 = remove_overlaps([(m.start()) for m in re.finditer(site[2:], utr)])
+        locs3 = remove_overlaps([(m.start() + 1) for m in re.finditer(site[1:-1], utr)])
+        locs4 = remove_overlaps([(m.start() + 2) for m in re.finditer(site[:-2], utr)])
+        locs = np.array(locs3 + locs2 + locs4)
 
-    locs = np.array(locs0 + locs1 + locs2 + locs3 + locs4)
+    else:
+        locs0 = remove_overlaps([m.start() - 2 for m in re.finditer(site[4:], utr)])
+        locs1 = remove_overlaps([m.start() - 1 for m in re.finditer(site[3:-1], utr)])
+        locs2 = remove_overlaps([(m.start()) for m in re.finditer(site[2:-2], utr)])
+        locs3 = remove_overlaps([(m.start() + 1) for m in re.finditer(site[1:-3], utr)])
+        locs4 = remove_overlaps([(m.start() + 2) for m in re.finditer(site[:-4], utr)])
+        locs = np.array(locs0 + locs1 + locs2 + locs3 + locs4)
+
+        # locs1 = remove_overlaps([m.start() - 1 for m in re.finditer(site[3:], utr)])
+        # locs2 = remove_overlaps([(m.start()) for m in re.finditer(site[2:-1], utr)])
+        # locs3 = remove_overlaps([(m.start() + 1) for m in re.finditer(site[1:-2], utr)])
+        # locs4 = remove_overlaps([(m.start() + 2) for m in re.finditer(site[:-3], utr)])
+        # locs = np.array(locs1 + locs2 + locs3 + locs4)
 
     if len(locs) == 0:
         return []
@@ -161,13 +184,44 @@ def get_seqs(utr, site, seqlen=12):
     else:
         real_locs = [locs[0]]
         for i, l in enumerate(locs[1:]):
-            if min([abs(l - rl) for rl in real_locs]) >= 6:
+            if min([abs(l - rl) for rl in real_locs]) >= 7:
                 real_locs.append(l)
 
-    if seqlen == 16:
-        seqs = [utr_ext[loc-6:loc+10] for loc in real_locs if (loc-6 >=0) and (loc+5 <= utr_len)]
+    seqs = [utr_ext[loc-4:loc+8] for loc in real_locs if (loc-4 >=0) and (loc+5 <= utr_len)]
+
+    return seqs
+
+def get_seqs_new(utr, site, only_canon=False):
+    utr_len = len(utr)
+    utr_ext = utr + 'TTT'
+
+
+    locs2 = remove_overlaps([(m.start()) for m in re.finditer(site[2:], utr)])
+    locs3 = remove_overlaps([(m.start() + 1) for m in re.finditer(site[1:-1], utr)])
+    locs4 = remove_overlaps([(m.start() + 2) for m in re.finditer(site[:-2], utr)])
+    locs = locs3 + locs2 + locs4
+
+    if only_canon == False:
+        locs0 = remove_overlaps([m.start() - 2 for m in re.finditer(site[4:], utr)])
+        locs1 = remove_overlaps([m.start() - 1 for m in re.finditer(site[3:-1], utr)])
+        locs2 = remove_overlaps([(m.start()) for m in re.finditer(site[2:-2], utr)])
+        locs3 = remove_overlaps([(m.start() + 1) for m in re.finditer(site[1:-3], utr)])
+        locs4 = remove_overlaps([(m.start() + 2) for m in re.finditer(site[:-4], utr)])
+        locs += (locs0 + locs1 + locs2 + locs3 + locs4)
+
+    locs = np.array(locs)
+
+    if len(locs) == 0:
+        return []
+    elif len(locs) == 1:
+        real_locs = locs
     else:
-        seqs = [utr_ext[loc-4:loc+8] for loc in real_locs if (loc-4 >=0) and (loc+5 <= utr_len)]
+        real_locs = [locs[0]]
+        for i, l in enumerate(locs[1:]):
+            if min([abs(l - rl) for rl in real_locs]) >= 7:
+                real_locs.append(l)
+
+    seqs = [utr_ext[loc-4:loc+8] for loc in real_locs if (loc-4 >=0) and (loc+5 <= utr_len)]
 
     return seqs
 
