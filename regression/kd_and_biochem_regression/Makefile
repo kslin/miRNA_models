@@ -53,7 +53,7 @@ endog_cross_val:
 	done
 
 simple:
-	python main_simple.py -k /lab/bartel4_ata/kathyl/RNA_Seq/analysis/data/final/kds.txt -t /lab/bartel4_ata/kathyl/RNA_Seq/analysis/data/no_baseline_analysis/merged_with_bayes.txt -m mir124 --pretrain none -l /lab/bartel4_ata/kathyl/NeuralNet/logdirs/tpms_and_kds/simple_mir124_4_16_16
+	python main_simple.py -k /lab/bartel4_ata/kathyl/RNA_Seq/outputs/biochem/final/kds.txt -t /lab/bartel4_ata/kathyl/RNA_Seq/outputs/biochem/final/merged_with_baselines.txt -m mir124 --pretrain none -l /lab/bartel4_ata/kathyl/NeuralNet/logdirs/tpms_and_kds/simple_mir124_with_neg_examples_4_16_16
 
 simple_xval:
 	mkdir /lab/bartel4_ata/kathyl/NeuralNet/logdirs/tpms_and_kds/simple_xval_4_16_16_fix_getseqs2

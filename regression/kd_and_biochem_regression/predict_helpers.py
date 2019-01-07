@@ -10,8 +10,6 @@ from scipy import stats
 import seaborn as sns
 import tensorflow as tf
 
-import config
-
 from matplotlib.colorbar import ColorbarBase
 from matplotlib import colors
 from matplotlib.colors import LinearSegmentedColormap
@@ -235,7 +233,7 @@ def get_training_pred_df(test_mir, other_mirs, log_dir, predict_dir, merged, inp
     return all_preds_df, all_tpms_df
 
 
-def get_pred_df(log_dir, predict_dir, merged, test_mirs, all_mirs, input_intercept_dict=None):
+def get_pred_df(log_dir, predict_dir, merged, test_mirs, all_mirs, sitem8_dict, input_intercept_dict=None):
     freeAgo_guide, freeAgo_pass = [], []
     for tm in test_mirs:
         try:
@@ -306,7 +304,7 @@ def get_pred_df(log_dir, predict_dir, merged, test_mirs, all_mirs, input_interce
         tpms = all_tpms_df[TEST_MIR] / np.log(2)
         log2_intercept = intercept / np.log(2)
         actual = tpms - log2_intercept
-        sitem8 = config.SITE_DICT[TEST_MIR][:-1]
+        sitem8 = sitem8_dict[TEST_MIR]
         num_canon = [count_num_canon(utr, sitem8) for utr in utr_list]
         
         temp = pd.DataFrame({'mir': TEST_MIR,

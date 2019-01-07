@@ -24,12 +24,8 @@ if __name__ == '__main__':
     parser.add_option("-k", "--kdfile", dest="KD_FILE", help="kd data")
     parser.add_option("-t", "--tpmfile", dest="TPM_FILE", help="tpm data")
     parser.add_option("-m", "--mirna", dest="TEST_MIRNA", help="testing miRNA")
-    # parser.add_option("--hidden1", dest="HIDDEN1", type=int, help="number of nodes in layer 1")
-    # parser.add_option("--hidden2", dest="HIDDEN2", type=int, help="number of nodes in layer 2")
-    # parser.add_option("--hidden3", dest="HIDDEN3", type=int, help="number of nodes in layer 3")
     parser.add_option("--pretrain", dest="PRETRAIN", help="pretrain directory")
     parser.add_option("-l", "--logdir", dest="LOGDIR", help="directory for writing logs")
-    # parser.add_option("-r", "--reload", dest="RELOAD", default=None, help="reload directory")
 
     (options, args) = parser.parse_args()
 
@@ -39,13 +35,13 @@ if __name__ == '__main__':
     if not os.path.isdir(options.LOGDIR):
         os.makedirs(options.LOGDIR)
 
+    # make sure config.BATCH_SIZE_BIOCHEM is an even number
+    # if config.BATCH_SIZE_BIOCHEM % 4 != 0:
+    #     raise ValueError("config.BATCH_SIZE_BIOCHEM must be a multiple of 4")
 
     ### READ EXPRESSION DATA ###
     tpm = pd.read_csv(options.TPM_FILE, sep='\t', index_col=0)
     MIRS = [x for x in tpm.columns if ('mir' in x) or ('lsy' in x)]
-    # tpm = tpm.dropna(subset=['nosite3'])
-    # for tm in MIRS:
-    #     tpm[tm] -= tpm['nosite3']
 
     # split miRNAs into training and testing
     if options.TEST_MIRNA == 'none':
@@ -102,7 +98,40 @@ if __name__ == '__main__':
         data = data[data['stype'] != 'no site']
         data['keep_prob'] = 1.0
     else:
-        data['keep_prob'] = (1 / (1 + np.exp((data['log_kd'] + 1)*4)))
+        # data['keep_prob'] = (1 / (1 + np.exp((data['log_kd'] + 1)*4)))
+
+        # def get_keep_prob(val, all_bins_dict):
+        #     if val <= -4:
+        #         return 1.0
+
+        #     else:
+        #         return all_bins_dict[val]
+        
+        # data['nearest'] = np.minimum(0, np.round(data['log_kd']*4)/4)
+        # all_bins = data.copy()
+        # all_bins['count'] = 1
+        # all_bins = all_bins.groupby('nearest').agg({'count': np.sum})
+
+        # temp_for_linregress = all_bins[all_bins.index <= -4]
+        # slope, intercept = stats.linregress(temp_for_linregress.index, temp_for_linregress['count'])[:2]
+        # all_bins['final_count'] = all_bins.index * slope + intercept
+
+        # some_bins = all_bins[all_bins.index >= -4]
+        # some_bins['keep_prob'] = some_bins['final_count'] / some_bins['count']
+        # some_bins_dict = {x:y for (x,y) in zip(some_bins.index, some_bins['keep_prob'])}
+        # data['keep_prob'] = [get_keep_prob(x, some_bins_dict) for x in data['nearest']]
+
+        print("Balancing data...")
+        data['nearest'] = np.minimum(0, np.round(data['log_kd']*4)/4)
+        data['count'] = 1
+        temp = data.groupby('nearest').agg({'count': np.sum})
+        temp['target'] = np.exp(temp.index + 5)*500
+        temp['keep_prob'] = np.minimum(1.0, temp['target'] / temp['count'])
+        temp['keep_prob'] = [1.0 if x < -3 else y for (x,y) in zip(temp.index, temp['keep_prob'])]
+        temp_dict = {x:y for (x,y) in zip(temp.index, temp['keep_prob'])}
+        data['keep_prob'] = [temp_dict[x] for x in data['nearest']]
+
+        data = data.drop(['nearest','count'], 1)
 
     temp = []
     print(len(data))
@@ -155,7 +184,8 @@ if __name__ == '__main__':
     
     data = data[~data['mir'].isin(test_mirs)]
     print(len(data))
-    data = data[data['log ka'] > 0]
+    # data = data[data['log ka'] > 0]
+    # data['log ka'] = np.maximum(0, data['log ka'])
     print(len(data))
 
     test_mir2 = np.random.choice(data['mir'].unique())
@@ -235,7 +265,8 @@ if __name__ == '__main__':
             if config.BATCH_SIZE_BIOCHEM == 0:
                 _biochem_loss = tf.constant(0.0)
             else:
-                _biochem_loss = (tf.nn.l2_loss(tf.subtract(_pred_biochem, _biochem_y))) / config.BATCH_SIZE_BIOCHEM
+                # _biochem_loss = (tf.nn.l2_loss(tf.subtract(_pred_biochem, _biochem_y))) / config.BATCH_SIZE_BIOCHEM
+                _biochem_loss = (tf.nn.l2_loss(tf.subtract(tf.nn.relu(_pred_biochem), tf.nn.relu(_biochem_y)))) / config.BATCH_SIZE_BIOCHEM
 
             _weight_regularize = tf.multiply(tf.nn.l2_loss(_freeAGO_guide_offset) \
                                 + tf.nn.l2_loss(_w1) \
@@ -306,99 +337,10 @@ if __name__ == '__main__':
 
         sess.run(tf.global_variables_initializer())
 
-        if options.PRETRAIN == 'pretrain':
-
-            print("Started pretraining...")
-
-            # plot weights
-            conv_weights = sess.run(_w1)
-            xlabels = ['U','A','G','C']
-            ylabels = ['A','U','C','G']
-            helpers.graph_convolutions(conv_weights, xlabels, ylabels, os.path.join(options.LOGDIR, 'convolution1_init.pdf'))
-
-            conv_weights = np.abs(sess.run(_w3))
-            conv_weights = np.sum(conv_weights, axis=(2,3))
-            vmin, vmax = np.min(conv_weights), np.max(conv_weights)
-            xlabels = ['s{}'.format(i+1) for i in range(config.SEQLEN)]
-            ylabels = ['m{}'.format(i+1) for i in list(range(config.MIRLEN))[::-1]]
-            fig = plt.figure(figsize=(4,4))
-            sns.heatmap(conv_weights, xticklabels=xlabels, yticklabels=ylabels,
-                        cmap=plt.cm.plasma, vmin=vmin, vmax=vmax)
-            plt.savefig(os.path.join(options.LOGDIR, 'convolution3_init.pdf'))
-            plt.close()
-
-            for i in range(1000):
-                xs, ys = helpers.make_pretrain_data(200, config.MIRLEN, config.SEQLEN)
-                feed_dict = {
-                    _keep_prob: config.KEEP_PROB_TRAIN,
-                    _phase_train: True,
-                    _combined_x: xs,
-                    _pretrain_y: ys
-                }
-                train_pred, _ = sess.run([_pred_ind_values, _pretrain_step], feed_dict=feed_dict)
-
-                if ((i+1) % 200) == 0:
-                    fig = plt.figure(figsize=(5,5))
-                    plt.scatter(train_pred, ys, s=20)
-                    plt.savefig(os.path.join(options.LOGDIR, 'pretrain_train_scatter.pdf'))
-                    plt.close()
-
-                    print(i+1)
-
-            test_xs, test_ys = helpers.make_pretrain_data(200, config.MIRLEN, config.SEQLEN)
-            feed_dict = {
-                _keep_prob: 1.0,
-                _phase_train: False,
-                _combined_x: test_xs,
-                _pretrain_y: test_ys
-            }
-            test_pred = sess.run(_pred_ind_values, feed_dict=feed_dict)
-
-            fig = plt.figure(figsize=(5,5))
-            plt.scatter(test_pred, test_ys, s=20)
-            plt.savefig(os.path.join(options.LOGDIR, 'pretrain_test_scatter.pdf'))
-            plt.close()
-
-            # plot weights
-            conv_weights = sess.run(_w1)
-            xlabels = ['U','A','G','C']
-            ylabels = ['A','U','C','G']
-            helpers.graph_convolutions(conv_weights, xlabels, ylabels, os.path.join(options.LOGDIR, 'convolution1_pretrained.pdf'))
-
-            conv_weights = np.abs(sess.run(_w3))
-            conv_weights = np.sum(conv_weights, axis=(2,3))
-            vmin, vmax = np.min(conv_weights), np.max(conv_weights)
-            xlabels = ['s{}'.format(i+1) for i in range(config.SEQLEN)]
-            ylabels = ['m{}'.format(i+1) for i in list(range(config.MIRLEN))[::-1]]
-            fig = plt.figure(figsize=(4,4))
-            sns.heatmap(conv_weights, xticklabels=xlabels, yticklabels=ylabels,
-                        cmap=plt.cm.plasma, vmin=vmin, vmax=vmax)
-            plt.savefig(os.path.join(options.LOGDIR, 'convolution3_pretrained.pdf'))
-            plt.close()
-
-            # save pretrained model
-            saver_pretrain.save(sess, os.path.join(PRETRAIN_SAVE_PATH, 'model'))
-
-            feed_dict = {
-                _keep_prob: 1.0,
-                _phase_train: False,
-                _combined_x: test_kds_combined_x
-            }
-
-            pred_test_kds = sess.run(_pred_ind_values, feed_dict=feed_dict)
-
-            fig = plt.figure(figsize=(7,7))
-            plt.scatter(pred_test_kds, test_kds_labels, s=20, c=test_kds_colors)
-            plt.savefig(os.path.join(options.LOGDIR, 'test_kd_scatter.png'))
-            plt.close()
-
-            print("Finished pretraining")
-            sys.exit()
-
-        elif options.PRETRAIN != 'none':
+        if options.PRETRAIN != 'none':
             latest = tf.train.latest_checkpoint(options.PRETRAIN)
             print('Restoring from {}'.format(latest))
-            saver_pretrain.restore(sess, latest)
+            saver.restore(sess, latest)
 
             # reset later layers
             # sess.run(_w2.initializer)
@@ -493,17 +435,36 @@ if __name__ == '__main__':
 
             if config.BATCH_SIZE_BIOCHEM > 0:
                 # get biochem data batch
-                _, biochem_train_batch = biochem_train_data.get_next_batch(config.BATCH_SIZE_BIOCHEM)
+                _, biochem_train_batch = biochem_train_data.get_next_batch(config.BATCH_SIZE_BIOCHEM - 2)
 
+                batch_biochem_y = []
                 # fill in features for biochem data
-                for mir, seq in zip(biochem_train_batch['mir'], biochem_train_batch['seq']):
+                for mir, seq, logka in zip(biochem_train_batch['mir'], biochem_train_batch['seq'], biochem_train_batch['log ka']):
                     mirseq_one_hot = config.ONE_HOT_DICT[mir]
+
+                    # add actual sequence
                     temp = np.outer(mirseq_one_hot, helpers.one_hot_encode(seq, config.SEQ_NT_DICT, config.TARGETS))
                     batch_combined_x[current_ix, :, :] = temp
+                    batch_biochem_y.append([logka])
                     current_ix += 1
 
+                # add nonmatching sequence for miRNA
+                seq = helpers.get_target_no_match(config.MIRSEQ_DICT[mir], config.SEQLEN)
+                temp = np.outer(mirseq_one_hot, helpers.one_hot_encode(seq, config.SEQ_NT_DICT, config.TARGETS))
+                batch_combined_x[current_ix, :, :] = temp
+                batch_biochem_y.append([0])
+                current_ix += 1
+
+                # add nonmatching sequence for a random miRNA sequence
+                random_mir = helpers.generate_random_seq(config.MIRLEN)
+                mirseq_one_hot = helpers.one_hot_encode(random_mir[::-1], config.MIR_NT_DICT, config.TARGETS)
+                seq = helpers.get_target_no_match(random_mir, config.SEQLEN)
+                temp = np.outer(mirseq_one_hot, helpers.one_hot_encode(seq, config.SEQ_NT_DICT, config.TARGETS))
+                batch_combined_x[current_ix, :, :] = temp
+                batch_biochem_y.append([0])
+                current_ix += 1
                 
-                batch_biochem_y = biochem_train_batch[['log ka']].values
+                batch_biochem_y = np.array(batch_biochem_y)
             else:
                 batch_biochem_y = np.array([[0]])
 
@@ -784,7 +745,7 @@ if __name__ == '__main__':
                     logfc_df['actual'] = logfc_df[TEST_MIRNA] - logfc_df['nosite3']
                 else:
                     logfc_df['actual'] = logfc_df[TEST_MIRNA] - logfc_df[config.BASELINE_METHOD]
-                xs, ys = logfc_df['pred'], logfc_df['actual']
+                xs, ys = logfc_df['pred'].values, logfc_df['actual'].values
                 r2 = stats.linregress(xs, ys)[2]**2
                 r2s.append(r2)
 

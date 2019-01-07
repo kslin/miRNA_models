@@ -191,8 +191,8 @@ def both_steps_simple(scope, num_train, batch_size_biochem, batch_size_repressio
                 _repression_max_size, _repression_split_sizes, _utr_len, init_params):
 
     # construct a mask based on the number of sites per gene
-    _repression_mask = tf.reshape(tf.sequence_mask(_repression_split_sizes, dtype=tf.float32),
-                                  [batch_size_repression, num_train*2, -1])
+    # _repression_mask = tf.reshape(tf.sequence_mask(_repression_split_sizes, dtype=tf.float32),
+    #                               [batch_size_repression, num_train*2, -1])
 
     # get padding dimensions
     _repression_split_sizes_expand = tf.expand_dims(_repression_split_sizes, 1)
@@ -234,6 +234,8 @@ def both_steps_simple(scope, num_train, batch_size_biochem, batch_size_repressio
     
     # _utr_slope = 1.0 / _utr_len * tf.exp(_utr_coef) + tf.exp(_decay)
     # _utr_slope = tf.nn.relu(_decay + (tf.log(_utr_len) * _utr_coef))
+
+    _repression_mask = tf.cast(_pred_repression > 0, tf.float32)
 
     # calculate predicted number bound and predicted log fold-change
     _pred_nbound_split = tf.reduce_sum(tf.multiply(tf.nn.sigmoid(_freeAGO_all + _pred_repression), _repression_mask), axis=2)

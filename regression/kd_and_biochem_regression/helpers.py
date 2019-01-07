@@ -70,6 +70,22 @@ def count_num_canon(utr, sitem8):
     num_8 = utr.count(sitem8 + 'A')
     return num_6m8 + num_6a1 + num_6 - num_7m8 - num_7a1
 
+def get_stype_six_canon(site8, seq):
+    if site8 in seq:
+        return '8mer'
+    elif site8[:-1] in seq:
+        return '7mer-m8'
+    elif site8[1:] in seq:
+        return '7mer-a1'
+    elif site8[1:-1] in seq:
+        return '6mer'
+    elif site8[:-2] in seq:
+        return '6mer-m8'
+    elif site8[2:] in seq:
+        return '6mer-a1'
+    else:
+        return 'no site'
+
 
 # def get_color(sitem8, seq):
 #     if (sitem8 + 'A') in seq:
@@ -87,6 +103,28 @@ def count_num_canon(utr, sitem8):
 def one_hot_encode(seq, nt_dict, targets):
     seq = [nt_dict[nt] for nt in seq]
     return targets[seq].flatten()
+
+
+def generate_random_seq(length):
+    nts = ['A','T','C','G']
+    seq = np.random.choice(nts, size=length, replace=True)
+    return ''.join(seq)
+
+
+def get_target_no_match(mirna_sequence, length):
+    """Given a miRNA sequence, return a random target sequence without 4 nt of contiguous pairing"""
+    rc = rev_comp(mirna_sequence[:8])
+    off_limits = [rc[ix:ix+4] for ix in range(5)]
+    while True:
+        target = generate_random_seq(length)
+        keep = True
+        for subseq in off_limits:
+            if subseq in target:
+                keep = False
+                break
+
+        if keep:
+            return target
 
 
 # def one_hot_encode_nt(seq, nt_order):
@@ -224,12 +262,6 @@ def get_seqs_new(utr, site, only_canon=False):
     seqs = [utr_ext[loc-4:loc+8] for loc in real_locs if (loc-4 >=0) and (loc+5 <= utr_len)]
 
     return seqs
-
-
-def generate_random_seq(len):
-    nts = ['A','T','C','G']
-    seq = np.random.choice(nts, size=len, replace=True)
-    return ''.join(seq)
 
 
 def make_pretrain_data(size, mirlen, seqlen=12):
