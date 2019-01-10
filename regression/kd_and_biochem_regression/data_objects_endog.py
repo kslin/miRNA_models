@@ -53,7 +53,7 @@ class RepressionData(Data):
         shuffle_ix = np.random.permutation(self.length)
         self.data = self.data.iloc[shuffle_ix]
 
-    def get_seqs(self, mirs, only_canon):
+    def get_seqs(self, mirs, overlap_dist, only_canon):
         self.seq_dict = {}
         self.num_sites_dict = {}
         self.num_sites_dict_pass = {}
@@ -64,8 +64,8 @@ class RepressionData(Data):
             for mir in mirs:
                 utr = row[1]['Sequence']
 
-                seqs = helpers.get_seqs_new(utr, config.SITE_DICT[mir], only_canon=only_canon)
-                seqs_pass = helpers.get_seqs_new(utr, config.SITE_DICT[mir + '*'], only_canon=only_canon)
+                seqs = helpers.get_seqs_new(utr, config.SITE_DICT[mir], overlap_dist, only_canon)
+                seqs_pass = helpers.get_seqs_new(utr, config.SITE_DICT[mir + '*'], overlap_dist, only_canon)
                 gene_dict[mir] = seqs
                 gene_dict[mir + '*'] = seqs_pass
 
