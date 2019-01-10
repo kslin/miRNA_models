@@ -97,10 +97,10 @@ if __name__ == '__main__':
 
     # calculate_12mer_kds(options.MIRSEQ, options.MIRNAME, options.LOGDIR, options.OUTFILE)
 
-    logdir = '/lab/bartel4_ata/kathyl/NeuralNet/logdirs/tpms_and_kds/simple_xval_4_16_16/MIRNA/saved/'
-    outfile = '/lab/bartel4_ata/kathyl/RNA_Seq/outputs/convnet/kd_preds/MIRNA.txt'
+    logdir = '/lab/bartel4_ata/kathyl/NeuralNet/logdirs/tpms_and_kds/simple_xval_4_16_16_neg_examples/MIRNA/saved/'
+    outfile = '/lab/bartel4_ata/kathyl/RNA_Seq/outputs/convnet/kd_preds/simple_xval_4_16_16_neg_examples/MIRNA.txt'
 
-    ALL_MIRS = ['lsy6', 'mir1', 'mir7', 'mir124', 'mir137', 'mir139', 'mir143', 'mir144',
+    ALL_MIRS = ['lsy6', 'let7', 'mir1', 'mir7', 'mir124', 'mir137', 'mir139', 'mir143', 'mir144',
                 'mir153', 'mir155', 'mir182', 'mir199a', 'mir204', 'mir205', 'mir216b', 'mir223']
 
     for mir in ALL_MIRS:
@@ -109,5 +109,5 @@ if __name__ == '__main__':
         calculate_12mer_kds(mirseq, mir, logdir.replace('MIRNA', mir), outfile.replace('MIRNA', mir))
 
         mirseq_star = config.MIRSEQ_DICT[mir + '*']
-        calculate_12mer_kds(mirseq_star, mir+'*', logdir.replace('MIRNA', mir), outfile.replace('MIRNA', mir+'*'))
+        calculate_12mer_kds(mirseq_star, mir+'*', logdir.replace('MIRNA', mir), outfile.replace('MIRNA', mir+'_pass'))
 

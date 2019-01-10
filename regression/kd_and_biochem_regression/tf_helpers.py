@@ -247,58 +247,58 @@ def both_steps_simple(scope, num_train, batch_size_biochem, batch_size_repressio
 
     return _pred_biochem, _pred_repression_flat, _freeAGO_mean, _freeAGO_guide_offset, _freeAGO_pass_offset, _freeAGO_all, _decay, _utr_coef, _pred_logfc
 
-def both_steps(scope, num_train, batch_size_biochem, batch_size_repression, _pred_ind_values,
-                _repression_max_size, _repression_split_sizes, _let7_sites, _let7_mask, _utr_len, init_params):
+# def both_steps(scope, num_train, batch_size_biochem, batch_size_repression, _pred_ind_values,
+#                 _repression_max_size, _repression_split_sizes, _let7_sites, _let7_mask, _utr_len, init_params):
 
-    # construct a mask based on the number of sites per gene
-    _repression_mask = tf.reshape(tf.sequence_mask(_repression_split_sizes, dtype=tf.float32),
-                                  [batch_size_repression, num_train*2, -1])
+#     # construct a mask based on the number of sites per gene
+#     _repression_mask = tf.reshape(tf.sequence_mask(_repression_split_sizes, dtype=tf.float32),
+#                                   [batch_size_repression, num_train*2, -1])
 
-    # get padding dimensions
-    _repression_split_sizes_expand = tf.expand_dims(_repression_split_sizes, 1)
-    _repression_paddings = tf.concat([tf.zeros(shape=tf.shape(_repression_split_sizes_expand), dtype=tf.int32),
-                                      _repression_max_size - _repression_split_sizes_expand], axis=1)
+#     # get padding dimensions
+#     _repression_split_sizes_expand = tf.expand_dims(_repression_split_sizes, 1)
+#     _repression_paddings = tf.concat([tf.zeros(shape=tf.shape(_repression_split_sizes_expand), dtype=tf.int32),
+#                                       _repression_max_size - _repression_split_sizes_expand], axis=1)
     
-    # split data into biochem and repression
-    if batch_size_biochem == 0:
-        _pred_biochem = tf.constant(np.array([[0]]))
-        _pred_repression_flat = tf.reshape(_pred_ind_values, [-1])
-    else:
-        _pred_biochem = _pred_ind_values[-1 * batch_size_biochem:, :]
-        _pred_repression_flat = tf.reshape(_pred_ind_values[:-1 * batch_size_biochem, :], [-1])
+#     # split data into biochem and repression
+#     if batch_size_biochem == 0:
+#         _pred_biochem = tf.constant(np.array([[0]]))
+#         _pred_repression_flat = tf.reshape(_pred_ind_values, [-1])
+#     else:
+#         _pred_biochem = _pred_ind_values[-1 * batch_size_biochem:, :]
+#         _pred_repression_flat = tf.reshape(_pred_ind_values[:-1 * batch_size_biochem, :], [-1])
 
-    # split repression data and pad into batch_size_biochem x num_train*2 x max_size matrix
-    _pred_repression_splits = tf.split(_pred_repression_flat, _repression_split_sizes)
-    _pred_repression_splits_padded = [tf.pad(_pred_repression_splits[ix], _repression_paddings[ix:ix+1,:]) for ix in range(batch_size_repression*num_train*2)]
-    _pred_repression_splits_padded_stacked = tf.stack(_pred_repression_splits_padded)
-    _pred_repression = tf.reshape(_pred_repression_splits_padded_stacked, [batch_size_repression, num_train*2, -1])
+#     # split repression data and pad into batch_size_biochem x num_train*2 x max_size matrix
+#     _pred_repression_splits = tf.split(_pred_repression_flat, _repression_split_sizes)
+#     _pred_repression_splits_padded = [tf.pad(_pred_repression_splits[ix], _repression_paddings[ix:ix+1,:]) for ix in range(batch_size_repression*num_train*2)]
+#     _pred_repression_splits_padded_stacked = tf.stack(_pred_repression_splits_padded)
+#     _pred_repression = tf.reshape(_pred_repression_splits_padded_stacked, [batch_size_repression, num_train*2, -1])
 
-    _freeAGO_mean = tf.get_variable('freeAGO_mean_{}'.format(scope), shape=(), initializer=tf.constant_initializer(init_params[0]))
-    _freeAGO_guide_offset = tf.get_variable('freeAGO_guide_offset_toggle_{}'.format(scope), shape=[num_train,1],
-                            initializer=tf.constant_initializer(init_params[1]))
-    _freeAGO_pass_offset = tf.get_variable('freeAGO_pass_offset_{}'.format(scope), shape=[num_train,1], initializer=tf.constant_initializer(init_params[2]))
-    _freeAGO_all = tf.reshape(tf.concat([_freeAGO_guide_offset + _freeAGO_mean, _freeAGO_pass_offset + _freeAGO_mean], axis=1), [1,num_train*2,1], name='freeAGO_all_{}'.format(scope))
+#     _freeAGO_mean = tf.get_variable('freeAGO_mean_{}'.format(scope), shape=(), initializer=tf.constant_initializer(init_params[0]))
+#     _freeAGO_guide_offset = tf.get_variable('freeAGO_guide_offset_toggle_{}'.format(scope), shape=[num_train,1],
+#                             initializer=tf.constant_initializer(init_params[1]))
+#     _freeAGO_pass_offset = tf.get_variable('freeAGO_pass_offset_{}'.format(scope), shape=[num_train,1], initializer=tf.constant_initializer(init_params[2]))
+#     _freeAGO_all = tf.reshape(tf.concat([_freeAGO_guide_offset + _freeAGO_mean, _freeAGO_pass_offset + _freeAGO_mean], axis=1), [1,num_train*2,1], name='freeAGO_all_{}'.format(scope))
 
-    _decay = tf.get_variable('decay_{}'.format(scope), shape=(), initializer=tf.constant_initializer(init_params[3]))
+#     _decay = tf.get_variable('decay_{}'.format(scope), shape=(), initializer=tf.constant_initializer(init_params[3]))
 
-    _utr_coef = tf.get_variable('utr_coef_toggle_{}'.format(scope), shape=(),
-                                initializer=tf.constant_initializer(init_params[4]))
-    # _freeAGO_let7 = tf.get_variable('freeAGO_let7_toggle_{}'.format(scope), shape=[1, 1, 1],
-    #                                 initializer=tf.constant_initializer(init_params[5]))
+#     _utr_coef = tf.get_variable('utr_coef_toggle_{}'.format(scope), shape=(),
+#                                 initializer=tf.constant_initializer(init_params[4]))
+#     # _freeAGO_let7 = tf.get_variable('freeAGO_let7_toggle_{}'.format(scope), shape=[1, 1, 1],
+#     #                                 initializer=tf.constant_initializer(init_params[5]))
 
-    # calculate predicted number bound and predicted log fold-change
-    _pred_nbound_split = tf.reduce_sum(tf.multiply(tf.nn.sigmoid(_freeAGO_all + _pred_repression), _repression_mask), axis=2)
-    _pred_nbound = tf.reduce_sum(tf.reshape(_pred_nbound_split, [batch_size_repression, num_train, 2]), axis=2)
-    _pred_nbound_let7 = tf.reduce_sum(tf.multiply(tf.nn.sigmoid(_freeAGO_let7 + _let7_sites), _let7_mask), axis=2)
-    _pred_nbound_utr = tf.exp(_utr_coef) * _utr_len
-    _pred_nbound_init = _pred_nbound_let7 + _pred_nbound_utr
-    _pred_nbound_total = _pred_nbound + _pred_nbound_init
+#     # calculate predicted number bound and predicted log fold-change
+#     _pred_nbound_split = tf.reduce_sum(tf.multiply(tf.nn.sigmoid(_freeAGO_all + _pred_repression), _repression_mask), axis=2)
+#     _pred_nbound = tf.reduce_sum(tf.reshape(_pred_nbound_split, [batch_size_repression, num_train, 2]), axis=2)
+#     _pred_nbound_let7 = tf.reduce_sum(tf.multiply(tf.nn.sigmoid(_freeAGO_let7 + _let7_sites), _let7_mask), axis=2)
+#     _pred_nbound_utr = tf.exp(_utr_coef) * _utr_len
+#     _pred_nbound_init = _pred_nbound_let7 + _pred_nbound_utr
+#     _pred_nbound_total = _pred_nbound + _pred_nbound_init
 
-    _pred_logfc_init = tf.multiply(tf.log1p(_pred_nbound_init / tf.exp(_decay)), -1.0, name='pred_logfc_init_{}'.format(scope))
-    _pred_logfc = tf.multiply(tf.log1p(_pred_nbound_total / tf.exp(_decay)), -1.0, name='pred_logfc_{}'.format(scope))
-    _pred_logfc_net = tf.subtract(_pred_logfc, _pred_logfc_init, name='pred_logfc_net_{}'.format(scope))
+#     _pred_logfc_init = tf.multiply(tf.log1p(_pred_nbound_init / tf.exp(_decay)), -1.0, name='pred_logfc_init_{}'.format(scope))
+#     _pred_logfc = tf.multiply(tf.log1p(_pred_nbound_total / tf.exp(_decay)), -1.0, name='pred_logfc_{}'.format(scope))
+#     _pred_logfc_net = tf.subtract(_pred_logfc, _pred_logfc_init, name='pred_logfc_net_{}'.format(scope))
 
-    return _pred_biochem, _pred_repression_flat, _freeAGO_mean, _freeAGO_guide_offset, _freeAGO_all, _decay, _utr_coef, _freeAGO_let7, _pred_logfc, _pred_logfc_net
+#     return _pred_biochem, _pred_repression_flat, _freeAGO_mean, _freeAGO_guide_offset, _freeAGO_all, _decay, _utr_coef, _freeAGO_let7, _pred_logfc, _pred_logfc_net
 
 
 
@@ -355,42 +355,42 @@ def both_steps(scope, num_train, batch_size_biochem, batch_size_repression, _pre
 
 #         print(np.sum(np.abs(blah - actual)))
 
-def test_both_steps():
-    num_train = 2
-    batch_size_biochem = 2
-    batch_size_repression = 2
-    _pred_ind_values = tf.placeholder(tf.float32, shape=[None, 1])
-    _repression_max_size = tf.placeholder(tf.int32, shape=[])
-    _repression_split_sizes = tf.placeholder(tf.int32, shape=[batch_size_repression*num_train*2])
-    _utr_len = tf.placeholder(tf.float32, shape=[None, 1])
-    _let7_sites = tf.placeholder(tf.float32, shape=[None, 1, None])
-    _let7_mask = tf.placeholder(tf.float32, shape=[None, 1, None])
-    init_params = [-2.0, 0.0, -1.0, 0.0, -9.0, -8.0]
+# def test_both_steps():
+#     num_train = 2
+#     batch_size_biochem = 2
+#     batch_size_repression = 2
+#     _pred_ind_values = tf.placeholder(tf.float32, shape=[None, 1])
+#     _repression_max_size = tf.placeholder(tf.int32, shape=[])
+#     _repression_split_sizes = tf.placeholder(tf.int32, shape=[batch_size_repression*num_train*2])
+#     _utr_len = tf.placeholder(tf.float32, shape=[None, 1])
+#     _let7_sites = tf.placeholder(tf.float32, shape=[None, 1, None])
+#     _let7_mask = tf.placeholder(tf.float32, shape=[None, 1, None])
+#     init_params = [-2.0, 0.0, -1.0, 0.0, -9.0, -8.0]
 
-    results = both_steps('blah', num_train, batch_size_biochem, batch_size_repression, _pred_ind_values,
-                _repression_max_size, _repression_split_sizes, _let7_sites, _let7_mask, _utr_len, init_params)
-    _pred_biochem, _pred_repression_flat, _freeAGO_mean, _freeAGO_all, _decay, _utr_coef, _freeAGO_let7, _pred_logfc, _pred_logfc_net = results
+#     results = both_steps('blah', num_train, batch_size_biochem, batch_size_repression, _pred_ind_values,
+#                 _repression_max_size, _repression_split_sizes, _let7_sites, _let7_mask, _utr_len, init_params)
+#     _pred_biochem, _pred_repression_flat, _freeAGO_mean, _freeAGO_all, _decay, _utr_coef, _freeAGO_let7, _pred_logfc, _pred_logfc_net = results
 
-    with tf.Session() as sess:
-        sess.run(tf.global_variables_initializer())
+#     with tf.Session() as sess:
+#         sess.run(tf.global_variables_initializer())
 
-        feed_dict = {
-            _pred_ind_values: np.array([1.0,2,1,3,2,2,3,4,1,1,1,2,3,2]).reshape([-1,1]),
-            _repression_max_size: 3,
-            _repression_split_sizes: np.array([1,0,1,1,2,3,3,1]),
-            _utr_len: np.array([2000, 3000]).reshape([-1,1]),
-            _let7_sites: np.array([[4.0, 5, 6],[7,0,0]]).reshape([2,1,-1]),
-            _let7_mask: np.array([[1.0, 1.0, 1.0],[1.0,0,0]]).reshape([2,1,-1]),
-        }
+#         feed_dict = {
+#             _pred_ind_values: np.array([1.0,2,1,3,2,2,3,4,1,1,1,2,3,2]).reshape([-1,1]),
+#             _repression_max_size: 3,
+#             _repression_split_sizes: np.array([1,0,1,1,2,3,3,1]),
+#             _utr_len: np.array([2000, 3000]).reshape([-1,1]),
+#             _let7_sites: np.array([[4.0, 5, 6],[7,0,0]]).reshape([2,1,-1]),
+#             _let7_mask: np.array([[1.0, 1.0, 1.0],[1.0,0,0]]).reshape([2,1,-1]),
+#         }
 
-        blah = sess.run(_pred_logfc, feed_dict=feed_dict)
+#         blah = sess.run(_pred_logfc, feed_dict=feed_dict)
 
-        actual = np.array([[-0.53084946, -0.71815073],
-                    [-1.4748155, -0.99876857]])
+#         actual = np.array([[-0.53084946, -0.71815073],
+#                     [-1.4748155, -0.99876857]])
 
-        print(blah)
+#         print(blah)
 
-        print(np.sum(np.abs(blah - actual)))
+#         print(np.sum(np.abs(blah - actual)))
 
 # test_both_steps()   
 

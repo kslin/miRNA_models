@@ -213,10 +213,10 @@ if __name__ == '__main__':
     # make data objects for repression training data
     repression_train_data = data_objects_endog.RepressionData(train_tpm)
     repression_train_data.shuffle()
-    repression_train_data.get_seqs(train_mirs, config.ONLY_CANON)
+    repression_train_data.get_seqs(train_mirs, config.OVERLAP_DIST, config.ONLY_CANON)
 
     repression_test_data = data_objects_endog.RepressionData(test_tpm)
-    repression_test_data.get_seqs(test_mirs, config.ONLY_CANON)
+    repression_test_data.get_seqs(test_mirs, config.OVERLAP_DIST, config.ONLY_CANON)
 
     ### DEFINE MODEL ###
 
@@ -266,7 +266,7 @@ if __name__ == '__main__':
                 _biochem_loss = tf.constant(0.0)
             else:
                 # _biochem_loss = (tf.nn.l2_loss(tf.subtract(_pred_biochem, _biochem_y))) / config.BATCH_SIZE_BIOCHEM
-                _biochem_loss = (tf.nn.l2_loss(tf.subtract(tf.nn.relu(_pred_biochem), tf.nn.relu(_biochem_y)))) / config.BATCH_SIZE_BIOCHEM
+                _biochem_loss = (tf.nn.l2_loss(tf.subtract(tf.nn.relu(_pred_biochem), tf.nn.relu(_biochem_y))))# / config.BATCH_SIZE_BIOCHEM
 
             _weight_regularize = tf.multiply(tf.nn.l2_loss(_freeAGO_guide_offset) \
                                 + tf.nn.l2_loss(_w1) \
@@ -618,6 +618,12 @@ if __name__ == '__main__':
                 plt.scatter(pred_test_kds, test_kds_labels, s=20, c=test_kds_colors)
                 plt.title(TEST_MIRNA)
                 plt.savefig(os.path.join(options.LOGDIR, 'test_kd_scatter.png'))
+                plt.close()
+
+                fig = plt.figure(figsize=(7,7))
+                plt.scatter(np.maximum(0,pred_test_kds), np.maximum(0,test_kds_labels), s=20, c=test_kds_colors)
+                plt.title(TEST_MIRNA)
+                plt.savefig(os.path.join(options.LOGDIR, 'test_kd_scatter_bounded.png'))
                 plt.close()
 
                 feed_dict = {

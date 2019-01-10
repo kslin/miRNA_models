@@ -1,12 +1,13 @@
 import numpy as np
 
-import helpers
+from . import helpers
 
 # Set global parameters
 MIRLEN = 10
 SEQLEN = 12
 BASELINE_METHOD = 'baseline'
 ONLY_CANON = False
+OVERLAP_DIST = 7
 BATCH_SIZE_BIOCHEM = 12
 BATCH_SIZE_REPRESSION = 32
 BATCH_SIZE_REPRESSION_TEST = 99
@@ -75,6 +76,14 @@ MIRSEQ_DICT = {
                   'mir7-24nt': 'TGGAAGACTAGTGATTTTGTTGTT',
                   'mir7-25nt': 'TGGAAGACTAGTGATTTTGTTGTTT'
             }
+
+MIRS5 = ['mir1','mir124','mir155','mir7','lsy6']
+MIRS6 = MIRS5 + ['let7']
+MIRS11 = sorted(['mir153','mir139','mir144','mir223','mir137',
+             'mir205','mir143','mir182','mir199a','mir204','mir216b'])
+MIRS12 = MIRS11 + ['let7']
+MIRS16 = MIRS5 + MIRS11
+MIRS17 = MIRS16 + ['let7']
 
 SITE_DICT = {x: helpers.rev_comp(y[1:8]) + 'A' for (x,y) in MIRSEQ_DICT.items()}
 print(SITE_DICT['let7'])
