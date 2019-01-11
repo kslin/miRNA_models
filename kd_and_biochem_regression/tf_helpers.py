@@ -1,6 +1,6 @@
 import tensorflow as tf
 
-from . import config
+import config
 
 
 def get_conv_params(dim1, dim2, in_channels, out_channels, layer_name):
@@ -57,8 +57,17 @@ def seq2ka_predictor(_combined_x, _keep_prob, _phase_train):
     with tf.name_scope('dropout'):
         _dropout = tf.nn.dropout(_layer3, _keep_prob)
 
+    _max_pool = tf.layers.max_pooling2d(
+        _dropout,
+        (1, (config.SEQ_BUFFER * 2) + 1),
+        1,
+        padding='VALID',
+        data_format='channels_last',
+        name='max_pool'
+    )
+
     # reshape to 1D tensor
-    _layer_flat = tf.reshape(_dropout, [-1, config.HIDDEN3])
+    _layer_flat = tf.reshape(_max_pool, [-1, config.HIDDEN3])
 
     # add last layer
     with tf.name_scope('final_layer'):
@@ -77,7 +86,8 @@ def seq2ka_predictor(_combined_x, _keep_prob, _phase_train):
     print('layer1: {}'.format(_layer1))
     print('layer2: {}'.format(_layer2))
     print('layer3: {}'.format(_layer3))
-    print('layer3: {}'.format(_layer3))
+    print('max_pool: {}'.format(_max_pool))
+    print('pred_ka: {}'.format(_pred_ka_values))
 
     _cnn_weights = {
         'w1': _w1,

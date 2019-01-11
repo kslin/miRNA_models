@@ -1,7 +1,7 @@
 import numpy as np
 
-from . import config
-from . import helpers
+import config
+import helpers
 
 
 class Data:
@@ -53,6 +53,8 @@ class RepressionData(Data):
         self.data = self.data.iloc[shuffle_ix]
 
     def get_seqs(self, mirs, overlap_dist, only_canon):
+        site_dict = {x: helpers.rev_comp(y[1:8]) + 'A' for (x,y) in config.MIRSEQ_DICT.items()}
+        
         self.seq_dict = {}
         self.num_sites_dict = {}
         self.num_sites_dict_pass = {}
@@ -61,10 +63,10 @@ class RepressionData(Data):
             num_sites_gene = 0
             num_sites_gene_pass = 0
             for mir in mirs:
-                utr = row[1]['Sequence']
+                utr = row[1]['sequence']
 
-                seqs = helpers.get_seqs(utr, config.SITE_DICT[mir], overlap_dist, only_canon)
-                seqs_pass = helpers.get_seqs(utr, config.SITE_DICT[mir + '*'], overlap_dist, only_canon)
+                seqs = helpers.get_seqs(utr, site_dict[mir], overlap_dist, only_canon)
+                seqs_pass = helpers.get_seqs(utr, site_dict[mir + '*'], overlap_dist, only_canon)
                 gene_dict[mir] = seqs
                 gene_dict[mir + '*'] = seqs_pass
 
