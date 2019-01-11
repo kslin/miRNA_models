@@ -1,6 +1,7 @@
 from optparse import OptionParser
 import os
 import sys
+import time
 
 import matplotlib
 matplotlib.use('Agg')
@@ -37,6 +38,7 @@ if __name__ == '__main__':
     if not os.path.isdir(options.LOGDIR):
         os.makedirs(options.LOGDIR)
 
+
     ### READ EXPRESSION DATA ###
     tpm = pd.read_csv(options.TPM_FILE, sep='\t', index_col=0)
     MIRS = [x for x in tpm.columns if ('mir' in x) or ('lsy' in x)]
@@ -50,25 +52,30 @@ if __name__ == '__main__':
 
     MIR_ONE_HOT_DICT = {x: helpers.one_hot_encode(y, MIR_NT_DICT, TARGETS) for (x, y) in config.MIRSEQ_DICT_MIRLEN.items()}
 
-    def encode_seq_pairs(mirseq_one_hots, siteseqs):
-        encoded = np.empty([len(siteseqs), 4 * config.MIRLEN, 4 * (config.SEQLEN + (2 * config.SEQ_BUFFER))], 'float')
-        seq_start = 4 * config.SEQ_BUFFER
-        seq_end = 4 * (config.SEQ_BUFFER + config.SEQLEN)
+    def encode_seq_pairs(mirseq_one_hots, siteseqs, lookup):
+        encoded = np.empty([len(siteseqs), 4 * config.MIRLEN, 4 * config.SEQLEN], 'float')
 
         if len(mirseq_one_hots) == 1:
-            mirseq_one_hot = mirseq_one_hots[0]
+            if lookup:
+                mirseq_one_hot = MIR_ONE_HOT_DICT[mirseq_one_hots[0]]
+            else:
+                mirseq_one_hot = mirseq_one_hots[0]
             for ix, seq in enumerate(siteseqs):
                 seq_one_hot = helpers.one_hot_encode(seq, SEQ_NT_DICT, TARGETS)
-                encoded[ix, :, seq_start: seq_end] = np.outer(mirseq_one_hot, seq_one_hot)
+                encoded[ix, :, :] = np.outer(mirseq_one_hot, seq_one_hot)
+
+        elif lookup:
+            for ix, (mir, seq) in enumerate(zip(mirseq_one_hots, siteseqs)):
+                mirseq_one_hot = MIR_ONE_HOT_DICT[mir]
+                seq_one_hot = helpers.one_hot_encode(seq, SEQ_NT_DICT, TARGETS)
+                encoded[ix, :, :] = np.outer(mirseq_one_hot, seq_one_hot)
 
         else:
             for ix, (mirseq_one_hot, seq) in enumerate(zip(mirseq_one_hots, siteseqs)):
                 seq_one_hot = helpers.one_hot_encode(seq, SEQ_NT_DICT, TARGETS)
-                encoded[ix, :, seq_start: seq_end] = np.outer(mirseq_one_hot, seq_one_hot)
+                encoded[ix, :, :] = np.outer(mirseq_one_hot, seq_one_hot)
 
-        encoded = np.expand_dims((encoded * 4) - 0.25, 3)
-
-        return np.nan_to_num(encoded)
+        return encoded
 
     # split miRNAs into training and testing
     if options.TEST_MIRNA == 'none':
@@ -161,19 +168,31 @@ if __name__ == '__main__':
     print(data_test['mir'].unique())
     print(len(data_test))
 
+    test_kds_combined_x_old = np.zeros([len(data_test), 4*config.MIRLEN, 4*config.SEQLEN])
+    for i, row in enumerate(data_test.iterrows()):
+        mirseq_one_hot = MIR_ONE_HOT_DICT[row[1]['mir']]
+        seq_one_hot = helpers.one_hot_encode(row[1]['12mer'], SEQ_NT_DICT, TARGETS)
+        test_kds_combined_x_old[i,:,:] = np.outer(mirseq_one_hot, seq_one_hot)
+    
+    # test_kds_combined_x_old = np.expand_dims((test_kds_combined_x_old*4) - 0.25, 3)
+
     # one-hot encode test 12mers
-    test_kds_combined_x = encode_seq_pairs(data_test['mir'].values, data_test['12mer'].values)
+    test_kds_combined_x = encode_seq_pairs(data_test['mir'].values, data_test['12mer'].values, True)
+    # test_kds_combined_x = np.expand_dims(test_kds_combined_x, 3)
     test_kds_labels = data_test['log_ka'].values
     test_kds_colors = data_test['color'].values
+
+    print(np.sum(np.abs(test_kds_combined_x - test_kds_combined_x_old)))
 
     data = data[~data['mir'].isin(test_mirs)]
     print("Length of KD training set: {}".format(len(data)))
 
     # one-hot encode a subset of the training 12mers
     data_test2 = data[[np.random.random() < x for x in (data['keep_prob'] / 60.0)]]
-    print("Length of KD training set for plotting: {}".format(len(data)))
+    print("Length of KD training set for plotting: {}".format(len(data_test2)))
 
-    test_kds_combined_x2 = encode_seq_pairs(data_test2['mir'].values, data_test2['12mer'].values)
+    test_kds_combined_x2 = encode_seq_pairs(data_test2['mir'].values, data_test2['12mer'].values, True)
+    # test_kds_combined_x2 = np.expand_dims(test_kds_combined_x2, 3)
     test_kds_labels2 = data_test2['log_ka'].values
     test_kds_colors2 = data_test2['color'].values
 
@@ -200,15 +219,23 @@ if __name__ == '__main__':
         # create placeholders for input data
         _keep_prob = tf.placeholder(tf.float32, name='keep_prob')
         _phase_train = tf.placeholder(tf.bool, name='phase_train')
-        _combined_x = tf.placeholder(tf.float32, shape=[None, 4 * config.MIRLEN, None, 1], name='biochem_x')
+        _combined_x = tf.placeholder(tf.float32, shape=[None, 4 * config.MIRLEN, 4 * config.SEQLEN], name='biochem_x')
 
         # make variable placeholders for training
         _biochem_y = tf.placeholder(tf.float32, shape=[None, 1], name='biochem_y')
         _utr_len = tf.placeholder(tf.float32, shape=[None, 1], name='utr_len')
         _repression_y = tf.placeholder(tf.float32, shape=[None, None], name='repression_y')
 
+
+        # reshape, zero-center input
+        # _input_paddings = tf.constant([[0,0],[0,0],[config.SEQ_BUFFER * 4, config.SEQ_BUFFER * 4]])
+        _combined_x_4D = tf.expand_dims((_combined_x * 4.0) - 0.25, axis=3)
+
+        # print(_combined_x, _combined_x_4D)
+        # sys.exit()
+
         # add layers for predicting KA
-        _pred_ka_values, _cnn_weights = tf_helpers.seq2ka_predictor(_combined_x, _keep_prob, _phase_train)
+        _pred_ka_values, _cnn_weights = tf_helpers.seq2ka_predictor(_combined_x_4D, _keep_prob, _phase_train)
 
         # split data into biochem and repression and get biochem loss
         if config.BATCH_SIZE_BIOCHEM == 0:
@@ -217,7 +244,7 @@ if __name__ == '__main__':
             _utr_ka_values = tf.reshape(_pred_ka_values, [-1])
         else:
             _pred_biochem = _pred_ka_values[-1 * config.BATCH_SIZE_BIOCHEM:, :]
-            _biochem_loss = (tf.nn.l2_loss(tf.subtract(_pred_biochem, _biochem_y) * tf.math.sqrt(_biochem_y))) / config.BATCH_SIZE_BIOCHEM
+            _biochem_loss = (tf.nn.l2_loss(tf.subtract(_pred_biochem, _biochem_y) * tf.sqrt(_biochem_y))) / config.BATCH_SIZE_BIOCHEM
             _utr_ka_values = tf.reshape(_pred_ka_values[:-1 * config.BATCH_SIZE_BIOCHEM, :], [-1])
 
         # reshape repression ka values
@@ -275,6 +302,8 @@ if __name__ == '__main__':
         _update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
         with tf.control_dependencies(_update_ops):
             _train_step = tf.train.AdamOptimizer(config.STARTING_LEARNING_RATE).minimize(_loss, global_step=global_step)
+
+        # sys.exit()
 
         # with tf.name_scope('test'):
         #     # reshape repression ka values
@@ -353,111 +382,40 @@ if __name__ == '__main__':
             batch_combined_x = np.zeros([num_total_train_seqs + config.BATCH_SIZE_BIOCHEM, 4 * config.MIRLEN, 4 * config.SEQLEN])
 
             # fill features for utr sites for both the guide and passenger strands
-            current_ix = 0
-            mirlist = TRAIN_MIRS * config.BATCH_SIZE_REPRESSION
-            for mir, (seq_list_guide, seq_list_pass) in zip(mirlist, all_seqs):
-                mirseq_one_hot_guide = MIR_ONE_HOT_DICT[mir]
-                mirseq_one_hot_pass = MIR_ONE_HOT_DICT[mir + '*']
-
-                for seq in seq_list_guide:
-                    temp = np.outer(mirseq_one_hot_guide, helpers.one_hot_encode(seq, SEQ_NT_DICT, TARGETS))
-                    batch_combined_x[current_ix, :, :] = temp
-                    current_ix += 1
-
-                for seq in seq_list_pass:
-                    temp = np.outer(mirseq_one_hot_pass, helpers.one_hot_encode(seq, SEQ_NT_DICT, TARGETS))
-                    batch_combined_x[current_ix, :, :] = temp
-                    current_ix += 1
-
-            if config.BATCH_SIZE_BIOCHEM > 0:
-                # get biochem data batch
-                _, biochem_train_batch = biochem_train_data.get_next_batch(config.BATCH_SIZE_BIOCHEM - 2)
-
-                batch_biochem_y = []
-                # fill in features for biochem data
-                for mir, seq, logka in zip(biochem_train_batch['mir'], biochem_train_batch['12mer'], biochem_train_batch['log_ka']):
-                    mirseq_one_hot = MIR_ONE_HOT_DICT[mir]
-
-                    # add actual sequence
-                    temp = np.outer(mirseq_one_hot, helpers.one_hot_encode(seq, SEQ_NT_DICT, TARGETS))
-                    batch_combined_x[current_ix, :, :] = temp
-                    batch_biochem_y.append([logka])
-                    current_ix += 1
-
-                # add nonmatching sequence for miRNA
-                seq = helpers.get_target_no_match(config.MIRSEQ_DICT[mir], config.SEQLEN)
-                temp = np.outer(mirseq_one_hot, helpers.one_hot_encode(seq, SEQ_NT_DICT, TARGETS))
-                batch_combined_x[current_ix, :, :] = temp
-                batch_biochem_y.append([0])
-                current_ix += 1
-
-                # add nonmatching sequence for a random miRNA sequence
-                random_mir = helpers.generate_random_seq(config.MIRLEN)
-                mirseq_one_hot = helpers.one_hot_encode(random_mir[::-1], MIR_NT_DICT, TARGETS)
-                seq = helpers.get_target_no_match(random_mir, config.SEQLEN)
-                temp = np.outer(mirseq_one_hot, helpers.one_hot_encode(seq, SEQ_NT_DICT, TARGETS))
-                batch_combined_x[current_ix, :, :] = temp
-                batch_biochem_y.append([0])
-                current_ix += 1
-
-                batch_biochem_y = np.array(batch_biochem_y)
-            else:
-                batch_biochem_y = np.array([[0]])
-
-            assert(current_ix == batch_combined_x.shape[0])
-            batch_combined_x = np.expand_dims((batch_combined_x * 4) - 0.25, 3)
-
-
-            ######
-
-            # fill features for utr sites for both the guide and passenger strands
-            blah = np.zeros([num_total_train_seqs + config.BATCH_SIZE_BIOCHEM, 4 * config.MIRLEN, 4 * (config.SEQLEN + (2 * config.SEQ_BUFFER))])
             mirlist = TRAIN_MIRS * config.BATCH_SIZE_REPRESSION
             current_ix = 0
             for mir, (seq_list_guide, seq_list_pass) in zip(mirlist, all_seqs):
-                blah[current_ix: current_ix + len(seq_list_guide), :, :] = encode_seq_pairs(mir, seq_list_guide)
-                current_ix += len(seq_list_guide)
+                if len(seq_list_guide) > 0:
+                    batch_combined_x[current_ix: current_ix + len(seq_list_guide), :, :] = encode_seq_pairs([mir], seq_list_guide, True)
+                    current_ix += len(seq_list_guide)
 
-                blah[current_ix: current_ix + len(seq_list_pass), :, :] = encode_seq_pairs(mir + '*', seq_list_pass)
-                current_ix += len(seq_list_guide)
+                if len(seq_list_pass) > 0:
+                    batch_combined_x[current_ix: current_ix + len(seq_list_pass), :, :] = encode_seq_pairs([mir + '*'], seq_list_pass, True)
+                    current_ix += len(seq_list_pass)
 
             if config.BATCH_SIZE_BIOCHEM > 0:
-                # get biochem data batch
+
                 _, biochem_train_batch = biochem_train_data.get_next_batch(config.BATCH_SIZE_BIOCHEM - 2)
 
-                batch_biochem_y = list(biochem_train_batch['log_ka'].values)
-
-                # fill in features for biochem data
-                for mir, seq, logka in zip(biochem_train_batch['mir'], biochem_train_batch['12mer'], biochem_train_batch['log_ka']):
-                    mirseq_one_hot = MIR_ONE_HOT_DICT[mir]
-
-                    # add actual sequence
-                    temp = np.outer(mirseq_one_hot, helpers.one_hot_encode(seq, SEQ_NT_DICT, TARGETS))
-                    batch_combined_x[current_ix, :, :] = temp
-                    batch_biochem_y.append([logka])
-                    current_ix += 1
+                batch_biochem_y = np.expand_dims(np.array(list(biochem_train_batch['log_ka'].values) + [0,0]), 1)
+                mirseq_one_hots = [MIR_ONE_HOT_DICT[x] for x in biochem_train_batch['mir']]
+                siteseqs = list(biochem_train_batch['12mer'].values)
 
                 # add nonmatching sequence for miRNA
-                seq = helpers.get_target_no_match(config.MIRSEQ_DICT[mir], config.SEQLEN)
-                temp = np.outer(mirseq_one_hot, helpers.one_hot_encode(seq, SEQ_NT_DICT, TARGETS))
-                batch_combined_x[current_ix, :, :] = temp
-                batch_biochem_y.append([0])
-                current_ix += 1
+                mirseq_one_hots.append(MIR_ONE_HOT_DICT[mir])
+                target_no_match = helpers.get_target_no_match(config.MIRSEQ_DICT[mir], config.SEQLEN)
+                siteseqs.append(target_no_match)
 
                 # add nonmatching sequence for a random miRNA sequence
                 random_mir = helpers.generate_random_seq(config.MIRLEN)
-                mirseq_one_hot = helpers.one_hot_encode(random_mir[::-1], MIR_NT_DICT, TARGETS)
-                seq = helpers.get_target_no_match(random_mir, config.SEQLEN)
-                temp = np.outer(mirseq_one_hot, helpers.one_hot_encode(seq, SEQ_NT_DICT, TARGETS))
-                batch_combined_x[current_ix, :, :] = temp
-                batch_biochem_y.append([0])
-                current_ix += 1
+                random_target = helpers.get_target_no_match(random_mir, config.SEQLEN)
+                mirseq_one_hots.append(helpers.one_hot_encode(random_mir[::-1], MIR_NT_DICT, TARGETS))
+                siteseqs.append(random_target)
 
-                batch_biochem_y = np.array(batch_biochem_y)
+                batch_combined_x[current_ix:, :, :] = encode_seq_pairs(mirseq_one_hots, siteseqs, False)
+
             else:
                 batch_biochem_y = np.array([[0]])
-
-            #######
 
             # define y values
             if options.LOSS_TYPE == 'MEAN_CENTER':

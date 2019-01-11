@@ -47,11 +47,15 @@ def seq2ka_predictor(_combined_x, _keep_prob, _phase_train):
     # add layer 3
     with tf.name_scope('layer3'):
         _w3, _b3 = get_conv_params(config.MIRLEN - 1, config.SEQLEN - 1, config.HIDDEN2, config.HIDDEN3, 'layer3')
-        _preactivate3 = tf.nn.conv2d(_dropout2, _w3, strides=[1, 1, 1, 1], padding='VALID') + _b3
+        _preactivate3 = tf.nn.conv2d(_dropout2, _w3, strides=[1, config.MIRLEN - 1, 1, 1], padding='SAME') + _b3
 
         _preactivate3_bn = tf.contrib.layers.batch_norm(_preactivate3, is_training=_phase_train)
 
         _layer3 = tf.nn.leaky_relu(_preactivate3_bn)
+
+    print('layer1: {}'.format(_layer1))
+    print('layer2: {}'.format(_layer2))
+    print('layer3: {}'.format(_layer3))
 
     # add dropout
     with tf.name_scope('dropout'):
@@ -59,7 +63,7 @@ def seq2ka_predictor(_combined_x, _keep_prob, _phase_train):
 
     _max_pool = tf.layers.max_pooling2d(
         _dropout,
-        (1, (config.SEQ_BUFFER * 2) + 1),
+        (1, config.SEQLEN - 1),
         1,
         padding='VALID',
         data_format='channels_last',
@@ -83,9 +87,6 @@ def seq2ka_predictor(_combined_x, _keep_prob, _phase_train):
         # apply final layer
         _pred_ka_values = tf.nn.relu(tf.add(tf.matmul(_layer_flat, _w4), _b4), name='pred_ka')
 
-    print('layer1: {}'.format(_layer1))
-    print('layer2: {}'.format(_layer2))
-    print('layer3: {}'.format(_layer3))
     print('max_pool: {}'.format(_max_pool))
     print('pred_ka: {}'.format(_pred_ka_values))
 

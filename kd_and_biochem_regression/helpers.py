@@ -53,7 +53,7 @@ def generate_random_seq(length):
 
 def get_target_no_match(mirna_sequence, length):
     """Given a miRNA sequence, return a random target sequence without 4 nt of contiguous pairing"""
-    rc = rev_comp(mirna_sequence[:8])
+    rc = rev_comp(mirna_sequence[1:8]) + 'A'
     off_limits = [rc[ix:ix + 4] for ix in range(5)]
     while True:
         target = generate_random_seq(length)

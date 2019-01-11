@@ -3,7 +3,7 @@ import numpy as np
 # Set global parameters
 MIRLEN = 10
 SEQLEN = 12
-SEQ_BUFFER = 0
+SEQ_PADDING = 3
 
 ONLY_CANON = False
 OVERLAP_DIST = 7
