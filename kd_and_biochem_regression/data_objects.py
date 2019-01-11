@@ -1,8 +1,7 @@
 import numpy as np
-import pandas as pd
-import tensorflow as tf
 
-import config, helpers
+from . import config
+from . import helpers
 
 
 class Data:
@@ -64,8 +63,8 @@ class RepressionData(Data):
             for mir in mirs:
                 utr = row[1]['Sequence']
 
-                seqs = helpers.get_seqs_new(utr, config.SITE_DICT[mir], overlap_dist, only_canon)
-                seqs_pass = helpers.get_seqs_new(utr, config.SITE_DICT[mir + '*'], overlap_dist, only_canon)
+                seqs = helpers.get_seqs(utr, config.SITE_DICT[mir], overlap_dist, only_canon)
+                seqs_pass = helpers.get_seqs(utr, config.SITE_DICT[mir + '*'], overlap_dist, only_canon)
                 gene_dict[mir] = seqs
                 gene_dict[mir + '*'] = seqs_pass
 
@@ -75,8 +74,8 @@ class RepressionData(Data):
                 if len(seqs_pass) > num_sites_gene_pass:
                     num_sites_gene_pass = len(seqs_pass)
 
-            self.num_sites_dict[row[0]] = num_sites_gene 
-            self.num_sites_dict_pass[row[0]] = num_sites_gene_pass  
+            self.num_sites_dict[row[0]] = num_sites_gene
+            self.num_sites_dict_pass[row[0]] = num_sites_gene_pass
             self.seq_dict[row[0]] = gene_dict
 
     def get_next_batch_no_shuffle(self, batch_size, mirs):
@@ -98,7 +97,7 @@ class RepressionData(Data):
                 seqs_guide, seqs_pass = self.seq_dict[gene][mir], self.seq_dict[gene][mir + '*']
                 all_seqs.append((seqs_guide, seqs_pass))
                 num_sites += [len(seqs_guide), len(seqs_pass)]
-        
+
         max_sites = np.max(num_sites)
         batch_y = next_batch[mirs].values
 
@@ -122,7 +121,7 @@ class RepressionData(Data):
                 seqs_guide, seqs_pass = self.seq_dict[gene][mir], self.seq_dict[gene][mir + '*']
                 all_seqs.append((seqs_guide, seqs_pass))
                 num_sites += [len(seqs_guide), len(seqs_pass)]
-        
+
         max_sites = np.max(num_sites)
         batch_y = next_batch[mirs].values
 
