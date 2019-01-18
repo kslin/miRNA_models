@@ -6,11 +6,11 @@ import tensorflow as tf
 import config, helpers
 
 
-def generate_12mers(sitem8):
+def generate_12mers(site8):
     random_8mers = ["".join(kmer) for kmer in list(it.product(["A","C","G","T"],repeat=8))]
     mers = []
     for i in range(5):
-        subseq = sitem8[i:i+4]
+        subseq = site8[i:i+4]
         mers += [x[:i+2] + subseq + x[i+2:] for x in random_8mers]
     mers = list(set(mers))
     return sorted(mers)
@@ -27,11 +27,11 @@ def calculate_12mer_kds(mirseq, mirname, logdir, outfile):
     if len(mirseq.replace('A','').replace('C','').replace('G','').replace('T','')) > 0:
         raise(ValueError("miRNA must only contain A, C, T, G"))
 
-    sitem8 = helpers.rev_comp(mirseq[1:8]) + 'A'
+    site8 = helpers.rev_comp(mirseq[1:8]) + 'A'
     mirseq_one_hot = helpers.one_hot_encode(mirseq[:config.MIRLEN][::-1], config.MIR_NT_DICT, config.TARGETS)
 
     # generate all 12mer sequences, there should be 262,144
-    kmers = generate_12mers(sitem8)
+    kmers = generate_12mers(site8)
 
     if len(kmers) != 262144:
         raise(ValueError("kmers should be 262144 in length"))
@@ -74,7 +74,7 @@ def calculate_12mer_kds(mirseq, mirname, logdir, outfile):
                             }
 
                 pred_kds = -1 * sess.run(_prediction, feed_dict=feed_dict).flatten()
-                stypes = [helpers.get_stype_six_canon(sitem8, seq) for seq in seqs]
+                stypes = [helpers.get_stype_six_canon(site8, seq) for seq in seqs]
 
                 for seq, kd, stype in zip(seqs, pred_kds, stypes):
                     outfile_writer.write('{}\t{}\t{}\t{}\t{}\n'.format(seq, kd, mirname, mirseq, stype))
@@ -82,27 +82,16 @@ def calculate_12mer_kds(mirseq, mirname, logdir, outfile):
 
 if __name__ == '__main__':
 
-    # parser = OptionParser()
-    # parser.add_option("-m", "--mirseq", dest="MIRSEQ", help="miRNA sequence")
-    # parser.add_option("-n", "--name", dest="MIRNAME", help="miRNA name")
-    # parser.add_option("-l", "--logdir", dest="LOGDIR", help="directory with saved model")
-    # parser.add_option("-o", "--outfile", dest="OUTFILE", help="output file")
+    parser = OptionParser()
+    parser.add_option("-n", "--name", dest="MIRNAME", help="miRNA name")
+    parser.add_option("-m", "--mirseq", dest="MIRSEQ", help="miRNA sequence", default=None)
+    parser.add_option("-l", "--logdir", dest="LOGDIR", help="directory with saved model")
+    parser.add_option("-o", "--outfile", dest="OUTFILE", help="output file")
 
-    # (options, args) = parser.parse_args()
+    (options, args) = parser.parse_args()
 
-    # calculate_12mer_kds(options.MIRSEQ, options.MIRNAME, options.LOGDIR, options.OUTFILE)
-
-    logdir = '/lab/bartel4_ata/kathyl/NeuralNet/logdirs/tpms_and_kds/simple_xval_4_16_16_neg_examples/MIRNA/saved/'
-    outfile = '/lab/bartel4_ata/kathyl/RNA_Seq/outputs/convnet/kd_preds/simple_xval_4_16_16_neg_examples/MIRNA.txt'
-
-    ALL_MIRS = ['lsy6', 'let7', 'mir1', 'mir7', 'mir124', 'mir137', 'mir139', 'mir143', 'mir144',
-                'mir153', 'mir155', 'mir182', 'mir199a', 'mir204', 'mir205', 'mir216b', 'mir223']
-
-    for mir in ALL_MIRS:
-        print(mir)
+    if options.MIRSEQ is None:
         mirseq = config.MIRSEQ_DICT[mir]
-        calculate_12mer_kds(mirseq, mir, logdir.replace('MIRNA', mir), outfile.replace('MIRNA', mir))
-
-        mirseq_star = config.MIRSEQ_DICT[mir + '*']
-        calculate_12mer_kds(mirseq_star, mir+'*', logdir.replace('MIRNA', mir), outfile.replace('MIRNA', mir+'_pass'))
-
+        calculate_12mer_kds(mirseq, options.MIRNAME, options.LOGDIR, options.OUTFILE)
+    else:
+        calculate_12mer_kds(options.MIRSEQ, options.MIRNAME, options.LOGDIR, options.OUTFILE)

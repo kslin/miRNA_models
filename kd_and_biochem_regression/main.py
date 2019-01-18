@@ -118,7 +118,7 @@ if __name__ == '__main__':
 
     # if only training on canonical sites, filter out nosite 12mers
     if config.ONLY_CANON:
-        data = data[data['stype'] != 'no site']
+        data = data[data['aligned_stype'] != 'no site']
         data['keep_prob'] = 1.0
 
     # otherwise, balance data to increase proportion of high affinity sites
@@ -136,22 +136,20 @@ if __name__ == '__main__':
         data = data.drop(['nearest', 'count'], 1)
 
     # get rid of 12mers with sites in other registers
-    # temp = []
-    # print(len(data))
+    temp = []
+    print("Length of KD data before removing sites in other registers: {}".format(len(data)))
     # for mir, group in data.groupby('mir'):
-    #     site = helpers.rev_comp(config.MIRSEQ_DICT[mir][1:8]) + 'A'
-    #     group['has_offset'] = [(((site[2:] in seq) or (site[1:-1] in seq) or (site[:-2] in seq)) and (stype == 'no site')) for (seq, stype) in zip(group['12mer'], group['stype'])]
-    #     group = group[group['has_offset'] == False]
+    #     site8 = helpers.rev_comp(config.MIRSEQ_DICT[mir][1: 8]) + 'A'
+    #     group = group[[helpers.best_stype_match(seq, site8) for seq in group['12mer']]]
     #     temp.append(group)
 
     # data = pd.concat(temp)
-    # print(len(data))
+    data = data[data['best_stype'] == data['aligned_stype']]
+    print("Length of KD data after removing sites in other registers: {}".format(len(data)))
 
     data['log_ka'] = np.maximum(0, (-1.0 * data['log_kd']))
     data['mirseq'] = [config.MIRSEQ_DICT_MIRLEN[mir] for mir in data['mir']]
-    data['color'] = [color_dict[stype] for stype in data['stype']]
-
-    print('Length of KD data: {}'.format(len(data)))
+    data['color'] = [color_dict[stype] for stype in data['aligned_stype']]
 
     if TEST_MIRNA in data['mir'].values:
         print('Plotting KD predictions with {}'.format(TEST_MIRNA))
@@ -168,21 +166,18 @@ if __name__ == '__main__':
     print(data_test['mir'].unique())
     print(len(data_test))
 
-    test_kds_combined_x_old = np.zeros([len(data_test), 4*config.MIRLEN, 4*config.SEQLEN])
-    for i, row in enumerate(data_test.iterrows()):
-        mirseq_one_hot = MIR_ONE_HOT_DICT[row[1]['mir']]
-        seq_one_hot = helpers.one_hot_encode(row[1]['12mer'], SEQ_NT_DICT, TARGETS)
-        test_kds_combined_x_old[i,:,:] = np.outer(mirseq_one_hot, seq_one_hot)
-    
-    # test_kds_combined_x_old = np.expand_dims((test_kds_combined_x_old*4) - 0.25, 3)
+    # test_kds_combined_x_old = np.zeros([len(data_test), 4 * config.MIRLEN, 4 * config.SEQLEN])
+    # for i, row in enumerate(data_test.iterrows()):
+    #     mirseq_one_hot = MIR_ONE_HOT_DICT[row[1]['mir']]
+    #     seq_one_hot = helpers.one_hot_encode(row[1]['12mer'], SEQ_NT_DICT, TARGETS)
+    #     test_kds_combined_x_old[i, :, :] = np.outer(mirseq_one_hot, seq_one_hot)
 
     # one-hot encode test 12mers
     test_kds_combined_x = encode_seq_pairs(data_test['mir'].values, data_test['12mer'].values, True)
-    # test_kds_combined_x = np.expand_dims(test_kds_combined_x, 3)
     test_kds_labels = data_test['log_ka'].values
     test_kds_colors = data_test['color'].values
 
-    print(np.sum(np.abs(test_kds_combined_x - test_kds_combined_x_old)))
+    # print(np.sum(np.abs(test_kds_combined_x - test_kds_combined_x_old)))
 
     data = data[~data['mir'].isin(test_mirs)]
     print("Length of KD training set: {}".format(len(data)))
@@ -192,7 +187,6 @@ if __name__ == '__main__':
     print("Length of KD training set for plotting: {}".format(len(data_test2)))
 
     test_kds_combined_x2 = encode_seq_pairs(data_test2['mir'].values, data_test2['12mer'].values, True)
-    # test_kds_combined_x2 = np.expand_dims(test_kds_combined_x2, 3)
     test_kds_labels2 = data_test2['log_ka'].values
     test_kds_colors2 = data_test2['color'].values
 
@@ -207,6 +201,8 @@ if __name__ == '__main__':
 
     repression_test_data = data_objects.RepressionData(test_tpm)
     repression_test_data.get_seqs(test_mirs, config.OVERLAP_DIST, config.ONLY_CANON)
+
+    sys.stdout.flush()
 
     ### DEFINE MODEL ###
 
@@ -226,16 +222,13 @@ if __name__ == '__main__':
         _utr_len = tf.placeholder(tf.float32, shape=[None, 1], name='utr_len')
         _repression_y = tf.placeholder(tf.float32, shape=[None, None], name='repression_y')
 
-
         # reshape, zero-center input
-        # _input_paddings = tf.constant([[0,0],[0,0],[config.SEQ_BUFFER * 4, config.SEQ_BUFFER * 4]])
         _combined_x_4D = tf.expand_dims((_combined_x * 4.0) - 0.25, axis=3)
-
-        # print(_combined_x, _combined_x_4D)
-        # sys.exit()
 
         # add layers for predicting KA
         _pred_ka_values, _cnn_weights = tf_helpers.seq2ka_predictor(_combined_x_4D, _keep_prob, _phase_train)
+
+        biochem_saver = tf.train.Saver()
 
         # split data into biochem and repression and get biochem loss
         if config.BATCH_SIZE_BIOCHEM == 0:
@@ -244,7 +237,8 @@ if __name__ == '__main__':
             _utr_ka_values = tf.reshape(_pred_ka_values, [-1])
         else:
             _pred_biochem = _pred_ka_values[-1 * config.BATCH_SIZE_BIOCHEM:, :]
-            _biochem_loss = (tf.nn.l2_loss(tf.subtract(_pred_biochem, _biochem_y) * tf.sqrt(_biochem_y))) / config.BATCH_SIZE_BIOCHEM
+            # _biochem_loss = (tf.nn.l2_loss(tf.subtract(_pred_biochem, _biochem_y) * tf.sqrt(_biochem_y))) * config.BIOCHEM_WEIGHT
+            _biochem_loss = (tf.nn.l2_loss(tf.subtract(_pred_biochem, _biochem_y))) * config.BIOCHEM_WEIGHT
             _utr_ka_values = tf.reshape(_pred_ka_values[:-1 * config.BATCH_SIZE_BIOCHEM, :], [-1])
 
         # reshape repression ka values
@@ -303,25 +297,6 @@ if __name__ == '__main__':
         with tf.control_dependencies(_update_ops):
             _train_step = tf.train.AdamOptimizer(config.STARTING_LEARNING_RATE).minimize(_loss, global_step=global_step)
 
-        # sys.exit()
-
-        # with tf.name_scope('test'):
-        #     # reshape repression ka values
-        #     _utr_ka_values_test = tf.reshape(_pred_ka_values, [-1])
-        #     _utr_split_sizes_test = tf.placeholder(tf.int32, shape=[config.BATCH_SIZE_REPRESSION_TEST * 1 * 2], name='utr_split_sizes')
-        #     _utr_ka_values_reshaped_test = tf_helpers.pad_kd_from_genes(_utr_ka_values_test, _utr_split_sizes_test, _utr_max_size, 1, config.BATCH_SIZE_REPRESSION_TEST)
-
-        #     # get repression prediction for test genes
-        #     init_params_test = [
-        #         -5.5,
-        #         np.array([[0.0]]),
-        #         np.array([[-2.0]]),
-        #         config.DECAY_INIT,
-        #         config.UTR_COEF_INIT
-        #     ]
-
-        #     _results_test = tf_helpers.ka2repression_predictor('test', _utr_ka_values_reshaped_test, _utr_len, 1, config.BATCH_SIZE_REPRESSION_TEST, init_params_test)
-
         saver = tf.train.Saver(max_to_keep=config.NUM_EPOCHS + 1)
 
         ### TRAIN MODEL ###
@@ -352,16 +327,13 @@ if __name__ == '__main__':
 
         print("Started training...")
 
-        # things to record regularly
+        # things to record during training
         records = {
             'train_loss': [],
             'decay': [],
             'utr_coef': [],
             'freeAGO_mean': []
         }
-
-        last_batch = False
-        prev_freeago = config.FREEAGO_INIT
 
         current_epoch = 0
         step = -1
@@ -397,7 +369,7 @@ if __name__ == '__main__':
 
                 _, biochem_train_batch = biochem_train_data.get_next_batch(config.BATCH_SIZE_BIOCHEM - 2)
 
-                batch_biochem_y = np.expand_dims(np.array(list(biochem_train_batch['log_ka'].values) + [0,0]), 1)
+                batch_biochem_y = np.expand_dims(np.array(list(biochem_train_batch['log_ka'].values) + [0, 0]), 1)
                 mirseq_one_hots = [MIR_ONE_HOT_DICT[x] for x in biochem_train_batch['mir']]
                 siteseqs = list(biochem_train_batch['12mer'].values)
 
@@ -568,8 +540,6 @@ if __name__ == '__main__':
                 plt.plot(records['freeAGO_mean'])
                 plt.savefig(os.path.join(options.LOGDIR, 'freeAGO_mean_fits.png'))
                 plt.close()
-
-                print(current_freeAGO.reshape([NUM_TRAIN, 2]))
 
         # after all training, write results to file
         current_freeAGO = current_freeAGO.reshape([NUM_TRAIN, 2])

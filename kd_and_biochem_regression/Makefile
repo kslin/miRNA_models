@@ -1,4 +1,6 @@
 simple:
+	mkdir -p /lab/bartel4_ata/kathyl/NeuralNet/logdirs/tpms_and_kds/simple_xval_4_16_16_clean
+	bsub -o /lab/bartel4_ata/kathyl/NeuralNet/logdirs/tpms_and_kds/simple_mir124_with_neg_examples_4_16_16/output.txt \
 	python main.py \
 		--kdfile /lab/bartel4_ata/kathyl/RNA_Seq/outputs/biochem/final/kds.txt \
 		--tpmfile /lab/bartel4_ata/kathyl/RNA_Seq/outputs/biochem/final/merged_with_baselines.txt \
@@ -23,7 +25,7 @@ simple_xval:
 
 
 simple_xval_rerun:
-	for mirname in mir182 mir205 ; do \
+	for mirname in mir205 mir199a; do \
 		bsub -o /lab/bartel4_ata/kathyl/NeuralNet/logdirs/tpms_and_kds/simple_xval_4_16_16_clean/output_$${mirname}.txt \
 			python main.py \
 			--kdfile  /lab/bartel4_ata/kathyl/RNA_Seq/outputs/biochem/final/kds.txt \

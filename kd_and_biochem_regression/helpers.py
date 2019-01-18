@@ -67,6 +67,16 @@ def get_target_no_match(mirna_sequence, length):
             return target
 
 
+# def best_stype_match(seq, site8):
+#     if (site8[1:-1] in seq) and (site8[1:-1] != seq[3:-3]):
+#         return False
+#     elif (site8[:-2] in seq) and (site8[:-2] != seq[2:-4]):
+#         return False
+#     elif (site8[2:] in seq) and ((site8[2:]) != seq[4:-2]):
+#         return False
+#     return True
+
+
 ### SEQUENCE ENCODING HELPERS ###
 
 def one_hot_encode(seq, nt_dict, targets):
