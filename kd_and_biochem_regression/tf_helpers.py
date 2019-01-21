@@ -157,6 +157,40 @@ def ka2repression_predictor(scope, _utr_ka_values_reshaped, _utr_len, num_train,
 
     return _results
 
+def ka2featuremat(_utr_ka_values_reshaped, _ts7_features, num_train, batch_size_repression, ):
+    _freeAGO_mean = tf.get_variable('freeAGO_mean', shape=(), initializer=tf.constant_initializer(config.FREEAGO_INIT))
+    _freeAGO_guide_offset = tf.get_variable('freeAGO_guide_offset', shape=[num_train, 1],
+                            initializer=tf.constant_initializer(config.GUIDE_OFFSET_INIT))
+    _freeAGO_pass_offset = tf.get_variable('freeAGO_pass_offset', shape=[num_train, 1],
+                            initializer=tf.constant_initializer(config.PASS_OFFSET_INIT))
+    _freeAGO_all = tf.reshape(tf.concat([_freeAGO_guide_offset + _freeAGO_mean, _freeAGO_pass_offset + _freeAGO_mean], axis=1),
+                             [1, num_train * 2, 1], name='freeAGO_all')
+
+    _pred_nbound_split = tf.nn.sigmoid(_freeAGO_all + _utr_ka_values_reshaped)
+    _pred_features_split = tf.concat([tf.expand_dims(_pred_nbound_split, axis=3), _ts7_features], axis=3)
+    _utr_mask = tf.cast(_utr_ka_values_reshaped > 0, tf.float32)
+
+    # add last layer
+    with tf.name_scope('ts7_layer'):
+        with tf.name_scope('weights'):
+            _w5 = tf.get_variable("ts7_layer_weight", shape=[config.NUM_TS7 + 1, 1, 1],
+                                        initializer=tf.truncated_normal_initializer(stddev=0.1))
+            tf.add_to_collection('weight', _w5)
+
+        _pred_logfc_split = tf.reduce_sum(tf.multiply(tf.matmul(_pred_features_split, _w5), _utr_mask), axis=2, name='pred_ka')
+        _pred_logfc = tf.reduce_sum(tf.reshape(_pred_logfc_split, [batch_size_repression, num_train, 2]), axis=2)
+
+    _results = {
+        'freeAGO_guide_offset': _freeAGO_guide_offset,
+        'freeAGO_pass_offset': _freeAGO_pass_offset,
+        'freeAGO_all': _freeAGO_all,
+        'w5': _w5,
+        'pred_logfc': _pred_logfc
+    }
+
+    return _results
+
+
 
 # def test_get_repression_loss():
 #     num_train = 2

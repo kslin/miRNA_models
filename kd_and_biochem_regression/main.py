@@ -341,7 +341,7 @@ if __name__ == '__main__':
         while current_epoch < config.NUM_EPOCHS:
 
             # get repression data batch
-            batch_genes, next_epoch, all_seqs, train_sizes, max_sites, batch_repression_y = repression_train_data.get_next_batch(config.BATCH_SIZE_REPRESSION, TRAIN_MIRS)
+            batch_genes, next_epoch, all_seqs, all_feats, train_sizes, max_sites, batch_repression_y = repression_train_data.get_next_batch(config.BATCH_SIZE_REPRESSION, TRAIN_MIRS)
 
             if next_epoch:
                 current_epoch += 1
@@ -352,18 +352,26 @@ if __name__ == '__main__':
 
             num_total_train_seqs = np.sum(train_sizes)
             batch_combined_x = np.zeros([num_total_train_seqs + config.BATCH_SIZE_BIOCHEM, 4 * config.MIRLEN, 4 * config.SEQLEN])
+            batch_feats = np.zeros([num_total_train_seqs, NUM_TRAIN * 2, max_sites, config.NUM_TS7])
 
             # fill features for utr sites for both the guide and passenger strands
             mirlist = TRAIN_MIRS * config.BATCH_SIZE_REPRESSION
             current_ix = 0
-            for mir, (seq_list_guide, seq_list_pass) in zip(mirlist, all_seqs):
+            mir_ix = 0
+            for mir, (seq_list_guide, seq_list_pass), (feats_guide, feats_pass) in zip(mirlist, all_seqs, all_feats):
                 if len(seq_list_guide) > 0:
                     batch_combined_x[current_ix: current_ix + len(seq_list_guide), :, :] = encode_seq_pairs([mir], seq_list_guide, True)
+                    for temp_ix, feat_list in enumerate(feats_guide):
+                        batch_feats[current_ix: mir_ix, temp_ix, :] = feat_list
                     current_ix += len(seq_list_guide)
+                    mir_ix += 1
 
                 if len(seq_list_pass) > 0:
                     batch_combined_x[current_ix: current_ix + len(seq_list_pass), :, :] = encode_seq_pairs([mir + '*'], seq_list_pass, True)
+                    for temp_ix, feat_list in enumerate(feats_pass):
+                        batch_feats[current_ix: mir_ix, temp_ix, :] = feat_list
                     current_ix += len(seq_list_pass)
+                    mir_ix += 1
 
             if config.BATCH_SIZE_BIOCHEM > 0:
 
