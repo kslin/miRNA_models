@@ -96,7 +96,7 @@ def one_hot_encode(seq):
     return targets[seq].flatten().astype(int)
 
 
-def priority_order(locs, overlap_dist):
+def _priority_order(locs, overlap_dist):
 
     # make dictionary of loc occurences and order
     loc_dict = {}
@@ -155,7 +155,7 @@ def get_seqs(utr, site, overlap_dist, only_canon):
 
     # if 1 or fewer sites found, return list as is
     if len(locs) > 1:
-        locs = priority_order(locs, overlap_dist)
+        locs = _priority_order(locs, overlap_dist)
 
     utr_ext = ('TTT' + utr + 'TTT')
     seqs = [utr_ext[l:l + 12] for l in locs]

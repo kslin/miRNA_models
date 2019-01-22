@@ -1,7 +1,0 @@
-numpy==1.13.3
-pandas==0.19.2
-scipy==0.18.1
-tensorflow==1.4.0
-matplotlib==2.1.2
-seaborn==0.7.1
-regex==2017.2.8

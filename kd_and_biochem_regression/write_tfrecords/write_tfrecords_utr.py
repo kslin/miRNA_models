@@ -141,8 +141,9 @@ if __name__ == '__main__':
 
     (options, args) = parser.parse_args()
 
-    ### READ miRNA DATA ###
+    ### READ miRNA DATA and filter for ones to keep ###
     MIRNAS = pd.read_csv(options.MIR_SEQS, sep='\t')
+    MIRNAS = MIRNAS[MIRNAS['use_tpms']]
     ALL_GUIDES = list(MIRNAS['mir'].values)
 
     MIR_DICT = {}

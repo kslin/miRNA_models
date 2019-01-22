@@ -57,11 +57,11 @@ def _parse_repression_function(serialized_example, parse_mirs, all_mirs, mirlen,
     freeAGO_tiled =  tf.concat(freeAGO_tiled, axis=0)
 
     # return parsed
-    return images, ts7_features, tpms, nsites, freeAGO_tiled
+    return images, ts7_features, tpms, nsites, freeAGO_tiled, parsed['transcript']
 
 
-def _build_tpm_batch(iterator, batch_size):
-    images, features, labels, nsites, freeAGOs = [], [], [], [], []
+def _build_tpm_batch(iterator, batch_size, passenger, num_guides):
+    images, features, labels, nsites, freeAGOs, transcripts = [], [], [], [], [], []
     for _ in range(batch_size):
         results = iterator.get_next()
         images.append(results[0])
@@ -69,16 +69,35 @@ def _build_tpm_batch(iterator, batch_size):
         labels.append(results[2])
         nsites.append(results[3])
         freeAGOs.append(results[4])
+        transcripts.append(results[5])
+
+    nsites = tf.concat(nsites, axis=0)
+    if passenger:
+        nsites_mir = tf.reduce_sum(tf.reshape(nsites, [num_guides * batch_size, 2]), axis=1)
+    else:
+        nsites_mir = tf.reshape(nsites, [num_guides * batch_size])
 
     results = {
         'images': tf.concat(images, axis=0),
         'features': tf.concat(features, axis=0),
         'labels': tf.concat(labels, axis=0),
-        'nsites': tf.concat(nsites, axis=0),
-        'freeAGOs': tf.concat(freeAGOs, axis=0)
+        'nsites': nsites,
+        'nsites_mir': nsites_mir,
+        'freeAGOs': tf.expand_dims(tf.concat(freeAGOs, axis=0), axis=1),
+        'transcripts': tf.stack(transcripts)
     }
 
     return results
+
+
+def _load_multiple_tfrecords(filenames):
+    files = tf.data.Dataset.from_tensor_slices(tf.constant(filenames)).shuffle(buffer_size=10)
+    dataset = files.apply(
+        tf.data.experimental.parallel_interleave(
+        lambda filename: tf.data.TFRecordDataset(filename),
+        cycle_length=len(filenames), sloppy=True)
+    )
+    return dataset
 
 
 def _parse_log_kd_function(serialized_example):

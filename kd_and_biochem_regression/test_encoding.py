@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import tensorflow as tf
 
-import parse_data
+import parse_data_utils
 
 np.set_printoptions(threshold=np.inf, linewidth=200)
 
@@ -41,7 +41,7 @@ init_params = [
 
 _freeAGO_mean = tf.get_variable('freeAGO_mean', shape=(), initializer=tf.constant_initializer(init_params[0]))
 _freeAGO_guide_offset = tf.get_variable('freeAGO_guide_offset', shape=[NUM_TRAIN, 1],
-                        initializer=tf.constant_initializer(init_params[1]))
+                        initializer=tf.constant_initializer(np.arange(NUM_TRAIN).reshape([-1,1])))
 _freeAGO_pass_offset = tf.get_variable('freeAGO_pass_offset', shape=[NUM_TRAIN, 1], initializer=tf.constant_initializer(init_params[2]))
 _freeAGO_all = tf.reshape(tf.concat([_freeAGO_guide_offset + _freeAGO_mean, _freeAGO_pass_offset + _freeAGO_mean], axis=1), [NUM_TRAIN * 2], name='freeAGO_all')
 
@@ -49,7 +49,7 @@ _freeAGO_all = tf.reshape(tf.concat([_freeAGO_guide_offset + _freeAGO_mean, _fre
 filename = "/lab/bartel4_ata/kathyl/RNA_Seq/outputs/convnet/tfrecords/guide_passenger_only_canon.tfrecord"
 raw_dataset = tf.data.TFRecordDataset(filename)
 
-parsed_dataset = raw_dataset.map(lambda x: parse_data._parse_repression_function(x, TRAIN_MIRS, ALL_MIRS, MIRLEN, SEQLEN, NUM_FEATS, _freeAGO_all))
+parsed_dataset = raw_dataset.map(lambda x: parse_data_utils._parse_repression_function(x, TRAIN_MIRS, ALL_MIRS, MIRLEN, SEQLEN, NUM_FEATS, _freeAGO_all))
 iterator = parsed_dataset.make_initializable_iterator()
 next_batch = iterator.get_next()
 
@@ -79,24 +79,26 @@ next_batch = iterator.get_next()
 
     #     print('finished epoch')
 
-results = parse_data._build_tpm_batch(iterator, 5)
+results = parse_data_utils._build_tpm_batch(iterator, 5, passenger=True, NUM_TRAIN)
 
 with tf.Session() as sess:
     sess.run(tf.global_variables_initializer())
     sess.run(iterator.initializer)
     results = sess.run(results)
-    print(results['images'].shape)
-    print(results['features'].shape)
-    print(results['labels'].shape)
-    print(np.sum(results['nsites']))
+    print(sess.run(_freeAGO_all).astype(int))
+    # print(results['images'].shape)
+    # print(results['features'].shape)
+    # print(results['labels'].shape)
+    # print(np.sum(results['nsites']))
     print(results['nsites'])
-    print(results['freeAGOs'])
+    print(results['nsites_mir'])
+    # print(results['freeAGOs'].astype(int))
 
 
 # filename = '/lab/bartel4_ata/kathyl/RNA_Seq/outputs/convnet/tfrecords/log_kds.tfrecord'
 # parsed_dataset = tf.data.TFRecordDataset(filename)
 # parsed_dataset = parsed_dataset.shuffle(buffer_size=1000)
-# parsed_dataset = parsed_dataset.map(parse_data._parse_log_kd_function)
+# parsed_dataset = parsed_dataset.map(parse_data_utils._parse_log_kd_function)
 # parsed_dataset = parsed_dataset.filter(lambda x, y, z: tf.math.logical_not(tf.equal(x, TEST_MIR.encode('utf-8'))))
 # parsed_dataset = parsed_dataset.batch(20)
 # iterator = parsed_dataset.make_initializable_iterator()

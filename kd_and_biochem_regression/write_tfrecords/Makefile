@@ -26,6 +26,6 @@ tf_records_utr_full:
 tf_records_kds:
 	python write_tfrecords_kds.py \
 		--kdfile /lab/bartel4_ata/kathyl/RNA_Seq/outputs/biochem/final/kds.txt \
-		--outfile /lab/bartel4_ata/kathyl/RNA_Seq/outputs/convnet/tfrecords/log_kds.tfrecord \
+		--outfile /lab/bartel4_ata/kathyl/RNA_Seq/outputs/convnet/tfrecords/log_kds \
 		--mirlen 10 \
 		--only_canon ; \

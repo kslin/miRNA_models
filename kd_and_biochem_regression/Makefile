@@ -1,25 +1,21 @@
-tf_records:
-	python write_tfrecords_utr.py \
-		--tpmfile /lab/bartel4_ata/kathyl/RNA_Seq/outputs/biochem/final/merged_with_baselines_mini.txt \
-		--mirseqs mirseqs.txt \
-		--rnaplfold_folder /lab/bartel4_ata/kathyl/RNA_Seq/outputs/rnaplfold/RNAplfold_utr90_u14 \
-		--outfile /lab/bartel4_ata/kathyl/RNA_Seq/outputs/convnet/tfrecords/only_tpms_mini.tfrecord \
-		--mirlen 3 \
-		--overlap_dist 7 \
-		--upstream_limit 15 \
-		--passenger \
-		--only_canon ; \
-
-test:
-	python main.py \
-		--kdfile /lab/bartel4_ata/kathyl/RNA_Seq/outputs/biochem/final/kds.txt \
-		--tpmfile /lab/bartel4_ata/kathyl/RNA_Seq/outputs/biochem/final/merged_with_baselines_mini.txt \
-		--mirseqs mirseqs.txt \
-		--test_mirna mir124 \
+dry_run:
+	python main_with_feats.py \
+		--tpm_tfrecords /lab/bartel4_ata/kathyl/RNA_Seq/outputs/convnet/tfrecords/guide_passenger_only_canon.tfrecord \
+		--kd_tfrecords /lab/bartel4_ata/kathyl/RNA_Seq/outputs/convnet/tfrecords/log_kds \
+		--mirseqs write_tfrecords/mirseqs.txt \
+		--mirlen 10 \
+		--num_feats 6 \
+		--repression_batch_size 10 \
+		--kd_batch_size 10 \
+		--num_epochs 2 \
+		--val_mir mir124 \
 		--baseline bayes_baseline \
 		--loss_type MEAN_CENTER \
-		--rnaplfold_folder /lab/bartel4_ata/kathyl/RNA_Seq/outputs/rnaplfold/RNAplfold_utr90_u14 \
-		--logdir /lab/bartel4_ata/kathyl/NeuralNet/logdirs/tpms_and_kds/simple_mir124_with_neg_examples_4_16_16
+		--lambda 0.001 \
+		--lr 0.002 \
+		--logdir /lab/bartel4_ata/kathyl/NeuralNet/logdirs/tpms_and_kds/train_with_feats_val_mir124 \
+		--passenger \
+		--dry_run
 
 simple:
 	mkdir -p /lab/bartel4_ata/kathyl/NeuralNet/logdirs/tpms_and_kds/simple_xval_4_16_16_only_canon
