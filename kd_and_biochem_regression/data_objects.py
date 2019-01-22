@@ -1,4 +1,7 @@
+import os
+
 import numpy as np
+import pandas as pd
 
 import config
 import helpers
@@ -76,8 +79,8 @@ class RepressionData(Data):
                 seqs_pass, locs_pass = helpers.get_seqs(utr, site_dict[mir + '*'], overlap_dist, only_canon)
 
                 # calculate ts7 features
-                guide_feats = helpers.get_ts_features(mirseq, locs, utr, utr_len, orf_len, config.UPSTREAM_LIMIT, rnaplfold_data)
-                pass_feats = helpers.get_ts_features(mirseq_pass, locs_pass, utr, utr_len, orf_len, config.UPSTREAM_LIMIT, rnaplfold_data)
+                guide_feats = helpers.get_ts7_features(mirseq, locs, utr, utr_len, orf_len, config.UPSTREAM_LIMIT, rnaplfold_data)
+                pass_feats = helpers.get_ts7_features(mirseq_pass, locs_pass, utr, utr_len, orf_len, config.UPSTREAM_LIMIT, rnaplfold_data)
 
                 gene_dict[mir] = (seqs, guide_feats)
                 gene_dict[mir + '*'] = (seqs_pass, pass_feats)
@@ -142,4 +145,14 @@ class RepressionData(Data):
         max_sites = np.max(num_sites)
         batch_y = next_batch[mirs].values
 
-        return genes, new_epoch, all_seqs, all_feats, np.array(num_sites), max_sites, batch_y
+        results = {
+            'batch_genes': genes,
+            'new_epoch': new_epoch,
+            'batch_seqs': all_seqs,
+            'batch_feats': all_feats,
+            'batch_num_sites': np.array(num_sites),
+            'max_sites': max_sites,
+            'batch_y': batch_y
+        }
+
+        return results

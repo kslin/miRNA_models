@@ -25,10 +25,12 @@ if __name__ == '__main__':
     parser = OptionParser()
     parser.add_option("-k", "--kdfile", dest="KD_FILE", help="kd data")
     parser.add_option("-t", "--tpmfile", dest="TPM_FILE", help="tpm data")
-    parser.add_option("-m", "--mirna", dest="TEST_MIRNA", help="testing miRNA")
+    parser.add_option("-m", "--mirseqs", dest="MIR_SEQS", help="tsv with miRNAs and their sequences")
+    parser.add_option("--test_mirna", dest="TEST_MIRNA", help="testing miRNA")
     parser.add_option("--baseline", dest="BASELINE_METHOD", help="which baseline to use")
     parser.add_option("--loss_type", dest="LOSS_TYPE", help="which loss strategy")
     parser.add_option("--load_model", dest="LOAD_MODEL", help="if supplied, load latest model from this directory", default=None)
+    parser.add_option("--rnaplfold_folder", dest="RNAPLFOLD_FOLDER", help="folder with rnaplfold outputs")
     parser.add_option("-l", "--logdir", dest="LOGDIR", help="directory for writing logs")
 
     (options, args) = parser.parse_args()
@@ -38,19 +40,49 @@ if __name__ == '__main__':
     if not os.path.isdir(options.LOGDIR):
         os.makedirs(options.LOGDIR)
 
+    ### READ miRNA DATA ###
+    MIRNAS = pd.read_csv(options.MIR_SEQS, sep='\t')
+    ALL_MIRS = list(MIRNAS['mir'].values)
+
+    # split miRNAs into training and testing
+    if options.TEST_MIRNA == 'none':
+        TRAIN_MIRS = ALL_MIRS
+        TEST_MIRS = ['mir139']
+    else:
+        if options.TEST_MIRNA not in ALL_MIRS:
+            raise ValueError('Test miRNA not in mirseqs file.')
+        TRAIN_MIRS = [m for m in ALL_MIRS if m != options.TEST_MIRNA]
+        TEST_MIRS = [options.TEST_MIRNA]
+
+    MIR_DICT = {}
+    for row in MIRNAS.iterrows():
+        guide_seq = row[1]['guide_seq']
+        pass_seq = row[1]['guide_seq']
+        MIR_DICT[row[1]['mir']] = {
+            'mirseq': guide_seq,
+            'site8': helpers.rev_comp(guide_seq[1:8]) + 'A',
+            'one_hot': helpers.one_hot_encode(guide_seq[:config.MIRLEN])
+        }
+        MIR_DICT[row[1]['mir'] + '*'] = {
+            'mirseq': pass_seq,
+            'site8': helpers.rev_comp(pass_seq[1:8]) + 'A',
+            'one_hot': helpers.one_hot_encode(pass_seq[:config.MIRLEN])
+        }
 
     ### READ EXPRESSION DATA ###
-    tpm = pd.read_csv(options.TPM_FILE, sep='\t', index_col=0)
-    MIRS = [x for x in tpm.columns if ('mir' in x) or ('lsy' in x)]
+    tpm = pd.read_csv(options.TPM_FILE, sep='\t', index_col=0).dropna(subset=[options.BASELINE_METHOD])
+    for mir in ALL_MIRS:
+        if mir not in tpm.columns:
+            raise ValueError('{} given in mirseqs file but not in tpm file.'.format(mir))
 
-    MIR_NTS = np.array(['A', 'T', 'C', 'G'])
-    SEQ_NTS = np.array(['T', 'A', 'G', 'C'])
+    train_tpm = tpm[TRAIN_MIRS + [options.BASELINE_METHOD, 'sequence', 'utr_length', 'orf_length']]
+    test_tpm = tpm[TEST_MIRS + [options.BASELINE_METHOD, 'sequence', 'utr_length', 'orf_length']]
 
-    MIR_NT_DICT = {nt: ix for (ix, nt) in enumerate(MIR_NTS)}
-    SEQ_NT_DICT = {nt: ix for (ix, nt) in enumerate(SEQ_NTS)}
-    TARGETS = np.eye(4)
+    # create data object
+    repression_train_data = data_objects.RepressionData(train_tpm)
+    repression_train_data.shuffle()
+    repression_train_data.get_seqs(TRAIN_MIRS, config.OVERLAP_DIST, config.ONLY_CANON, options.RNAPLFOLD_FOLDER)
 
-    MIR_ONE_HOT_DICT = {x: helpers.one_hot_encode(y, MIR_NT_DICT, TARGETS) for (x, y) in config.MIRSEQ_DICT_MIRLEN.items()}
 
     def encode_seq_pairs(mirseq_one_hots, siteseqs, lookup):
         encoded = np.empty([len(siteseqs), 4 * config.MIRLEN, 4 * config.SEQLEN], 'float')
@@ -96,8 +128,10 @@ if __name__ == '__main__':
     print(NUM_TRAIN, NUM_TEST)
 
     # split TPM data into training and testing
-    train_tpm = tpm[TRAIN_MIRS + [options.BASELINE_METHOD, 'sequence']].dropna(subset=[options.BASELINE_METHOD])
-    test_tpm = tpm[test_mirs + [options.BASELINE_METHOD, 'sequence']]
+    train_tpm = tpm[TRAIN_MIRS + [options.BASELINE_METHOD, 'sequence', 'utr_length', 'orf_length']].dropna(subset=[options.BASELINE_METHOD])
+    test_tpm = tpm[test_mirs + [options.BASELINE_METHOD, 'sequence', 'utr_length', 'orf_length']]
+
+    print(train_tpm.head())
 
     test_sitem8 = helpers.rev_comp(config.MIRSEQ_DICT[TEST_MIRNA][1:8])
     test_tpm['num_canon'] = [helpers.count_num_canon(utr, test_sitem8) for utr in test_tpm['sequence']]
@@ -197,12 +231,14 @@ if __name__ == '__main__':
     # make data objects for repression training data
     repression_train_data = data_objects.RepressionData(train_tpm)
     repression_train_data.shuffle()
-    repression_train_data.get_seqs(TRAIN_MIRS, config.OVERLAP_DIST, config.ONLY_CANON)
+    repression_train_data.get_seqs(TRAIN_MIRS, config.OVERLAP_DIST, config.ONLY_CANON, options.RNAPLFOLD_FOLDER)
 
     repression_test_data = data_objects.RepressionData(test_tpm)
-    repression_test_data.get_seqs(test_mirs, config.OVERLAP_DIST, config.ONLY_CANON)
+    repression_test_data.get_seqs(test_mirs, config.OVERLAP_DIST, config.ONLY_CANON, options.RNAPLFOLD_FOLDER)
 
     sys.stdout.flush()
+
+    sys.exit()
 
     ### DEFINE MODEL ###
 

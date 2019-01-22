@@ -79,9 +79,21 @@ def get_target_no_match(mirna_sequence, length):
 
 ### SEQUENCE ENCODING HELPERS ###
 
-def one_hot_encode(seq, nt_dict, targets):
+# def one_hot_encode(seq, nt_dict, targets):
+#     seq = [nt_dict[nt] for nt in seq]
+#     return targets[seq].flatten()
+
+def one_hot_encode(seq):
+    nt_dict = {
+        'A': 0,
+        'T': 1,
+        'C': 2,
+        'G': 3
+    }
+    targets = np.eye(4)
+
     seq = [nt_dict[nt] for nt in seq]
-    return targets[seq].flatten()
+    return targets[seq].flatten().astype(int)
 
 
 def priority_order(locs, overlap_dist):
@@ -235,8 +247,8 @@ def get_ts7_features(mirseq, locs, utr, utr_len, orf_len, upstream_limit, rnaplf
     for loc in locs:
 
         # get ts7 features
-        local_au = helpers.calculate_local_au(utr, loc-3)
-        threep = helpers.calculate_threep_score(mirseq, utr, loc-3, upstream_limit)
+        local_au = calculate_local_au(utr, loc-3)
+        threep = calculate_threep_score(mirseq, utr, loc-3, upstream_limit)
         min_dist = min(loc, utr_len - (loc + 6))
         assert (min_dist >= 0), (loc, utr_len)
 
