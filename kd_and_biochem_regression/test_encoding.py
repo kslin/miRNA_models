@@ -78,16 +78,24 @@ with tf.Session() as sess:
     print(zs.shape)
     print(ass.shape)
 
-# filename = '/lab/bartel4_ata/kathyl/RNA_Seq/outputs/convnet/tfrecords/log_kds.tfrecord'
-# raw_dataset = tf.data.TFRecordDataset(filename)
-# parsed_dataset = raw_dataset.map(parse_data._parse_log_kd_function)
-# parsed_dataset = parsed_dataset.batch(2)
-# iterator = parsed_dataset.make_initializable_iterator()
-# next_batch_x, next_batch_y = iterator.get_next()
+blah1 = tf.convert_to_tensor(b'hi')
+blah2 = tf.convert_to_tensor(b'hi')
+hi = 'hi'
 
-# with tf.Session() as sess:
-#     sess.run(iterator.initializer)
-#     x, y = sess.run([next_batch_x, next_batch_y])
-#     print(x.astype(int))
-#     print(y)
-#     print(x.shape)
+blah3 = tf.equal(blah1, hi.encode('utf-8'))
+
+filename = '/lab/bartel4_ata/kathyl/RNA_Seq/outputs/convnet/tfrecords/log_kds.tfrecord'
+parsed_dataset = tf.data.TFRecordDataset(filename)
+parsed_dataset = parsed_dataset.shuffle(buffer_size=1000)
+parsed_dataset = parsed_dataset.map(parse_data._parse_log_kd_function)
+parsed_dataset = parsed_dataset.filter(lambda x, y, z: tf.math.logical_not(tf.equal(x, TEST_MIR.encode('utf-8'))))
+parsed_dataset = parsed_dataset.batch(10)
+iterator = parsed_dataset.make_initializable_iterator()
+next_batch_x, next_batch_y, next_batch_z = iterator.get_next()
+
+with tf.Session() as sess:
+    sess.run(iterator.initializer)
+    x, y, z = sess.run([next_batch_x, next_batch_y, next_batch_z])
+    print(x, z)
+    print(sess.run(blah3))
+    # print(x.shape)

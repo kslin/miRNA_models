@@ -62,6 +62,7 @@ def _parse_log_kd_function(serialized_example):
 
     # construct feature descriptions
     feature_description = {
+        'mir': tf.FixedLenFeature([], tf.string, default_value=''),
         'mir_1hot': tf.FixedLenSequenceFeature([], tf.float32, default_value=0.0, allow_missing=True),
         'seq_1hot': tf.FixedLenSequenceFeature([], tf.float32, default_value=0.0, allow_missing=True),
         'log_kd': tf.FixedLenSequenceFeature([], tf.float32, default_value=0.0, allow_missing=True)
@@ -71,7 +72,7 @@ def _parse_log_kd_function(serialized_example):
     image = tf.tensordot(parsed['mir_1hot'], parsed['seq_1hot'], axes=0)
 
     # return parsed data
-    return image, parsed['log_kd']
+    return parsed['mir'], image, parsed['log_kd']
 
 
 # TODO

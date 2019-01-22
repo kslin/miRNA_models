@@ -29,8 +29,12 @@ if __name__ == '__main__':
     KDS = KDS[KDS['best_stype'] == KDS['aligned_stype']]
     print("Length of KD data after removing sites in other registers: {}".format(len(KDS)))
 
-    print(KDS.head())
+    # shuffle KDS
+    shuffle_ix = np.random.permutation(len(KDS))
+    KDS = KDS.iloc[shuffle_ix]
 
+    print(KDS.head())
+    print(len(KDS))
 
     with tf.python_io.TFRecordWriter(options.OUTFILE) as tfwriter:
         for ix, row in enumerate(KDS.iterrows()):
@@ -44,6 +48,7 @@ if __name__ == '__main__':
             log_kd = row[1]['log_kd']
 
             feature_dict = {
+                'mir': utils._bytes_feature(row[1]['mir'].encode('utf-8')),
                 'mir_1hot': utils._float_feature(utils.one_hot_encode(mirseq[:options.MIRLEN])),
                 'seq_1hot': utils._float_feature(utils.one_hot_encode(siteseq)),
                 'log_kd': utils._float_feature([log_kd]),
