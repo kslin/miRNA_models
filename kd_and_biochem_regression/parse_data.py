@@ -3,7 +3,7 @@ import pandas as pd
 import tensorflow as tf
 
 
-def _parse_repression_function(serialized_example, parse_mirs, all_mirs, mirlen, seqlen, num_feats):
+def _parse_repression_function(serialized_example, parse_mirs, all_mirs, mirlen, seqlen, num_feats, freeago_concs):
     """Parse the serialized example from tfrecords
     Inputs:
         serialized_example: input of reading tfrecords
@@ -12,6 +12,7 @@ def _parse_repression_function(serialized_example, parse_mirs, all_mirs, mirlen,
         mirlen (int): length of miRNA sequence encoded
         seqlen (int): length of site sequence encoded
         num_feats (int): number of additional features
+        freeago_concs (1D tensor, type tf.float32): freeAGO concentrations to use
     """
 
     # list of miRNA guide strands
@@ -33,10 +34,11 @@ def _parse_repression_function(serialized_example, parse_mirs, all_mirs, mirlen,
         feature_description['{}_ts7_features'.format(mir)] = tf.FixedLenSequenceFeature([], tf.float32, default_value=0.0, allow_missing=True)
 
     parsed = tf.parse_single_example(serialized_example, feature_description)
-    tpms = tf.reshape(tf.boolean_mask(parsed['tpms'], guide_mask), [-1, 1])
-    nsites = tf.reshape(tf.boolean_mask(parsed['nsites'], mir_mask), [-1, 1])
+    tpms = tf.expand_dims(tf.boolean_mask(parsed['tpms'], guide_mask), axis=0)
+    nsites = tf.boolean_mask(parsed['nsites'], mir_mask)
     images = []
     ts7_features = []
+    freeAGO_tiled = []
     for ix, mir in enumerate(parse_mirs):
 
         # perform outer product between miRNA 1hot and site 1hot, reshape to [num_sites, 4 * mirlen, 4 * seqlen]
@@ -47,11 +49,36 @@ def _parse_repression_function(serialized_example, parse_mirs, all_mirs, mirlen,
         # reshape features to [num_sites, num_ts7_features]
         ts7_features.append(tf.reshape(parsed['{}_ts7_features'.format(mir)], [-1, num_feats]))
 
+        # get freeAGO values
+        freeAGO_tiled.append(tf.tile(freeago_concs[ix: ix + 1], nsites[ix: ix + 1]))
+
     images = tf.concat(images, axis=0)
     ts7_features = tf.concat(ts7_features, axis=0)
+    freeAGO_tiled =  tf.concat(freeAGO_tiled, axis=0)
 
     # return parsed
-    return images, ts7_features, tpms, nsites
+    return images, ts7_features, tpms, nsites, freeAGO_tiled
+
+
+def _build_tpm_batch(iterator, batch_size):
+    images, features, labels, nsites, freeAGOs = [], [], [], [], []
+    for _ in range(batch_size):
+        results = iterator.get_next()
+        images.append(results[0])
+        features.append(results[1])
+        labels.append(results[2])
+        nsites.append(results[3])
+        freeAGOs.append(results[4])
+
+    results = {
+        'images': tf.concat(images, axis=0),
+        'features': tf.concat(features, axis=0),
+        'labels': tf.concat(labels, axis=0),
+        'nsites': tf.concat(nsites, axis=0),
+        'freeAGOs': tf.concat(freeAGOs, axis=0)
+    }
+
+    return results
 
 
 def _parse_log_kd_function(serialized_example):

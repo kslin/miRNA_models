@@ -104,7 +104,12 @@ def seq2ka_predictor(_combined_x, _keep_prob, _phase_train):
     return _pred_ka_values, _cnn_weights
 
 
-def pad_kd_from_genes(_utr_ka_values, _utr_split_sizes, _utr_max_size, num_train, batch_size_repression):
+def pad_kd_from_genes(_utr_ka_values, _utr_split_sizes, _utr_max_size, num_train, batch_size_repression, passenger):
+    if passenger:
+        total_num_train = 2 * num_train
+    else:
+        total_num_train = num_train
+
     # get padding dimensions
     _utr_split_sizes_expand = tf.expand_dims(_utr_split_sizes, 1)
     _utr_paddings = tf.concat([tf.zeros(shape=tf.shape(_utr_split_sizes_expand), dtype=tf.int32),
@@ -112,9 +117,9 @@ def pad_kd_from_genes(_utr_ka_values, _utr_split_sizes, _utr_max_size, num_train
 
     # split repression data and pad into batch_size_biochem x num_train*2 x max_size matrix
     _pred_utr_splits = tf.split(_utr_ka_values, _utr_split_sizes)
-    _pred_utr_splits_padded = [tf.pad(_pred_utr_splits[ix], _utr_paddings[ix:ix + 1, :]) for ix in range(batch_size_repression * num_train * 2)]
+    _pred_utr_splits_padded = [tf.pad(_pred_utr_splits[ix], _utr_paddings[ix:ix + 1, :]) for ix in range(batch_size_repression * total_num_train)]
     _pred_utr_splits_padded_stacked = tf.stack(_pred_utr_splits_padded)
-    _utr_ka_values_reshaped = tf.reshape(_pred_utr_splits_padded_stacked, [batch_size_repression, num_train * 2, -1])
+    _utr_ka_values_reshaped = tf.reshape(_pred_utr_splits_padded_stacked, [batch_size_repression, total_num_train, -1])
 
     return _utr_ka_values_reshaped
 

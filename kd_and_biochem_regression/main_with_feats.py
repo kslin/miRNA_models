@@ -30,7 +30,7 @@ if __name__ == '__main__':
     parser.add_option("--num_feats", dest="NUM_FEATS", type=int)
     parser.add_option("--repression_batch_size", dest="REPRESSION_BATCH_SIZE", type=int)
     parser.add_option("--kd_batch_size", dest="KD_BATCH_SIZE", type=int)
-    parser.add_option("--test_mirna", dest="TEST_MIRNA", help="testing miRNA")
+    parser.add_option("--test_mir", dest="TEST_MIR", help="testing miRNA")
     parser.add_option("--baseline", dest="BASELINE_METHOD", help="which baseline to use")
     parser.add_option("--loss_type", dest="LOSS_TYPE", help="which loss strategy")
     parser.add_option("--logdir", dest="LOGDIR", help="directory for writing logs")
@@ -46,6 +46,7 @@ if __name__ == '__main__':
 
     # SEQLEN must be 12
     SEQLEN = 12
+    REPRESSION_WEIGHT = 50.0 * KD_BATCH_SIZE / REPRESSION_BATCH_SIZE
 
     ### READ miRNA DATA ###
     MIRNA_DATA = pd.read_csv(options.MIR_SEQS, sep='\t')
@@ -54,12 +55,12 @@ if __name__ == '__main__':
     # split miRNAs into training and testing
     if options.TEST_MIRNA == 'none':
         TRAIN_GUIDES = ALL_GUIDES
-        TEST_GUIDES = ['mir139']
     else:
         if options.TEST_MIRNA not in ALL_GUIDES:
             raise ValueError('Test miRNA not in mirseqs file.')
         TRAIN_GUIDES = [m for m in ALL_GUIDES if m != options.TEST_MIRNA]
-        TEST_GUIDES = [options.TEST_MIRNA]
+
+    NUM_TRAIN = len(TRAIN_GUIDES)
 
     if options.PASSENGER:
         TRAIN_MIRS = np.array(list(zip(TRAIN_GUIDES, [x+'*' for x in TRAIN_GUIDES]))).flatten().tolist()
@@ -69,18 +70,82 @@ if __name__ == '__main__':
         ALL_MIRS = ALL_GUIDES
 
     # TPM data reader
-    raw_tpm_dataset = tf.data.TFRecordDataset(options.TPM_TFRECORDS)
+    tpm_dataset = tf.data.TFRecordDataset(options.TPM_TFRECORDS)
+    tpm_dataset = tpm_dataset.shuffle(buffer_size=1000)
     _parse_fn = lambda x: parse_data._parse_repression_function(x, TRAIN_MIRS, ALL_MIRS, options.MIRLEN, SEQLEN, options.NUM_FEATS)
-    parsed_tpm_dataset = raw_tpm_dataset.map(_parse_fn)
-    iterator_tpm = parsed_tpm_dataset.make_initializable_iterator()
-    next_tpm_batch = [iterator_tpm.get_next() for _ in range(options.REPRESSION_BATCH_SIZE)]
+    tpm_dataset = tpm_dataset.map(_parse_fn)
+    tpm_iterator = tpm_dataset.make_initializable_iterator()
 
+    # build tpm batch
+    next_tpm_batch = parse_data._build_tpm_batch(tpm_iterator, options.REPRESSION_BATCH_SIZE)
 
     # KD data reader
-    raw_kd_dataset = tf.data.TFRecordDataset(options.KD_TFRECORDS)
-    parsed_kd_dataset = raw_kd_dataset.map(parse_data._parse_log_kd_function)
-    parsed_kd_dataset = parsed_kd_dataset.batch(options.KD_BATCH_SIZE)
-    iterator_kd = parsed_kd_dataset.make_initializable_iterator()
-    next_kd_batch_x, next_kd_batch_y = iterator_kd.get_next()
+    kd_dataset = tf.data.TFRecordDataset(options.KD_TFRECORDS)
+    kd_dataset = kd_dataset.shuffle(buffer_size=1000)
+    kd_dataset = kd_dataset.map(parse_data._parse_log_kd_function)
+
+    # split into train and test
+    kd_train_dataset = kd_dataset.filter(lambda x, y, z: tf.math.logical_not(tf.equal(x, options.TEST_MIR.encode('utf-8'))))
+    kd_test_dataset = kd_dataset.filter(lambda x, y, z: tf.equal(x, options.TEST_MIR.encode('utf-8')))
+
+    # batch train datasets
+    kd_train_dataset = kd_train_dataset.batch(options.KD_BATCH_SIZE)
+    kd_train_iterator = kd_train_dataset.make_initializable_iterator()
+    next_kd_train_batch_mirs, next_kd_train_batch_images, next_kd_train_batch_labels = kd_train_iterator.get_next()
+
+    # batch test datasets
+    kd_test_dataset = kd_test_dataset.batch(1000)
+    kd_test_iterator = kd_test_dataset.make_initializable_iterator()
+    next_kd_test_batch_mirs, next_kd_test_batch_images, next_kd_test_batch_labels = kd_test_iterator.get_next()
+
+    # create placeholders for input data
+    _keep_prob = tf.placeholder(tf.float32, name='keep_prob')
+    _phase_train = tf.placeholder(tf.bool, name='phase_train')
+
+    # build KA predictor
+    _combined_x = tf.concat([next_tpm_batch['images'], next_kd_test_batch_images], axis=0)
+    _combined_x_4D = tf.expand_dims((_combined_x * 4.0) - 0.25, axis=3)  # reshape, zero-center input
+    _pred_ka_values, _cnn_weights = tf_helpers.seq2ka_predictor(_combined_x_4D, _keep_prob, _phase_train)  # pred ka
+
+    # split data into biochem and repression and get biochem loss
+    if options.KD_BATCH_SIZE == 0:
+        _pred_biochem = tf.constant(np.array([[0]]))
+        _biochem_loss = tf.constant(0.0)
+        _utr_ka_values = tf.reshape(_pred_ka_values, [-1])
+    else:
+        _pred_biochem = _pred_ka_values[-1 * options.KD_BATCH_SIZE:, :]
+        _biochem_loss = (tf.nn.l2_loss(tf.subtract(_pred_biochem, _biochem_y)))
+        _utr_ka_values = tf.reshape(_pred_ka_values[:-1 * options.KD_BATCH_SIZE, :], [-1])
+
+    # reshape repression ka values
+    _utr_max_size = tf.reduce_max(next_tpm_batch['nsites'])
+    _utr_ka_values_reshaped = tf_helpers.pad_kd_from_genes(
+        _utr_ka_values, next_tpm_batch['nsites'], _utr_max_size, NUM_TRAIN, options.REPRESSION_BATCH_SIZE, options.PASSENGER
+    )
+
+    print('utr_ka_reshaped: {}'.format(_utr_ka_values_reshaped))
+
+    # get repression prediction
+    init_params = [
+        -4.0,  # FREEAGO_INIT,
+        0.0,   # GUIDE_OFFSET_INIT,
+        -1.0,  # PASS_OFFSET_INIT,
+        -0.5,  # DECAY_INIT,
+        -8.5,  # UTR_COEF_INIT
+    ]
+
+    _results = tf_helpers.ka2repression_predictor(
+        'train',
+        _utr_ka_values_reshaped,
+        _utr_len,
+        NUM_TRAIN,
+        config.BATCH_SIZE_REPRESSION,
+        init_params
+    )
+
+    _pred_logfc = _results['pred_logfc_net']
+
+
+
 
     
