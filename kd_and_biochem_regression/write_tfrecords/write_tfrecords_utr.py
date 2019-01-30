@@ -119,7 +119,7 @@ def get_ts7_features(mirseq, locs, utr, utr_len, orf_len, upstream_limit, rnaplf
             else:
                 sa_score = np.log10(raw_sa_score)
 
-        features += [local_au, threep, min_dist, sa_score, utr_len, orf_len]
+        features += [local_au, threep, min_dist/10000, sa_score, utr_len/10000, orf_len/10000]
 
     return np.array(features).astype(float)
 

@@ -118,7 +118,7 @@ def pad_kd_from_genes(_utr_ka_values, _utr_split_sizes, _utr_max_size, num_train
     # get padding dimensions
     _utr_split_sizes_expand = tf.expand_dims(_utr_split_sizes, 1)
     _utr_paddings = tf.concat([tf.zeros(shape=tf.shape(_utr_split_sizes_expand), dtype=tf.int32),
-                                      _utr_max_size - _utr_split_sizes_expand], axis=1)
+                                      tf.reduce_max(_utr_split_sizes) - _utr_split_sizes_expand], axis=1)
 
     # split repression data and pad into batch_size_biochem x num_train*2 x max_size matrix
     _pred_utr_splits = tf.split(_utr_ka_values, _utr_split_sizes)

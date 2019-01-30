@@ -3,7 +3,7 @@ import pandas as pd
 import tensorflow as tf
 
 
-def _parse_repression_function(serialized_example, parse_mirs, all_mirs, mirlen, seqlen, num_feats, freeago_concs):
+def _parse_repression_function(serialized_example, parse_mirs, all_mirs, mirlen, seqlen, num_feats):
     """Parse the serialized example from tfrecords
     Inputs:
         serialized_example: input of reading tfrecords
@@ -12,7 +12,6 @@ def _parse_repression_function(serialized_example, parse_mirs, all_mirs, mirlen,
         mirlen (int): length of miRNA sequence encoded
         seqlen (int): length of site sequence encoded
         num_feats (int): number of additional features
-        freeago_concs (1D tensor, type tf.float32): freeAGO concentrations to use
     """
 
     # list of miRNA guide strands
@@ -38,7 +37,6 @@ def _parse_repression_function(serialized_example, parse_mirs, all_mirs, mirlen,
     nsites = tf.boolean_mask(parsed['nsites'], mir_mask)
     images = []
     ts7_features = []
-    freeAGO_tiled = []
     for ix, mir in enumerate(parse_mirs):
 
         # perform outer product between miRNA 1hot and site 1hot, reshape to [num_sites, 4 * mirlen, 4 * seqlen]
@@ -50,40 +48,38 @@ def _parse_repression_function(serialized_example, parse_mirs, all_mirs, mirlen,
         ts7_features.append(tf.reshape(parsed['{}_ts7_features'.format(mir)], [-1, num_feats]))
 
         # get freeAGO values
-        freeAGO_tiled.append(tf.tile(freeago_concs[ix: ix + 1], nsites[ix: ix + 1]))
+        # freeAGO_tiled.append(tf.tile(freeago_concs[ix: ix + 1], nsites[ix: ix + 1]))
 
     images = tf.concat(images, axis=0)
     ts7_features = tf.concat(ts7_features, axis=0)
-    freeAGO_tiled =  tf.concat(freeAGO_tiled, axis=0)
 
     # return parsed
-    return images, ts7_features, tpms, nsites, freeAGO_tiled, parsed['transcript']
+    return images, ts7_features, tpms, tf.cast(nsites, tf.int32), parsed['transcript']
 
 
-def _build_tpm_batch(iterator, batch_size, passenger, num_guides):
-    images, features, labels, nsites, freeAGOs, transcripts = [], [], [], [], [], []
+def _build_tpm_batch(iterator, batch_size, passenger):
+    images, features, labels, nsites, transcripts = [], [], [], [], []
     for _ in range(batch_size):
         results = iterator.get_next()
         images.append(results[0])
         features.append(results[1])
         labels.append(results[2])
         nsites.append(results[3])
-        freeAGOs.append(results[4])
-        transcripts.append(results[5])
+        transcripts.append(results[4])
 
     nsites = tf.concat(nsites, axis=0)
-    if passenger:
-        nsites_mir = tf.reduce_sum(tf.reshape(nsites, [num_guides * batch_size, 2]), axis=1)
-    else:
-        nsites_mir = tf.reshape(nsites, [num_guides * batch_size])
+    # if passenger:
+    #     nsites_mir = tf.reduce_sum(tf.reshape(nsites, [num_guides * batch_size, 2]), axis=1)
+    # else:
+    #     nsites_mir = tf.reshape(nsites, [num_guides * batch_size])
 
     results = {
         'images': tf.concat(images, axis=0),
         'features': tf.concat(features, axis=0),
         'labels': tf.concat(labels, axis=0),
         'nsites': nsites,
-        'nsites_mir': nsites_mir,
-        'freeAGOs': tf.expand_dims(tf.concat(freeAGOs, axis=0), axis=1),
+        # 'nsites_mir': nsites_mir,
+        # 'freeAGOs': tf.expand_dims(tf.concat(freeAGOs, axis=0), axis=1),
         'transcripts': tf.stack(transcripts)
     }
 
@@ -121,6 +117,33 @@ def _parse_log_kd_function(serialized_example):
     return parsed['mir'], image, parsed['log_kd']
 
 
-# TODO
-# def _filter_by_kd(image, label):
+def _rev_comp(seq):
+    match_dict = {'A': 'T',
+                  'T': 'A',
+                  'C': 'G',
+                  'G': 'C'}
+
+    return ''.join([match_dict[x] for x in seq][::-1])
+
+
+def _generate_random_seq(length):
+    nts = ['A', 'T', 'C', 'G']
+    seq = np.random.choice(nts, size=length, replace=True)
+    return ''.join(seq)
+
+
+def _get_target_no_match(mirna_sequence, length):
+    """Given a miRNA sequence, return a random target sequence without 4 nt of contiguous pairing"""
+    rc = _rev_comp(mirna_sequence[1:8]) + 'A'
+    off_limits = [rc[ix:ix + 4] for ix in range(5)]
+    while True:
+        target = generate_random_seq(length)
+        keep = True
+        for subseq in off_limits:
+            if subseq in target:
+                keep = False
+                break
+
+        if keep:
+            return target
 

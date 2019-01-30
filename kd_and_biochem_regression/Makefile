@@ -1,11 +1,11 @@
 dry_run:
 	python main_with_feats.py \
-		--tpm_tfrecords /lab/bartel4_ata/kathyl/RNA_Seq/outputs/convnet/tfrecords/guide_passenger_only_canon.tfrecord \
-		--kd_tfrecords /lab/bartel4_ata/kathyl/RNA_Seq/outputs/convnet/tfrecords/log_kds \
+		--tpm_tfrecords /Users/kathy/Lab/NeuralNet/tfrecords/guide_passenger_only_canon.tfrecord \
+		--kd_tfrecords /Users/kathy/Lab/NeuralNet/tfrecords/log_kds_only_canon \
 		--mirseqs write_tfrecords/mirseqs.txt \
 		--mirlen 10 \
 		--num_feats 6 \
-		--repression_batch_size 10 \
+		--repression_batch_size 2 \
 		--kd_batch_size 10 \
 		--num_epochs 2 \
 		--val_mir mir124 \
@@ -13,9 +13,27 @@ dry_run:
 		--loss_type MEAN_CENTER \
 		--lambda 0.001 \
 		--lr 0.002 \
-		--logdir /lab/bartel4_ata/kathyl/NeuralNet/logdirs/tpms_and_kds/train_with_feats_val_mir124 \
+		--logdir /Users/kathy/Lab/NeuralNet/logdirs/train_with_feats_val_mir124 \
 		--passenger \
 		--dry_run
+
+train:
+	python main_with_feats.py \
+		--tpm_tfrecords /Users/kathy/Lab/NeuralNet/tfrecords/guide_passenger_only_canon.tfrecord \
+		--kd_tfrecords /Users/kathy/Lab/NeuralNet/tfrecords/log_kds_only_canon \
+		--mirseqs write_tfrecords/mirseqs.txt \
+		--mirlen 10 \
+		--num_feats 6 \
+		--repression_batch_size 32 \
+		--kd_batch_size 10 \
+		--num_epochs 20 \
+		--val_mir mir124 \
+		--baseline bayes_baseline \
+		--loss_type MEAN_CENTER \
+		--lambda 0.001 \
+		--lr 0.002 \
+		--logdir /Users/kathy/Lab/NeuralNet/logdirs/train_with_feats_val_mir124 \
+		--passenger
 
 simple:
 	mkdir -p /lab/bartel4_ata/kathyl/NeuralNet/logdirs/tpms_and_kds/simple_xval_4_16_16_only_canon
