@@ -26,6 +26,5 @@ tf_records_utr_full:
 tf_records_kds:
 	python write_tfrecords_kds.py \
 		--kdfile /Users/kathy/Lab/NeuralNet/data/kds.txt \
-		--outfile /Users/kathy/Lab/NeuralNet/tfrecords/log_kds_only_canon \
-		--mirlen 10 \
-		--only_canon ; \
+		--outfile /Users/kathy/Lab/NeuralNet/tfrecords/log_kds_canon \
+		--mirlen 10 ; \

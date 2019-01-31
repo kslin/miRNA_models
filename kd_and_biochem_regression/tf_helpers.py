@@ -109,7 +109,7 @@ def ka_ts7_to_repression(_utr_ka_values, _ts7_feats, _freeAGO_concs, _feat_weigh
     
 
 
-def pad_kd_from_genes(_utr_ka_values, _utr_split_sizes, _utr_max_size, num_train, batch_size_repression, passenger):
+def pad_kd_from_genes(_utr_ka_values, _utr_split_sizes, num_train, batch_size_repression, passenger):
     if passenger:
         total_num_train = 2 * num_train
     else:

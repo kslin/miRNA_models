@@ -13,117 +13,6 @@ np.set_printoptions(threshold=np.inf, linewidth=200)
 pd.options.mode.chained_assignment = None
 
 
-def calculate_threep_score(mirseq, utr, site_start, upstream_limit):
-    """
-    Calculate the three-prime pairing score
-
-    Parameters
-    ----------
-    mirseq: string, miRNA sequence
-    utr: string, utr sequence
-    site_start: int, start of 12mer site
-    upstream_limit: int, how far upstream to look for 3p pairing
-
-    Output
-    ------
-    float: 3' pairing score
-    """
-    if site_start <= 0:
-        return 0
-
-    # get the 3' region of the mirna and the corresponding utr seq
-    mirseq_3p = mirseq[8:]  # miRNA sequence from position 9 onward
-    trailing = utr[max(0, site_start - upstream_limit): site_start + 2]  # site sequence up to edges of possible 8mer site
-    utr_5p = utils.rev_comp(trailing)
-
-    # initiate array for dynamic programming search
-    scores = np.empty((len(utr_5p) + 1, len(mirseq_3p) + 1))
-    scores.fill(np.nan)
-    possible_scores = [0]
-
-    # fill in array
-    for i, nt1 in enumerate(utr_5p):
-        for j, nt2 in enumerate(mirseq_3p):
-            if nt1 == nt2:
-                new_score = 0.5 + 0.5 * ((j > 3) & (j < 8))
-                if not np.isnan(scores[i, j]):
-                    new_score += scores[i, j]
-                    scores[i + 1, j + 1] = new_score
-                    possible_scores.append(new_score)
-                else:
-                    offset_penalty = max(0, (abs(i - j) - 2) * 0.5)
-                    scores[i + 1, j + 1] = new_score - offset_penalty
-            else:
-                scores[i + 1, j + 1] = float('NaN')
-
-    return np.nanmax(possible_scores)
-
-
-def calculate_local_au(utr, site_start):
-    """
-    Calculate the local AU score
-
-    Parameters
-    ----------
-    utr: string, utr sequence
-    site_start: int, start of 12mer site
-
-    Output
-    ------
-    float: local AU score
-    """
-    # find A, U and weights upstream of site
-    upstream = utr[max(0, site_start - 30): max(0, site_start)]
-    upstream = [int(x in ['A', 'U']) for x in upstream]
-    upweights = [1.0 / (x + 1) for x in range(len(upstream))][::-1]
-
-    # find A,U and weights downstream of site
-    downstream = utr[site_start + 12:min(len(utr), site_start + 42)]
-    downstream = [int(x in ['A', 'U']) for x in downstream]
-    downweights = [1.0 / (x + 1) for x in range(len(downstream))]
-
-    weighted = np.dot(upstream, upweights) + np.dot(downstream, downweights)
-    total = float(sum(upweights) + sum(downweights))
-
-    return weighted / total
-
-
-def get_ts7_features(mirseq, locs, utr, utr_len, orf_len, upstream_limit, rnaplfold_data):
-    # calculate TS7 features
-    features = []
-    for loc in locs:
-
-        # get ts7 features
-        local_au = calculate_local_au(utr, loc - 3)
-        threep = calculate_threep_score(mirseq, utr, loc - 3, upstream_limit)
-        min_dist = min(loc, utr_len - (loc + 6))
-        assert (min_dist >= 0), (loc, utr_len)
-
-        # use the rnaplfold data to calculate the site accessibility
-        site_start_for_SA = loc + 7
-        if (site_start_for_SA) not in rnaplfold_data.index:
-            sa_score = 0
-        else:
-            row_vals = rnaplfold_data.loc[site_start_for_SA].values[:14]  # pos 1-14 unpaired, Agarwal 2015
-            # row_vals = rnaplfold_data.loc[site_start_for_SA].values[:10]  # pos 1-10 unpaired, Sean
-
-            for raw_sa_score in row_vals[::-1]:
-                if not np.isnan(raw_sa_score):
-                    break
-
-            if np.isnan(raw_sa_score):
-                sa_score = np.nan
-            elif raw_sa_score <= 0:
-                sa_score = -5.0
-                print("warning, nan sa_score")
-            else:
-                sa_score = np.log10(raw_sa_score)
-
-        features += [local_au, threep, min_dist/10000, sa_score, utr_len/10000, orf_len/10000]
-
-    return np.array(features).astype(float)
-
-
 if __name__ == '__main__':
 
     parser = OptionParser()
@@ -220,7 +109,7 @@ if __name__ == '__main__':
                     long_seq = ''.join(seqs)
                     feature_dict['{}_seqs_1hot'.format(mir)] = utils._float_feature(utils.one_hot_encode(long_seq))
 
-                    features = get_ts7_features(mirseq, locs, utr, utr_len, orf_len, options.UPSTREAM_LIMIT, rnaplfold_data)
+                    features = utils.get_ts7_features(mirseq, locs, utr, utr_len, orf_len, options.UPSTREAM_LIMIT, rnaplfold_data)
                     # print(features)
                     feature_dict['{}_ts7_features'.format(mir)] = utils._float_feature(features)
 

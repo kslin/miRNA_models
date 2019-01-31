@@ -4,8 +4,11 @@ dry_run:
 		--kd_tfrecords /Users/kathy/Lab/NeuralNet/tfrecords/log_kds_only_canon \
 		--mirseqs write_tfrecords/mirseqs.txt \
 		--mirlen 10 \
+		--hidden1 4 \
+		--hidden2 16 \
+		--hidden3 16 \
 		--num_feats 6 \
-		--repression_batch_size 2 \
+		--repression_batch_size 40 \
 		--kd_batch_size 10 \
 		--num_epochs 2 \
 		--val_mir mir124 \
@@ -23,10 +26,13 @@ train:
 		--kd_tfrecords /Users/kathy/Lab/NeuralNet/tfrecords/log_kds_only_canon \
 		--mirseqs write_tfrecords/mirseqs.txt \
 		--mirlen 10 \
+		--hidden1 4 \
+		--hidden2 16 \
+		--hidden3 16 \
 		--num_feats 6 \
-		--repression_batch_size 32 \
+		--repression_batch_size 40 \
 		--kd_batch_size 10 \
-		--num_epochs 20 \
+		--num_epochs 100 \
 		--val_mir mir124 \
 		--baseline bayes_baseline \
 		--loss_type MEAN_CENTER \

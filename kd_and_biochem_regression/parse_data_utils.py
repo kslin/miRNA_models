@@ -47,9 +47,6 @@ def _parse_repression_function(serialized_example, parse_mirs, all_mirs, mirlen,
         # reshape features to [num_sites, num_ts7_features]
         ts7_features.append(tf.reshape(parsed['{}_ts7_features'.format(mir)], [-1, num_feats]))
 
-        # get freeAGO values
-        # freeAGO_tiled.append(tf.tile(freeago_concs[ix: ix + 1], nsites[ix: ix + 1]))
-
     images = tf.concat(images, axis=0)
     ts7_features = tf.concat(ts7_features, axis=0)
 
@@ -57,7 +54,7 @@ def _parse_repression_function(serialized_example, parse_mirs, all_mirs, mirlen,
     return images, ts7_features, tpms, tf.cast(nsites, tf.int32), parsed['transcript']
 
 
-def _build_tpm_batch(iterator, batch_size, passenger):
+def _build_tpm_batch(iterator, batch_size):
     images, features, labels, nsites, transcripts = [], [], [], [], []
     for _ in range(batch_size):
         results = iterator.get_next()
@@ -67,19 +64,11 @@ def _build_tpm_batch(iterator, batch_size, passenger):
         nsites.append(results[3])
         transcripts.append(results[4])
 
-    nsites = tf.concat(nsites, axis=0)
-    # if passenger:
-    #     nsites_mir = tf.reduce_sum(tf.reshape(nsites, [num_guides * batch_size, 2]), axis=1)
-    # else:
-    #     nsites_mir = tf.reshape(nsites, [num_guides * batch_size])
-
     results = {
         'images': tf.concat(images, axis=0),
         'features': tf.concat(features, axis=0),
         'labels': tf.concat(labels, axis=0),
-        'nsites': nsites,
-        # 'nsites_mir': nsites_mir,
-        # 'freeAGOs': tf.expand_dims(tf.concat(freeAGOs, axis=0), axis=1),
+        'nsites': tf.concat(nsites, axis=0),
         'transcripts': tf.stack(transcripts)
     }
 
