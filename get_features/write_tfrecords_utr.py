@@ -18,7 +18,8 @@ if __name__ == '__main__':
     parser = OptionParser()
     parser.add_option("-t", "--tpmfile", dest="TPM_FILE", help="tpm data")
     parser.add_option("-m", "--mirseqs", dest="MIR_SEQS", help="tsv with miRNAs and their sequences")
-    # parser.add_option("-o", "--orffile", dest="ORF_FILE", help="ORF sequences in tsv format")
+    parser.add_option("--pct", dest="PCT_FILE", help="file with PCTs")
+    # parser.add_option("--orf_file", dest="ORF_FILE", help="ORF sequences in tsv format")
     parser.add_option("-r", "--rnaplfold_folder", dest="RNAPLFOLD_FOLDER", help="location of RNAPLfold lunp files")
     parser.add_option("-w", "--outfile", dest="OUTFILE", help="location for tfrecords")
     parser.add_option("--mirlen", dest="MIRLEN", type=int)
@@ -62,7 +63,13 @@ if __name__ == '__main__':
 
     print("Using mirs: {}".format(ALL_MIRS))
 
-    # read in orf sequences
+    pct_df = pd.read_csv(options.PCT_FILE, sep='\t', usecols=['Gene ID', 'miRNA family', 'Site type', 'Site start', 'PCT'])
+    pct_df['offset'] = [1 if x in ['8mer-1a','7mer-m8'] else 0 for x in pct_df['Site type']]
+    pct_df['Site start'] = pct_df['Site start'] + pct_df['offset']
+    pct_df['ID'] = pct_df['Gene ID'] + pct_df['miRNA family']
+    pct_df = pct_df[['ID', 'Site start', 'PCT']].set_index('Site start')
+
+    # # read in orf sequences
     # ORF_SEQS = pd.read_csv(options.ORF_FILE, sep='\t', header=None, index_col=0)
 
     if options.WRITE_SEQS is not None:
@@ -77,7 +84,6 @@ if __name__ == '__main__':
 
             transcript = row[0]
             utr = row[1]['sequence']
-            utr_ext = ('TTT' + utr + 'TTT')
 
             lunp_file = os.path.join(options.RNAPLFOLD_FOLDER, transcript) + '_lunp'
             rnaplfold_data = pd.read_csv(lunp_file, sep='\t', header=1).set_index(' #i$').astype(float)
