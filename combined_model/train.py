@@ -1,5 +1,6 @@
 from optparse import OptionParser
 import os
+import sys
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -57,6 +58,7 @@ if __name__ == '__main__':
     parser = OptionParser()
     parser.add_option("--tpm_file", dest="TPM_FILE", help="tpm data")
     parser.add_option("--feature_file", dest="FEATURE_FILE", help="feature data")
+    parser.add_option("--orf_feature_file", dest="ORF_FEATURE_FILE", help="ORF feature data", default=None)
     parser.add_option("--model_type", dest="MODEL_TYPE", help="which model to run")
     parser.add_option("--out_folder", dest="OUT_FOLDER", help="folder for outputs", default=None)
 
@@ -106,10 +108,6 @@ if __name__ == '__main__':
         features = expand_feats_stypes(features, canon4_stypes, norm_vars + cat_vars, single_vars)
         all_vars = list(features.columns)
         norm_vars = [x for x in all_vars if x.split(':')[0] in norm_vars]
-
-        print(features.head())
-        print(all_vars)
-        sys.exit()
 
         # train model
         model = models.BoundedLinearModel(len(all_vars) - 1)
@@ -295,6 +293,26 @@ if __name__ == '__main__':
         model = models.DoubleSigmoidFreeAGOModel(2, len(all_vars) - 2, len(mirs5))
         one_site, train_mirs, val_mirs = False, mirs5, mirs5
 
+    elif options.MODEL_TYPE == 'TS7_multisite_5mirs_logKA_noredundant_6canon_doublesigmoid_freeago_allsites_withORF':
+        # get data
+        features = features.query('mir in @mirs5')
+        features = features[features['log_KA'] > 0]
+        nsites = utils.get_nsites(features)
+
+        orf_features = pd.read_csv(options.ORF_FEATURE_FILE, sep='\t')
+        orf_features = orf_features.set_index(keys=['transcript', 'mir'])
+        orf_nsites = utils.get_nsites(orf_features)
+
+        # define vars
+        norm_vars = ['TA', 'SA', 'Threep', 'Local_AU', 'Min_dist', 'UTR_len', 'ORF_len', 'PCT']
+        all_vars = ['log_KA'] + norm_vars
+
+        # train model
+        model = models.DoubleSigmoidFreeAGOModel(2, len(all_vars) - 2, len(mirs5))
+        one_site, train_mirs, val_mirs = False, mirs5, mirs5
+
+        sys.exit()
+
     elif options.MODEL_TYPE == 'TS7_multisite_5mirs_logKA_noredundant_6canon_doublesigmoid_freeago_allsites_noORF8m':
         # get data
         features = features.query('mir in @mirs5')
@@ -354,20 +372,19 @@ if __name__ == '__main__':
     else:
         raise ValueError('Invalid model type {}'.format(options.MODEL_TYPE))
 
-    for ix in [1, 2, 3, 4, 5]:
-        tf.reset_default_graph()
-        model = models.DoubleSigmoidModel(ix, len(all_vars) - ix, len(mirs5))
-        print('Num sigmoid: {}'.format(ix))
 
-        train_r2s, val_r2s, pred_df = models.cross_val(tpms, features, nsites, train_mirs, val_mirs, all_vars,
-                                                        norm_vars, model, 2000, one_site=one_site)
-        print('Train r2 mean, std: {}, {}'.format(np.mean(train_r2s), np.std(train_r2s)))
-        print('Val r2 mean, std:')
-        print('{}, {}, {}'.format(options.MODEL_TYPE, np.mean(val_r2s), np.std(val_r2s)))
-        print(all_vars)
-        print(model.vars_evals)
+    train_r2s, val_r2s, pred_df = models.cross_val(tpms, features, nsites, train_mirs, val_mirs, all_vars,
+                                                    norm_vars, model, 2000, one_site=one_site)
+    print('Train r2 mean, std: {}, {}'.format(np.mean(train_r2s), np.std(train_r2s)))
+    print('Val r2 mean, std:')
+    print('{}, {}, {}'.format(options.MODEL_TYPE, np.mean(val_r2s), np.std(val_r2s)))
+    print(all_vars)
+    print(model.vars_evals)
 
     if options.OUT_FOLDER is not None:
+        if (not os.path.isdir(options.OUT_FOLDER)):
+            os.makedirs(options.OUT_FOLDER)
+
         fig = plt.figure(figsize=(7,7))
         plt.scatter(pred_df['pred_normed'].values, pred_df['label_normed'].values, s=20)
         plt.savefig(os.path.join(options.OUT_FOLDER, options.MODEL_TYPE + '.png'))

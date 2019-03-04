@@ -7,13 +7,20 @@ from tensorflow.contrib.opt import ScipyOptimizerInterface
 import utils
 
 
-def expand_features(transcripts, mirs, max_nsites, feature_list, feature_df, nsites_df):
+def expand_features(transcripts, mirs, max_nsites, feature_list, feature_df):
     features_4D = np.zeros([len(transcripts), len(mirs), max_nsites, len(feature_list)])
     for ix, transcript in enumerate(transcripts):
         for iy, mir in enumerate(mirs):
             try:
-                temp = feature_df.loc[(transcript, mir)]['nsites']
-                features_4D[ix, iy, :nsites_temp, :] = feature_df.loc[(transcript, mir)][feature_list].values
+                temp = feature_df.loc[(transcript, mir)]
+                nsites = len(temp)
+                features_4D[ix, iy, :nsites, :] = temp[feature_list].values
+            except KeyError:
+                continue
+
+    mask = ((np.abs(np.sum(features_4D, axis=3))) != 0).astype(int)
+
+    return features_4D, mask
 
 
 
@@ -67,27 +74,11 @@ def cross_val(tpms, features, nsites, train_mirs, val_mirs, all_vars, vars_to_no
             val_features[vars_to_normalize] = (val_features[vars_to_normalize] - norm_means) / norm_stds
 
             # expand features
-            train_features_4D = np.zeros([len(train_transcripts), len(train_mirs), train_max_nsites, num_features])
-            for ix, transcript in enumerate(train_transcripts):
-                for iy, mir in enumerate(train_mirs):
-                    if (transcript, mir) in train_nsites.index:
-                        nsites_temp = train_nsites.loc[(transcript, mir)]['nsites']
-                        train_features_4D[ix, iy, :nsites_temp, :] = train_features.loc[(transcript, mir)][all_vars].values
-
-            train_mask = ((np.abs(np.sum(train_features_4D, axis=3))) != 0).astype(int)
-
+            train_features_4D, train_mask = expand_features(train_transcripts, train_mirs, train_max_nsites, all_vars, train_features)
             assert(np.sum(train_mask) == np.sum(train_nsites['nsites'].values))
 
             # expand features
-            val_features_4D = np.zeros([len(val_transcripts), len(val_mirs), val_max_nsites, num_features])
-            for ix, transcript in enumerate(val_transcripts):
-                for iy, mir in enumerate(val_mirs):
-                    if (transcript, mir) in val_nsites.index:
-                        nsites_temp = val_nsites.loc[(transcript, mir)]['nsites']
-                        val_features_4D[ix, iy, :nsites_temp, :] = val_features.loc[(transcript, mir)][all_vars].values
-
-            val_mask = ((np.abs(np.sum(val_features_4D, axis=3))) != 0).astype(int)
-
+            val_features_4D, val_mask = expand_features(val_transcripts, val_mirs, val_max_nsites, all_vars, val_features)
             assert(np.sum(val_mask) == np.sum(val_nsites['nsites'].values))
 
             print('Train feature shape: {}'.format(train_features_4D.shape))
@@ -133,15 +124,7 @@ def cross_val(tpms, features, nsites, train_mirs, val_mirs, all_vars, vars_to_no
         max_nsites = np.max(all_nsites['nsites'].values)
 
         # expand features
-        all_features_4D = np.zeros([len(all_transcripts), len(all_mirs), max_nsites, num_features])
-        for ix, transcript in enumerate(all_transcripts):
-            for iy, mir in enumerate(all_mirs):
-                if (transcript, mir) in all_nsites.index:
-                    nsites_temp = all_nsites.loc[(transcript, mir)]['nsites']
-                    all_features_4D[ix, iy, :nsites_temp, :] = all_features.loc[(transcript, mir)][all_vars].values
-
-        all_mask = ((np.abs(np.sum(all_features_4D, axis=3))) != 0).astype(int)
-
+        all_features_4D, all_mask = expand_features(all_transcripts, all_mirs, max_nsites, all_vars, all_features)
         assert(np.sum(all_mask) == np.sum(all_nsites['nsites'].values))
 
         print(all_features_4D.shape)
@@ -316,6 +299,42 @@ class DoubleSigmoidFreeAGOModel(SigmoidFreeAGOModel):
         weighted = tf.multiply(weighted1, weighted2)
         pred = tf.reduce_sum(tf.multiply(weighted, mask), axis=2)
         return pred
+
+
+class DoubleSigmoidFreeAGOWithORFModel(DoubleSigmoidFreeAGOModel):
+    def __init__(self, num_features_pre_sigmoid, num_features_post_sigmoid, num_mirs):
+        super().__init__(num_features_pre_sigmoid, num_features_post_sigmoid, num_mirs)
+        
+        self.vars['orf_bias'] = tf.get_variable('orf_bias', shape=(), initializer=tf.constant_initializer(0.0))
+
+    def get_orf_pred(self, features, mask):
+        weighted = self.vars['decay'] * tf.sigmoid(features + self.vars['freeAgo'] + self.vars['orf_bias'])
+        pred = tf.reduce_sum(tf.multiply(weighted, mask), axis=2)
+        return pred
+
+    def fit(self, sess, features, mask, orf_features, orf_mask, labels, feed_dict, maxiter):
+        utr_pred = self.get_pred(features, mask)
+        orf_pred = self.get_orf_pred(orf_features, orf_mask)
+        pred = utr_pred + orf_pred
+        loss, pred_normed, labels_normed = self.get_loss(pred, labels)
+        optimizer = ScipyOptimizerInterface(loss, options={'maxiter': maxiter})
+
+        optimizer.minimize(sess, feed_dict=feed_dict)
+        for name, var in self.vars.items():
+            self.vars_evals[name] = sess.run(var)
+
+        self.eval_pred, self.eval_pred_normed, self.eval_label_normed = sess.run([pred, pred_normed, labels_normed], feed_dict=feed_dict)
+        self.r2 = stats.linregress(self.eval_pred_normed.flatten(), self.eval_label_normed.flatten())[2]**2
+
+
+    def predict(self, sess, features, mask, orf_features, orf_mask, feed_dict):
+        utr_pred = self.get_pred(features, mask)
+        orf_pred = self.get_orf_pred(orf_features, orf_mask)
+        pred = utr_pred + orf_pred
+        return sess.run(pred, feed_dict=feed_dict)
+
+
+
 
 
 
