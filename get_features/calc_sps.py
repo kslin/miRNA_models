@@ -45,7 +45,7 @@ def calc_SPS(one_strand):
 # print(calc_SPS('AAATTTA'))
 # print(calc_SPS('AAATTT'))
 
-from_vikram = pd.read_csv('TA_SPS_by_seed_region.txt', sep='\t')
+from_vikram = pd.read_csv('../data/TA_SPS_by_seed_region.txt', sep='\t')
 from_vikram['Seed region'] = [x.replace('U','T') for x in from_vikram['Seed region']]
 from_vikram = from_vikram.set_index('Seed region')
 dG_7merm8 = [calc_SPS(x) for x in from_vikram.index]
@@ -63,4 +63,4 @@ from_vikram['no site'] = np.nan
 assert len(from_vikram[np.abs(from_vikram['SPS (8mer and 7mer-m8)'] - from_vikram['8mer']) > 0.001]) == 0
 assert len(from_vikram[np.abs(from_vikram['SPS (7mer-1a and 6mer)'] - from_vikram['6mer']) > 0.001]) == 0
 
-from_vikram[['8mer', '7mer-m8', '7mer-a1', '6mer', '6mer-m8', '6mer-a1', 'no site', 'TA']].to_csv('TA_SPS_all.txt', sep='\t', float_format='%.3f')
+from_vikram[['8mer', '7mer-m8', '7mer-a1', '6mer', '6mer-m8', '6mer-a1', 'no site', 'TA']].to_csv('../data/TA_SPS_all.txt', sep='\t', float_format='%.3f')
