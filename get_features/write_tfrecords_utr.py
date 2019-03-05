@@ -7,7 +7,6 @@ import numpy as np
 import pandas as pd
 import tensorflow as tf
 
-import get_site_features
 import utils
 
 np.set_printoptions(threshold=np.inf, linewidth=200)
@@ -107,7 +106,7 @@ if __name__ == '__main__':
                 feature_dict['{}_mir_1hot'.format(mir)] = utils._float_feature(utils.one_hot_encode(mirseq[:options.MIRLEN]))
 
                 # get sites and 12mer sequences
-                seqs, locs = get_site_features.get_sites_from_utr(utr, site8, overlap_dist=options.OVERLAP_DIST, only_canon=options.ONLY_CANON)
+                seqs, locs = utils.get_sites_from_utr(utr, site8, overlap_dist=options.OVERLAP_DIST, only_canon=options.ONLY_CANON)
                 nsites.append(len(locs))
 
                 if len(locs) > 0:
@@ -116,18 +115,8 @@ if __name__ == '__main__':
                     long_seq = ''.join(seqs)
                     feature_dict['{}_seqs_1hot'.format(mir)] = utils._float_feature(utils.one_hot_encode(long_seq))
 
-                    stypes = [utils.get_centered_stype(site8, seq) for seq in seqs]
-
-                    pct_df_temp = pct_df[pct_df['ID'] == transcript + mir]
-                    if len(pct_df_temp) == 0:
-                        pct_df_temp = None
-
-                    features = get_site_features.get_ts7_features(mirseq, locs, stypes, utr, utr_len, orf_len,
-                                                                      options.UPSTREAM_LIMIT, rnaplfold_data,
-                                                                      pct_df_temp).flatten()
-                    # if transcript == 'NM_000031.5':
-                    #     if mir == 'mir155':
-                    #         print(features)
+                    features = utils.get_ts7_features(mirseq, locs, utr, utr_len, orf_len, options.UPSTREAM_LIMIT, rnaplfold_data)
+                    # print(features)
                     feature_dict['{}_ts7_features'.format(mir)] = utils._float_feature(features)
 
                 else:

@@ -187,16 +187,19 @@ def get_ts7_features(mirseq, locs, stypes, utr, utr_len, orf_len, upstream_limit
                     sa_score = np.log10(raw_sa_score)
 
         # get PCT
-        pct = 0.0
-        if pct_df is not None:
-            try:
-                if stype in ['6mer', '7mer-a1', '7mer-m8', '8mer']:
-                    pct = pct_df.loc[loc]['PCT']
+        try:
+            if stype in ['6mer', '7mer-a1', '7mer-m8', '8mer']:
+                pct = pct_df.loc[loc]['PCT']
+            else:
+                pct = 0.0
 
-            except:
-                print(pct_df)
-                raise ValueError('PCT locations do not match for {}'.format(transcript))
+        except:
+            print(pct_df)
+            raise ValueError('PCT locations do not match for {}'.format(transcript))
 
         features.append([local_au, threep, sa_score, min_dist/2000.0, utr_len/2000.0, orf_len/2000.0, pct])
 
-    return np.array(features).astype(float)
+    features = pd.DataFrame(np.array(features).astype(float))
+    features.columns = ['Local_AU', 'Threep', 'SA', 'Min_dist', 'UTR_len', 'ORF_len', 'PCT']
+
+    return features

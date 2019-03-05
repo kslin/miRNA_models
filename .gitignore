@@ -1,10 +1,6 @@
-# flake8
-.flake8
-
 # Data folders
 outputs/
 data/
-*.tfrecord
 
 # Makefiles
 Makefile
