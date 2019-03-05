@@ -35,7 +35,7 @@ if __name__ == '__main__':
     parser.add_option("--kd_batch_size", dest="KD_BATCH_SIZE", type=int)
     parser.add_option("--num_epochs", dest="NUM_EPOCHS", type=int)
     parser.add_option("--val_mir", dest="VAL_MIR", help="testing miRNA")
-    parser.add_option("--baseline", dest="BASELINE_METHOD", help="which baseline to use")
+    # parser.add_option("--baseline", dest="BASELINE_METHOD", help="which baseline to use")
     parser.add_option("--loss_type", dest="LOSS_TYPE", help="which loss strategy")
     parser.add_option("--lambda", dest="LAMBDA", help="regularizer weight", type=float)
     parser.add_option("--lr", dest="LEARNING_RATE", help="starting learning rate", type=float)
@@ -215,7 +215,9 @@ if __name__ == '__main__':
             _ts7_weights = tf.get_variable("ts7_weights", shape=[options.NUM_FEATS, 1],
                                         initializer=tf.constant_initializer(weights_init))
             tf.add_to_collection('weight', _ts7_weights)
-            _ts7_weights = tf.concat([tf.constant(np.array([[1.0]]), dtype=tf.float32), _ts7_weights], axis=0)
+            _decay = tf.get_variable('decay', initializer=1.0)
+            _ts7_bias = tf.get_variable('ts7_bias', initializer=0.0)
+            # _ts7_weights = tf.concat([tf.constant(np.array([[1.0]]), dtype=tf.float32), _ts7_weights], axis=0)
 
     # build KA predictor
     _combined_x = tf.concat([next_kd_batch['images'], next_tpm_batch['images']], axis=0)
@@ -231,11 +233,13 @@ if __name__ == '__main__':
     _utr_ka_values = _pred_ka_values[tf.shape(next_kd_batch['images'])[0]:, :]
 
     # get logfc prediction
-    _pred_logfc, _pred_logfc_normed, _repression_y_normed = model.get_pred_logfc(
+    _pred_logfc, _pred_logfc_normed, _repression_y_normed = model.get_pred_logfc_separate(
         _utr_ka_values,
         _freeAGO_all,
         next_tpm_batch,
         _ts7_weights,
+        _ts7_bias,
+        _decay,
         options.REPRESSION_BATCH_SIZE,
         options.PASSENGER,
         NUM_TRAIN_GUIDES,
@@ -243,11 +247,13 @@ if __name__ == '__main__':
         options.LOSS_TYPE
     )
 
-    _pred_logfc_val, _pred_logfc_val_normed, _repression_y_val_normed = model.get_pred_logfc(
+    _pred_logfc_val, _pred_logfc_val_normed, _repression_y_val_normed = model.get_pred_logfc_separate(
         _utr_ka_values,
         _freeAGO_all_val,
         next_tpm_batch,
         _ts7_weights,
+        _ts7_bias,
+        _decay,
         options.REPRESSION_BATCH_SIZE,
         options.PASSENGER,
         len(ALL_GUIDES),
@@ -285,7 +291,8 @@ if __name__ == '__main__':
     # make model saver
     saver = tf.train.Saver(max_to_keep=options.NUM_EPOCHS)
 
-    logfile = open(os.path.join(options.LOGDIR, 'out.log'), 'w', -1)
+    if not options.DRY_RUN:
+        logfile = open(os.path.join(options.LOGDIR, 'out.log'), 'w', -1)
 
     # train model
     losses = []
@@ -506,4 +513,6 @@ if __name__ == '__main__':
 
                     break
 
-    logfile.close()
+    if not options.DRY_RUN:
+        logfile.close()
+
