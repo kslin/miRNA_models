@@ -128,6 +128,8 @@ if __name__ == '__main__':
                         features = get_site_features.get_ts7_features(mirseq, locs, stypes, utr, utr_len, orf_len,
                                                                       options.UPSTREAM_LIMIT, rnaplfold_data,
                                                                       pct_df_temp)
+
+                        features = pd.DataFrame(features, columns=['Local_AU', 'Threep', 'SA', 'Min_dist', 'UTR_len', 'ORF_len', 'PCT'])
                         if mir in kd_dict:
                             features['log_KA'] = -1 * kd_dict[mir].loc[seqs]['log_kd'].values
                         else:

@@ -1,10 +1,12 @@
+import subprocess
+
 import numpy as np
 import pandas as pd
 from scipy import stats
+import tensorflow as tf
 
 
 ### functions from Namita
-import subprocess
 
 def GetdG_dotbracket(seq1, seq2):
     # output_ = subprocess.check_output('echo \'' + seq +'\' | RNAfold -d 0', shell=True).split('\n')
@@ -106,39 +108,54 @@ def rev_comp(seq):
 
     return ''.join([match_dict[x] for x in seq][::-1])
 
+def one_hot_encode(seq):
+    """ 1-hot encode ATCG sequence """
+    nt_dict = {
+        'A': 0,
+        'T': 1,
+        'C': 2,
+        'G': 3,
+        'X': 4
+    }
+    targets = np.zeros([5, 4])
+    targets[:4, :] = np.eye(4)
+
+    seq = [nt_dict[nt] for nt in seq]
+    return targets[seq].flatten().astype(int)
+
 
 def get_best_stype(site8, seq):
     if site8 in seq:
         return '8mer'
-    elif site8[:-1] in seq:
+    if site8[:-1] in seq:
         return '7mer-m8'
-    elif site8[1:] in seq:
+    if site8[1:] in seq:
         return '7mer-a1'
-    elif site8[1:-1] in seq:
+    if site8[1:-1] in seq:
         return '6mer'
-    elif site8[:-2] in seq:
+    if site8[:-2] in seq:
         return '6mer-m8'
-    elif site8[2:] in seq:
+    if site8[2:] in seq:
         return '6mer-a1'
-    else:
-        return 'no site'
+
+    return 'no site'
 
 
 def get_centered_stype(site8, seq):
     if site8 == seq[2:-2]:
         return '8mer'
-    elif site8[:-1] == seq[2:-3]:
+    if site8[:-1] == seq[2:-3]:
         return '7mer-m8'
-    elif site8[1:] == seq[3:-2]:
+    if site8[1:] == seq[3:-2]:
         return '7mer-a1'
-    elif site8[1:-1] == seq[3:-3]:
+    if site8[1:-1] == seq[3:-3]:
         return '6mer'
-    elif site8[:-2] == seq[2:-4]:
+    if site8[:-2] == seq[2:-4]:
         return '6mer-m8'
-    elif site8[2:] == seq[4:-2]:
+    if site8[2:] == seq[4:-2]:
         return '6mer-a1'
-    else:
-        return 'no site'
+
+    return 'no site'
 
 
 def norm_matrix(mat):
