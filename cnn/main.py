@@ -27,10 +27,9 @@ if __name__ == '__main__':
     parser.add_option("-t", "--tpmfile", dest="TPM_FILE", help="tpm data")
     parser.add_option("-m", "--mirseqs", dest="MIR_SEQS", help="tsv with miRNAs and their sequences")
     parser.add_option("--test_mirna", dest="TEST_MIRNA", help="testing miRNA")
-    parser.add_option("--baseline", dest="BASELINE_METHOD", help="which baseline to use")
-    parser.add_option("--loss_type", dest="LOSS_TYPE", help="which loss strategy")
+    # parser.add_option("--baseline", dest="BASELINE_METHOD", help="which baseline to use")
+    # parser.add_option("--loss_type", dest="LOSS_TYPE", help="which loss strategy")
     parser.add_option("--load_model", dest="LOAD_MODEL", help="if supplied, load latest model from this directory", default=None)
-    parser.add_option("--rnaplfold_folder", dest="RNAPLFOLD_FOLDER", help="folder with rnaplfold outputs")
     parser.add_option("-l", "--logdir", dest="LOGDIR", help="directory for writing logs")
 
     (options, args) = parser.parse_args()
@@ -70,13 +69,13 @@ if __name__ == '__main__':
         }
 
     ### READ EXPRESSION DATA ###
-    tpm = pd.read_csv(options.TPM_FILE, sep='\t', index_col=0).dropna(subset=[options.BASELINE_METHOD])
+    tpm = pd.read_csv(options.TPM_FILE, sep='\t', index_col=0)#.dropna(subset=[options.BASELINE_METHOD])
     for mir in ALL_MIRS:
         if mir not in tpm.columns:
             raise ValueError('{} given in mirseqs file but not in tpm file.'.format(mir))
 
-    train_tpm = tpm[TRAIN_MIRS + [options.BASELINE_METHOD, 'sequence', 'utr_length', 'orf_length']]
-    test_tpm = tpm[TEST_MIRS + [options.BASELINE_METHOD, 'sequence', 'utr_length', 'orf_length']]
+    train_tpm = tpm[TRAIN_MIRS + ['sequence', 'utr_length', 'orf_length']]
+    test_tpm = tpm[TEST_MIRS + ['sequence', 'utr_length', 'orf_length']]
 
     # create data object
     repression_train_data = data_objects.RepressionData(train_tpm)
@@ -128,8 +127,8 @@ if __name__ == '__main__':
     print(NUM_TRAIN, NUM_TEST)
 
     # split TPM data into training and testing
-    train_tpm = tpm[TRAIN_MIRS + [options.BASELINE_METHOD, 'sequence', 'utr_length', 'orf_length']].dropna(subset=[options.BASELINE_METHOD])
-    test_tpm = tpm[test_mirs + [options.BASELINE_METHOD, 'sequence', 'utr_length', 'orf_length']]
+    train_tpm = tpm[TRAIN_MIRS + ['sequence', 'utr_length', 'orf_length']]#.dropna(subset=[options.BASELINE_METHOD])
+    test_tpm = tpm[test_mirs + ['sequence', 'utr_length', 'orf_length']]
 
     print(train_tpm.head())
 
@@ -434,10 +433,7 @@ if __name__ == '__main__':
                 batch_biochem_y = np.array([[0]])
 
             # define y values
-            if options.LOSS_TYPE == 'MEAN_CENTER':
-                y_vals = batch_repression_y
-            else:
-                y_vals = batch_repression_y - train_tpm.loc[batch_genes][[options.BASELINE_METHOD]].values
+            y_vals = batch_repression_y
 
             # make feed dict for training
             feed_dict = {
