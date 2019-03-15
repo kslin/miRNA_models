@@ -93,20 +93,21 @@ all_site_models:
 			--model_type $${model_type} ; \
 	done
 
+
 model_custom:
-	bsub -q 18 -o outputs/all_sites/TS7_multisite_5mirs_logKA_noredundant_6canon_doublesigmoid_freeago_allsites_noORF8m.txt \
+	mkdir -p ../outputs/biochem_model/logKA_UTRlen_doublesigmoid_freeago_allsites
+	bsub -q 18 -o ../outputs/biochem_model/logKA_UTRlen_doublesigmoid_freeago_allsites/log.txt \
 		python train.py \
-			--tpm_file /lab/bartel4_ata/kathyl/RNA_Seq/outputs/biochem/final_fixed/merged.txt \
-			--feature_file outputs/all_sites/features.txt \
-			--out_folder outputs/all_sites/ \
-			--model_type TS7_multisite_5mirs_logKA_noredundant_6canon_doublesigmoid_freeago_allsites_noORF8m
+		--tpm_file /lab/bartel4_ata/kathyl/RNA_Seq/outputs/biochem/final_fixed/merged.txt \
+		--feature_file ../data/biochem_model/all_sites_5mirs/features.txt \
+		--out_folder ../outputs/biochem_model/logKA_UTRlen_doublesigmoid_freeago_allsites/ \
+		--model_type logKA_UTRlen_doublesigmoid_freeago_allsites
 
 model_custom_test:
 	python train.py \
 		--tpm_file /lab/bartel4_ata/kathyl/RNA_Seq/outputs/biochem/final_fixed/merged.txt \
-		--feature_file outputs/all_sites_5mirs/features.txt \
-		--orf_feature_file outputs/all_sites_5mirs/orf_sites.txt \
-		--model_type TS7_multisite_5mirs_logKA_noredundant_6canon_doublesigmoid_freeago_allsites_withORF
+		--feature_file ../data/biochem_model/all_sites_6mirs/features.txt \
+		--model_type TS7_multisite_5mirs_logKA_noredundant_6canon_doublesigmoid_freeago_allsites_noORF8m
 
 
 

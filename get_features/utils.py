@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 from scipy import stats
+import tensorflow as tf
 
 
 ### functions from Namita
@@ -81,15 +82,15 @@ def _bytes_feature(value):
     return tf.train.Feature(bytes_list=tf.train.BytesList(value=[value]))
 
 
-def calc_r2(xs, ys):
-    return stats.linregress(xs.flatten(), ys.flatten())[2]**2
+# def calc_r2(xs, ys):
+#     return stats.linregress(xs.flatten(), ys.flatten())[2]**2
 
 
-def get_nsites(features):
-    nsites = features.reset_index()
-    nsites['nsites'] = 1
-    nsites = nsites.groupby(['transcript','mir']).agg({'nsites': np.sum})
-    return nsites
+# def get_nsites(features):
+#     nsites = features.reset_index()
+#     nsites['nsites'] = 1
+#     nsites = nsites.groupby(['transcript','mir']).agg({'nsites': np.sum})
+#     return nsites
 
 
 def sigmoid(vals):
@@ -105,6 +106,28 @@ def rev_comp(seq):
                   'G': 'C'}
 
     return ''.join([match_dict[x] for x in seq][::-1])
+
+def one_hot_encode(seq):
+    """ 1-hot encode ATCG sequence """
+    nt_dict = {
+        'A': 0,
+        'T': 1,
+        'C': 2,
+        'G': 3,
+        'X': 4
+    }
+    targets = np.zeros([5, 4])
+    targets[:4, :] = np.eye(4)
+
+    seq = [nt_dict[nt] for nt in seq]
+    return targets[seq].flatten().astype(int)
+
+
+def generate_random_seq(length):
+    """Generate random sequence"""
+    nts = ['A', 'T', 'C', 'G']
+    seq = np.random.choice(nts, size=length, replace=True)
+    return ''.join(seq)
 
 
 def get_best_stype(site8, seq):
@@ -141,12 +164,13 @@ def get_centered_stype(site8, seq):
         return 'no site'
 
 
-def norm_matrix(mat):
-    means = np.mean(mat, axis=1).reshape([-1, 1])
-    return mat - means
+# def norm_matrix(mat):
+#     means = np.mean(mat, axis=1).reshape([-1, 1])
+#     return mat - means
 
 
-def get_r2_unnormed(preds, labels):
-    preds_normed = norm_matrix(preds)
-    labels_normed = norm_matrix(labels)
-    return calc_r2(preds_normed, labels_normed)
+# def get_r2_unnormed(preds, labels):
+#     preds_normed = norm_matrix(preds)
+#     labels_normed = norm_matrix(labels)
+#     return calc_r2(preds_normed, labels_normed)
+

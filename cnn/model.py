@@ -28,14 +28,14 @@ def seq2ka_predictor(input_data, keep_prob, phase_train, hidden1, hidden2, hidde
     with tf.name_scope('layer1'):
         _w1, _b1 = get_conv_params(4, 4, 1, hidden1, 'layer1')
         _preactivate1 = tf.nn.conv2d(input_data, _w1, strides=[1, 4, 4, 1], padding='VALID') + _b1
-        _preactivate1_bn = tf.contrib.layers.batch_norm(_preactivate1, is_training=phase_train)
+        _preactivate1_bn = tf.layers.batch_normalization(_preactivate1, training=phase_train)
         _layer1 = tf.nn.leaky_relu(_preactivate1_bn)
 
     # add layer 2
     with tf.name_scope('layer2'):
         _w2, _b2 = get_conv_params(2, 2, hidden1, hidden2, 'layer2')
         _preactivate2 = tf.nn.conv2d(_layer1, _w2, strides=[1, 1, 1, 1], padding='VALID') + _b2
-        _preactivate2_bn = tf.contrib.layers.batch_norm(_preactivate2, is_training=phase_train)
+        _preactivate2_bn = tf.layers.batch_normalization(_preactivate2, training=phase_train)
         _layer2 = tf.nn.leaky_relu(_preactivate2_bn)
         _dropout2 = tf.nn.dropout(_layer2, rate=1.0 - keep_prob)
 
@@ -43,7 +43,7 @@ def seq2ka_predictor(input_data, keep_prob, phase_train, hidden1, hidden2, hidde
     with tf.name_scope('layer3'):
         _w3, _b3 = get_conv_params(mirlen - 1, seqlen - 1, hidden2, hidden3, 'layer3')
         _preactivate3 = tf.nn.conv2d(_dropout2, _w3, strides=[1, 1, 1, 1], padding='VALID') + _b3
-        _preactivate3_bn = tf.contrib.layers.batch_norm(_preactivate3, is_training=phase_train)
+        _preactivate3_bn = tf.layers.batch_normalization(_preactivate3, training=phase_train)
         _layer3 = tf.nn.leaky_relu(_preactivate3_bn)
         _dropout3 = tf.nn.dropout(_layer3, rate=1.0 - keep_prob)
 
@@ -66,7 +66,7 @@ def seq2ka_predictor(input_data, keep_prob, phase_train, hidden1, hidden2, hidde
             tf.add_to_collection('bias', _b4)
 
         # apply final layer
-        _pred_ka_values = tf.nn.relu(tf.add(tf.matmul(_layer_flat, _w4), _b4), name='pred_ka')
+        _pred_ka_values = tf.add(tf.matmul(_layer_flat, _w4), _b4, name='pred_ka')
 
     _cnn_weights = {
         'w1': _w1,
@@ -113,8 +113,8 @@ def get_pred_logfc_separate(_utr_ka_values, _freeAGO_all, _tpm_batch, _ts7_weigh
     _merged_features_padded = tf.nn.relu(pad_vals(_merged_features, _tpm_batch['nsites'], num_mirs, batch_size))
 
     # calculate logfc
-    _occupancy = -1 * tf.sigmoid(_utr_ka_values_padded + tf.reshape(_freeAGO_all, [1, -1, 1]))
-    _pred_logfc = -1 * tf.squeeze(tf.reduce_sum(tf.multiply(_occupancy, _merged_features_padded), axis=2))
+    _occupancy = tf.sigmoid(_utr_ka_values_padded + tf.reshape(_freeAGO_all, [1, -1, 1]))
+    _pred_logfc = _decay * tf.squeeze(tf.reduce_sum(tf.multiply(_occupancy, _merged_features_padded), axis=2))
 
     if passenger:
         _pred_logfc = tf.reduce_sum(tf.reshape(_pred_logfc, [-1, 2]), axis=1)
@@ -287,14 +287,14 @@ def get_pred_logfc_old(_utr_ka_values, _freeAGO_all, _tpm_batch, _ts7_weights, b
 #         with tf.name_scope('layer1'):
 #             _w1, _b1 = get_conv_params(4, 4, 1, self.hidden1, 'layer1')
 #             _preactivate1 = tf.nn.conv2d(input_data, _w1, strides=[1, 4, 4, 1], padding='VALID') + _b1
-#             _preactivate1_bn = tf.contrib.layers.batch_norm(_preactivate1, is_training=self.phase_train)
+#             _preactivate1_bn = tf.layers.batch_normalization(_preactivate1, training=self.phase_train)
 #             _layer1 = tf.nn.leaky_relu(_preactivate1_bn)
 
 #         # add layer 2
 #         with tf.name_scope('layer2'):
 #             _w2, _b2 = get_conv_params(2, 2, self.hidden1, self.hidden2, 'layer2')
 #             _preactivate2 = tf.nn.conv2d(_layer1, _w2, strides=[1, 1, 1, 1], padding='VALID') + _b2
-#             _preactivate2_bn = tf.contrib.layers.batch_norm(_preactivate2, is_training=self.phase_train)
+#             _preactivate2_bn = tf.layers.batch_normalization(_preactivate2, training=self.phase_train)
 #             _layer2 = tf.nn.leaky_relu(_preactivate2_bn)
 #             _dropout2 = tf.nn.dropout(_layer2, self.keep_prob)
 
@@ -302,7 +302,7 @@ def get_pred_logfc_old(_utr_ka_values, _freeAGO_all, _tpm_batch, _ts7_weights, b
 #         with tf.name_scope('layer3'):
 #             _w3, _b3 = get_conv_params(self.mirlen - 1, self.seqlen - 1, self.hidden2, self.hidden3, 'layer3')
 #             _preactivate3 = tf.nn.conv2d(_dropout2, _w3, strides=[1, 1, 1, 1], padding='VALID') + _b3
-#             _preactivate3_bn = tf.contrib.layers.batch_norm(_preactivate3, is_training=self.phase_train)
+#             _preactivate3_bn = tf.layers.batch_normalization(_preactivate3, training=self.phase_train)
 #             _layer3 = tf.nn.leaky_relu(_preactivate3_bn)
 #             _dropout3 = tf.nn.dropout(_layer3, self.keep_prob)
 

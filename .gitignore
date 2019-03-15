@@ -1,5 +1,7 @@
-# flake8
+# misc
 *.flake8
+*.log
+.*
 
 # Data folders
 outputs/

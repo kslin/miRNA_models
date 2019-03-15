@@ -106,6 +106,11 @@ def _parse_log_kd_function(serialized_example):
     return parsed['mir'], image, parsed['log_kd']
 
 
+def _filter_kds(mir, image, kd):
+    return tf.math.greater(tf.sigmoid((-1.0 * kd) - 3.0), tf.random.uniform(shape=(), minval=0, maxval=1))[0]
+    # return tf.math.greater(tf.sigmoid((-1.0 * kd) - 2.0), tf.constant([0.5]))[0]
+
+
 def _rev_comp(seq):
     match_dict = {'A': 'T',
                   'T': 'A',

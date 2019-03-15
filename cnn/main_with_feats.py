@@ -14,7 +14,7 @@ import tensorflow as tf
 
 import model
 import parse_data_utils
-from write_tfrecords import utils
+import utils
 
 np.set_printoptions(threshold=np.inf, linewidth=200)
 pd.options.mode.chained_assignment = None
@@ -43,12 +43,13 @@ if __name__ == '__main__':
     parser.add_option("--load_model", dest="LOAD_MODEL", help="if supplied, load latest model from this directory", default=None)
     parser.add_option("--passenger", dest="PASSENGER", help="include passenger", default=False, action='store_true')
     parser.add_option("--dry_run", dest="DRY_RUN", help="if true, do dry run", default=False, action='store_true')
+    parser.add_option("--pretrain", dest="PRETRAIN", help="if true, do pretraining step", default=False, action='store_true')
 
     (options, args) = parser.parse_args()
 
     SAVE_PATH = os.path.join(options.LOGDIR, 'saved')
 
-    if (not os.path.isdir(options.LOGDIR)) and (not options.DRY_RUN):
+    if (not os.path.isdir(options.LOGDIR)):
         os.makedirs(options.LOGDIR)
 
     # SEQLEN must be 12
@@ -66,7 +67,7 @@ if __name__ == '__main__':
         TRAIN_GUIDES = ALL_GUIDES
         VAL_GUIDES = ['mir139']
         COLORS = ['black'] * len(ALL_GUIDES)
-        VAL_IX = None
+        VAL_IX = ALL_GUIDES.index('mir139')
     else:
         if options.VAL_MIR not in ALL_GUIDES:
             raise ValueError('Test miRNA not in mirseqs file.')
@@ -96,25 +97,6 @@ if __name__ == '__main__':
     print("Repression miRNAs for training: {}".format(TRAIN_MIRS))
     print("RBNS miRNAs for training: {}".format(TRAIN_MIRS_KDS))
 
-    # create freeAGO concentration variables
-    _freeAGO_mean = tf.get_variable('freeAGO_mean', shape=(), initializer=tf.constant_initializer(-3.5))
-    _freeAGO_offset = tf.get_variable('freeAGO_offset', shape=[len(TRAIN_MIRS)], initializer=tf.constant_initializer(0.0))
-    _freeAGO_all = _freeAGO_mean + _freeAGO_offset + tf.tile(tf.constant([0.0, -1.0]), tf.constant([NUM_TRAIN_GUIDES]))
-    
-    if options.VAL_MIR  == 'none':
-        _freeAGO_all_val = _freeAGO_all
-    else:
-        if options.PASSENGER:
-            _freeAGO_all_val = tf.concat([
-                _freeAGO_all[:(VAL_IX * 2)],
-                tf.reshape(tf.reduce_mean(tf.reshape(_freeAGO_all, [-1, 2]), axis=0), [2]),
-                _freeAGO_all[(VAL_IX * 2):]], axis=0)
-        else:
-            _freeAGO_all_val = tf.concat([
-                _freeAGO_all[:VAL_IX],
-                tf.reshape(tf.reduce_mean(_freeAGO_all, axis=0), [1]),
-                _freeAGO_all[VAL_IX:]], axis=0)
-
     # TPM data reader
     tpm_dataset = tf.data.TFRecordDataset(options.TPM_TFRECORDS)
     # tpm_dataset = tpm_dataset.shuffle(buffer_size=1000)
@@ -127,9 +109,11 @@ if __name__ == '__main__':
 
     # preprocess data
     tpm_train_dataset = tpm_dataset.skip(400).shuffle(buffer_size=1000)
-    tpm_train_dataset = tpm_train_dataset.map(_parse_fn_train)
+    # tpm_train_dataset = tpm_train_dataset.prefetch(options.REPRESSION_BATCH_SIZE)
+    tpm_train_dataset = tpm_train_dataset.map(_parse_fn_train, num_parallel_calls=16)
     tpm_val_dataset = tpm_dataset.take(400)
-    tpm_val_dataset = tpm_val_dataset.map(_parse_fn_val)
+    # tpm_val_dataset = tpm_val_dataset.prefetch(options.REPRESSION_BATCH_SIZE)
+    tpm_val_dataset = tpm_val_dataset.map(_parse_fn_val, num_parallel_calls=16)
 
     # make feedable iterators
     tpm_train_iterator = tpm_train_dataset.make_initializable_iterator()
@@ -141,34 +125,49 @@ if __name__ == '__main__':
     next_tpm_batch = parse_data_utils._build_tpm_batch(tpm_iterator, options.REPRESSION_BATCH_SIZE)
 
     # KD data reader
-    TRAIN_KDS_FILES = np.array([options.KD_TFRECORDS + '_{}.tfrecord'.format(mir) for mir in TRAIN_MIRS_KDS])
-    print("Loading training KD data from")
-    print(TRAIN_KDS_FILES)
-
-    kd_dataset = parse_data_utils._load_multiple_tfrecords(TRAIN_KDS_FILES)
-
-    # split into training and validation sets
-    if len(VAL_MIRS_KDS) > 0:
-        VAL_KDS_FILES = np.array([options.KD_TFRECORDS + '_{}.tfrecord'.format(mir) for mir in VAL_MIRS_KDS])
-        print("Loading validation KD data from")
-        print(VAL_KDS_FILES)
-        kd_val_dataset = parse_data_utils._load_multiple_tfrecords(VAL_KDS_FILES)
-        kd_train_dataset = kd_dataset
-
-    else:
-        print("Taking first 1000 kds as validation set.")
+    if options.PRETRAIN:
+        kd_dataset = tf.data.TFRecordDataset(options.KD_TFRECORDS)
         kd_val_dataset = kd_dataset.take(1000)
         kd_train_dataset = kd_dataset.skip(1000)
 
+    else:
+        TRAIN_KDS_FILES = np.array([options.KD_TFRECORDS + '_{}.tfrecord'.format(mir) for mir in TRAIN_MIRS_KDS])
+        print("Loading training KD data from")
+        print(TRAIN_KDS_FILES)
+
+        kd_dataset = parse_data_utils._load_multiple_tfrecords(TRAIN_KDS_FILES)
+
+        # split into training and validation sets
+        if len(VAL_MIRS_KDS) > 0:
+            VAL_KDS_FILES = np.array([options.KD_TFRECORDS + '_{}.tfrecord'.format(mir) for mir in VAL_MIRS_KDS])
+            print("Loading validation KD data from")
+            print(VAL_KDS_FILES)
+            kd_val_dataset = parse_data_utils._load_multiple_tfrecords(VAL_KDS_FILES)
+            kd_train_dataset = kd_dataset
+
+        else:
+            print("Taking first 1000 kds as validation set.")
+            kd_val_dataset = kd_dataset.take(1000)
+            kd_train_dataset = kd_dataset.skip(1000)
+
+    # kd_train_dataset = kd_train_dataset.prefetch(options.KD_BATCH_SIZE)
+    # kd_val_dataset = kd_val_dataset.prefetch(1000)
+
     # shuffle, batch, and map datasets
-    kd_train_dataset = kd_train_dataset.shuffle(buffer_size=1000, reshuffle_each_iteration=None)
-    kd_train_dataset = kd_train_dataset.repeat()  # repeat as long as needed for tpm epochs
-    kd_train_dataset = kd_train_dataset.map(parse_data_utils._parse_log_kd_function)
+    kd_train_dataset = kd_train_dataset.apply(tf.data.experimental.shuffle_and_repeat(buffer_size=1000))
+    # kd_train_dataset = kd_train_dataset.shuffle(buffer_size=1000, reshuffle_each_iteration=None)
+    # kd_train_dataset = kd_train_dataset.repeat()  # repeat as long as needed for tpm epochs
+    kd_train_dataset = kd_train_dataset.map(parse_data_utils._parse_log_kd_function, num_parallel_calls=16)
+
+    # re-balance KD data towards high-affinity sites
+    kd_train_dataset = kd_train_dataset.filter(parse_data_utils._filter_kds)
     kd_train_dataset = kd_train_dataset.batch(options.KD_BATCH_SIZE, drop_remainder=True)
 
     kd_val_dataset = kd_val_dataset.shuffle(buffer_size=1000, reshuffle_each_iteration=None)
-    kd_val_dataset = kd_val_dataset.map(parse_data_utils._parse_log_kd_function)
-    kd_val_dataset = kd_val_dataset.batch(1000)
+    kd_val_dataset = kd_val_dataset.apply(tf.data.experimental.map_and_batch(
+            map_func=parse_data_utils._parse_log_kd_function, batch_size=1000))
+    # kd_val_dataset = kd_val_dataset.map(parse_data_utils._parse_log_kd_function)
+    # kd_val_dataset = kd_val_dataset.batch(1000)
 
     # make feedable iterators
     kd_train_iterator = kd_train_dataset.make_initializable_iterator()
@@ -206,19 +205,6 @@ if __name__ == '__main__':
     _keep_prob = tf.placeholder(tf.float32, name='keep_prob')
     _phase_train = tf.placeholder(tf.bool, name='phase_train')
 
-    # weights_init = np.array([1.0] + [0.001]*options.NUM_FEATS).reshape([options.NUM_FEATS + 1, 1])
-    weights_init = np.array([0.001]*options.NUM_FEATS).reshape([options.NUM_FEATS, 1])
-
-    # create ts7 weight variable
-    with tf.name_scope('ts7_layer'):
-        with tf.name_scope('weights'):
-            _ts7_weights = tf.get_variable("ts7_weights", shape=[options.NUM_FEATS, 1],
-                                        initializer=tf.constant_initializer(weights_init))
-            tf.add_to_collection('weight', _ts7_weights)
-            _decay = tf.get_variable('decay', initializer=1.0)
-            _ts7_bias = tf.get_variable('ts7_bias', initializer=0.0)
-            # _ts7_weights = tf.concat([tf.constant(np.array([[1.0]]), dtype=tf.float32), _ts7_weights], axis=0)
-
     # build KA predictor
     _combined_x = tf.concat([next_kd_batch['images'], next_tpm_batch['images']], axis=0)
     _combined_x_4D = tf.expand_dims((_combined_x * 4.0) - 0.25, axis=3)  # reshape, zero-center input
@@ -229,8 +215,45 @@ if __name__ == '__main__':
 
     # split data into biochem and repression and get biochem loss
     _pred_biochem = _pred_ka_values[:tf.shape(next_kd_batch['images'])[0], :]
-    _ka_loss = (tf.nn.l2_loss(tf.subtract(_pred_biochem, next_kd_batch['labels'])))# / options.KD_BATCH_SIZE
+    # _ka_loss = (tf.nn.l2_loss(tf.subtract(tf.nn.relu(_pred_biochem), next_kd_batch['labels'])))# / options.KD_BATCH_SIZE
+    _ka_loss_weights = tf.sqrt(next_kd_batch['labels'] + 1.0)
+    _ka_loss = tf.nn.l2_loss(tf.subtract(tf.nn.relu(_pred_biochem), next_kd_batch['labels']) * _ka_loss_weights)
     _utr_ka_values = _pred_ka_values[tf.shape(next_kd_batch['images'])[0]:, :]
+
+    # make model saver
+    saver = tf.train.Saver(tf.global_variables(), max_to_keep=options.NUM_EPOCHS)
+
+    # create freeAGO concentration variables
+    _freeAGO_mean = tf.get_variable('freeAGO_mean', shape=(), initializer=tf.constant_initializer(-5.0))
+    _freeAGO_offset = tf.get_variable('freeAGO_offset', shape=[len(TRAIN_MIRS)], initializer=tf.constant_initializer(0.0))
+    _freeAGO_all = _freeAGO_mean + _freeAGO_offset + tf.tile(tf.constant([0.0, -1.0]), tf.constant([NUM_TRAIN_GUIDES]))
+    
+    if options.VAL_MIR  == 'none':
+        _freeAGO_all_val = _freeAGO_all
+    else:
+        if options.PASSENGER:
+            _freeAGO_all_val = tf.concat([
+                _freeAGO_all[:(VAL_IX * 2)],
+                tf.reshape(tf.reduce_mean(tf.reshape(_freeAGO_all, [-1, 2]), axis=0), [2]),
+                _freeAGO_all[(VAL_IX * 2):]], axis=0)
+        else:
+            _freeAGO_all_val = tf.concat([
+                _freeAGO_all[:VAL_IX],
+                tf.reshape(tf.reduce_mean(_freeAGO_all, axis=0), [1]),
+                _freeAGO_all[VAL_IX:]], axis=0)
+
+    # make feature weights
+    weights_init = np.array([0.001]*options.NUM_FEATS).reshape([options.NUM_FEATS, 1])
+
+    # create ts7 weight variable
+    with tf.name_scope('ts7_layer'):
+        with tf.name_scope('weights'):
+            _ts7_weights = tf.get_variable("ts7_weights", shape=[options.NUM_FEATS, 1],
+                                        initializer=tf.constant_initializer(weights_init))
+            tf.add_to_collection('weight', _ts7_weights)
+            _decay = tf.get_variable('decay', initializer=-1.0)
+            _ts7_bias = tf.get_variable('ts7_bias', initializer=1.0)
+            # _ts7_weights = tf.concat([tf.constant(np.array([[1.0]]), dtype=tf.float32), _ts7_weights], axis=0)
 
     # get logfc prediction
     _pred_logfc, _pred_logfc_normed, _repression_y_normed = model.get_pred_logfc_separate(
@@ -267,9 +290,9 @@ if __name__ == '__main__':
     _repression_loss = 5.0 * tf.nn.l2_loss(tf.subtract(_pred_logfc_normed, _repression_y_normed))# / (options.REPRESSION_BATCH_SIZE * NUM_TRAIN_GUIDES)
 
     if options.PASSENGER:
-        offset_weight = tf.nn.l2_loss(tf.reshape(_freeAGO_all, [-1, 2])[:, 0])
+        offset_weight = tf.reduce_sum(tf.reshape(_freeAGO_all, [-1, 2])[:, 0])
     else:
-        offset_weight = tf.nn.l2_loss(_freeAGO_all)
+        offset_weight = tf.reduce_sum(_freeAGO_all)
 
     # define regularizer
     _weight_regularize = tf.multiply(
@@ -282,14 +305,16 @@ if __name__ == '__main__':
     )
 
     # define loss and train_step
-    _loss = _ka_loss + _repression_loss + _weight_regularize
+    if options.PRETRAIN:
+        _loss = _ka_loss
+        
+    else:
+        _loss = _ka_loss + _repression_loss + _weight_regularize
+
 
     _update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
     with tf.control_dependencies(_update_ops):
         _train_step = tf.train.AdamOptimizer(options.LEARNING_RATE).minimize(_loss)
-
-    # make model saver
-    saver = tf.train.Saver(max_to_keep=options.NUM_EPOCHS)
 
     if not options.DRY_RUN:
         logfile = open(os.path.join(options.LOGDIR, 'out.log'), 'w', -1)
@@ -298,7 +323,8 @@ if __name__ == '__main__':
     losses = []
     means = []
     r2s = []
-    with tf.Session() as sess:
+    conf = tf.ConfigProto(inter_op_parallelism_threads=4, intra_op_parallelism_threads=24) 
+    with tf.Session(config=conf) as sess:
         sess.run(tf.global_variables_initializer())
 
         if options.LOAD_MODEL is not None:
@@ -335,17 +361,25 @@ if __name__ == '__main__':
                     _train_step,  #5
                     random_seq_mirs,
                     random_seq_images,
-                    random_seq_labels
+                    random_seq_labels,
+                    _utr_ka_values
                 ], feed_dict=train_feed_dict)
 
                 print(train_evals[0]['mirs'])
                 print(train_evals[0]['labels'].shape, train_evals[1].shape)
+                print(train_evals[0]['labels'], train_evals[1])
                 print(train_evals[2]['images'].shape)
                 print(train_evals[2]['labels'].shape)
                 print(train_evals[2]['nsites'].shape, np.sum(train_evals[2]['nsites']))
                 print(train_evals[3].shape, train_evals[4].shape)
                 print(train_evals[6])
                 print(train_evals[7].shape, train_evals[8])
+                print(np.min(train_evals[-1]), np.max(train_evals[-1]))
+
+                fig = plt.figure(figsize=(7, 7))
+                plt.scatter(train_evals[1].flatten(), train_evals[0]['labels'].flatten())
+                plt.savefig(os.path.join(options.LOGDIR, 'train_ka_scatter.png'))
+                plt.close()
 
                 val_evals = sess.run([
                     next_kd_batch,
@@ -361,6 +395,11 @@ if __name__ == '__main__':
                 print(val_evals[2]['labels'].shape)
                 print(val_evals[2]['nsites'].shape, np.sum(val_evals[2]['nsites']))
                 print(val_evals[3].shape, val_evals[4].shape)
+
+                fig = plt.figure(figsize=(7, 7))
+                plt.scatter(val_evals[1].flatten(), val_evals[0]['labels'].flatten())
+                plt.savefig(os.path.join(options.LOGDIR, 'val_ka_scatter.png'))
+                plt.close()
 
                 sess.run(tpm_val_iterator.initializer)
                 pred_vals, real_vals = [], []
@@ -438,6 +477,24 @@ if __name__ == '__main__':
 
                     saver.save(sess, os.path.join(SAVE_PATH, 'model'), global_step=current_epoch)
 
+                    # plot weights
+                    conv_weights = sess.run(_cnn_weights['w1'])
+                    xlabels = ['A', 'U', 'C', 'G']
+                    ylabels = ['A', 'U', 'C', 'G']
+                    utils.graph_convolutions(conv_weights, xlabels, ylabels, os.path.join(options.LOGDIR, 'convolution1.pdf'))
+
+                    # plot importance matrix
+                    conv_weights = np.abs(sess.run(_cnn_weights['w3']))
+                    conv_weights = np.sum(conv_weights, axis=(2, 3))
+                    vmin, vmax = np.min(conv_weights), np.max(conv_weights)
+                    xlabels = ['s{}'.format(i + 1) for i in range(SEQLEN)]
+                    ylabels = ['m{}'.format(i + 1) for i in list(range(options.MIRLEN))[::-1]]
+                    fig = plt.figure(figsize=(4, 4))
+                    sns.heatmap(conv_weights, xticklabels=xlabels, yticklabels=ylabels,
+                                cmap=plt.cm.plasma, vmin=vmin, vmax=vmax)
+                    plt.savefig(os.path.join(options.LOGDIR, 'convolution3.pdf'))
+                    plt.close()
+
                     colors = ['black'] * options.KD_BATCH_SIZE + ['red'] * 2
                     fig = plt.figure(figsize=(7, 7))
                     plt.scatter(evals[1].flatten(), evals[0]['labels'].flatten(), color=colors)
@@ -461,7 +518,7 @@ if __name__ == '__main__':
                     plt.savefig(os.path.join(options.LOGDIR, 'train_freeAGO_means.png'))
                     plt.close()
 
-                    logfile.write('Time for epoch: {}\n'.format(time.time() - time_start))
+                    # logfile.write('Time for epoch: {}\n'.format(time.time() - time_start))
                     logfile.write('Epoch {}, {:.3f}, {:.3f}, {:.3f}, {:.3f}\n'.format(current_epoch, evals[5], evals[6], evals[7], evals[8]))
                     print('Epoch {}, {:.3f}, {:.3f}, {:.3f}, {:.3f}'.format(current_epoch, evals[5], evals[6], evals[7], evals[8]))
                     print(sess.run(_ts7_weights).flatten())

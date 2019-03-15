@@ -9,28 +9,18 @@ import utils
 
 def _priority_order(locs, overlap_dist):
     """Helper function for get_sites_from_utr"""
+    
+    temp = pd.DataFrame({'loc': locs})
+    temp = temp.drop_duplicates(keep='first')
+    temp['priority'] = np.arange(len(temp))
 
-    # make dictionary of loc occurences and order
-    loc_dict = {}
-    for ix, l in enumerate(locs):
-        if l not in loc_dict:
-            loc_dict[l] = (-1, ix)
-        else:
-            temp_count, temp_ix = loc_dict[l]
-            loc_dict[l] = (temp_count - 1, temp_ix)
+    new_locs = []
+    while len(temp) > 0:
+        top_loc = temp.iloc[0]['loc']
+        new_locs.append(top_loc)
+        temp = temp[np.abs(temp['loc'] - top_loc) > overlap_dist].sort_values('priority')
 
-    loc_tuples = [(l, count, ix) for (l, (count, ix)) in loc_dict.items()]
-    loc_tuples.sort(key=operator.itemgetter(1, 2))
-
-    unique_locs = [t[0] for t in loc_tuples]
-    nonoverlapping_locs = []
-    prev = -100
-    for l in unique_locs:
-        if abs(l - prev) > overlap_dist:
-            nonoverlapping_locs.append(l)
-            prev = l
-
-    return nonoverlapping_locs
+    return new_locs
 
 
 def get_sites_from_utr(utr, site8, overlap_dist, only_canon):
@@ -46,21 +36,20 @@ def get_sites_from_utr(utr, site8, overlap_dist, only_canon):
     Returns:
         list of ints: location of all desired sites in a UTR
     """
-    if only_canon:
-        # get site locations of all canonical sites
-        locs0 = [m.start() - 1 for m in re.finditer(site8[2:], utr)]  # pos 1-6
-        locs1 = [m.start() for m in re.finditer(site8[1:-1], utr)]  # pos 2-7 (start of 6mer site)
-        locs2 = [m.start() + 1 for m in re.finditer(site8[:-2], utr)]  # pos 3-8
-        locs = (locs1 + locs2 + locs0)
+    # get site locations of all canonical sites
+    locs0 = [m.start() - 1 for m in re.finditer('(?={})'.format(site8[2:]), utr)]  # pos 1-6
+    locs1 = [m.start() for m in re.finditer('(?={})'.format(site8[1:-1]), utr)]  # pos 2-7 (start of 6mer site)
+    locs2 = [m.start() + 1 for m in re.finditer('(?={})'.format(site8[:-2]), utr)]  # pos 3-8
+    locs = (locs1 + locs2 + locs0)
 
-    else:
+    if not only_canon:
         # get site locations of all 4mer subsequences of the 8mer site
-        locs0 = [m.start() - 3 for m in re.finditer(site8[4:], utr)]  # pos 1-4
-        locs1 = [m.start() - 2 for m in re.finditer(site8[3:-1], utr)]  # pos 2-5
-        locs2 = [m.start() - 1 for m in re.finditer(site8[2:-2], utr)]  # pos 3-6
-        locs3 = [m.start() for m in re.finditer(site8[1:-3], utr)]  # pos 4-7 (start of 6mer site)
-        locs4 = [m.start() + 1 for m in re.finditer(site8[:-4], utr)]  # pos 5-8
-        locs = (locs1 + locs2 + locs0 + locs3 + locs4)
+        locs0 = [m.start() - 3 for m in re.finditer('(?={})'.format(site8[4:]), utr)]  # pos 1-4
+        locs1 = [m.start() - 2 for m in re.finditer('(?={})'.format(site8[3:-1]), utr)]  # pos 2-5
+        locs2 = [m.start() - 1 for m in re.finditer('(?={})'.format(site8[2:-2]), utr)]  # pos 3-6
+        locs3 = [m.start() for m in re.finditer('(?={})'.format(site8[1:-3]), utr)]  # pos 4-7 (start of 6mer site)
+        locs4 = [m.start() + 1 for m in re.finditer('(?={})'.format(site8[:-4]), utr)]  # pos 5-8
+        locs += (locs1 + locs2 + locs0 + locs3 + locs4)
 
     # get rid of any that would put the 6mer site outside the bounds of the UTR
     locs = [l for l in locs if ((l >= 0) and ((l + 6) <= len(utr)))]
@@ -187,19 +176,16 @@ def get_ts7_features(mirseq, locs, stypes, utr, utr_len, orf_len, upstream_limit
                     sa_score = np.log10(raw_sa_score)
 
         # get PCT
-        try:
-            if stype in ['6mer', '7mer-a1', '7mer-m8', '8mer']:
-                pct = pct_df.loc[loc]['PCT']
-            else:
-                pct = 0.0
+        pct = 0.0
+        if pct_df is not None:
+            try:
+                if stype in ['6mer', '7mer-a1', '7mer-m8', '8mer']:
+                    pct = pct_df.loc[loc]['PCT']
 
-        except:
-            print(pct_df)
-            raise ValueError('PCT locations do not match for {}'.format(transcript))
+            except:
+                print(pct_df)
+                raise ValueError('PCT locations do not match for {}'.format(transcript))
 
         features.append([local_au, threep, sa_score, min_dist/2000.0, utr_len/2000.0, orf_len/2000.0, pct])
 
-    features = pd.DataFrame(np.array(features).astype(float))
-    features.columns = ['Local_AU', 'Threep', 'SA', 'Min_dist', 'UTR_len', 'ORF_len', 'PCT']
-
-    return features
+    return np.array(features).astype(float)
