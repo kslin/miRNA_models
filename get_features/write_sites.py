@@ -19,6 +19,7 @@ if __name__ == '__main__':
     parser.add_option("--tpm_file", dest="TPM_FILE", help="tpm data")
     parser.add_option("--kd_file", dest="KD_FILE", help="kd data")
     parser.add_option("--orf_file", dest="ORF_FILE", help="ORF sequences in tsv format")
+    parser.add_option("--utr5_file", dest="UTR5_FILE", help="5'UTR sequences in tsv format")
     parser.add_option("--mirseqs", dest="MIR_SEQS", help="tsv with miRNAs and their sequences")
     parser.add_option("--outdir", dest="OUTDIR", help="location for writing output files")
     parser.add_option("--overlap_dist", dest="OVERLAP_DIST", help="minimum distance between neighboring sites", type=int)
@@ -58,21 +59,24 @@ if __name__ == '__main__':
     # read in orf sequences
     ORF_SEQS = pd.read_csv(options.ORF_FILE, sep='\t', header=None, index_col=0)
 
+    # read in orf sequences
+    UTR5_SEQS = pd.read_csv(options.UTR5_FILE, sep='\t', header=None, index_col=0)
+
     col_order = ['transcript', 'transcript_ix', 'mir', 'mirseq', '6mer_loc', 'seq', 'stype', 'log_KA']
 
-    with open(os.path.join(options.OUTDIR, 'utr_sites.txt'), 'w') as outfile:
+    with open(os.path.join(options.OUTDIR, 'transcript_sites.txt'), 'w') as outfile:
         outfile.write('\t'.join(col_order) + '\n')
 
-    with open(os.path.join(options.OUTDIR, 'orf_sites.txt'), 'w') as outfile:
-        outfile.write('\t'.join(col_order) + '\n')
+    with open(os.path.join(options.OUTDIR, 'transcript_breaks.txt'), 'w') as outfile:
+        outfile.write('\t'.join(['transcript', 'orf_start', 'utr3_start']) + '\n')
 
     kd_df = pd.read_csv(options.KD_FILE, sep='\t')
     kd_dict = {}
     for mir, group in kd_df.groupby('mir'):
         kd_dict[mir] = group.set_index('12mer')
 
-    with open(os.path.join(options.OUTDIR, 'utr_sites.txt'), 'a') as outfile:
-        with open(os.path.join(options.OUTDIR, 'orf_sites.txt'), 'a') as orf_sites_outfile:
+    with open(os.path.join(options.OUTDIR, 'transcript_sites.txt'), 'a') as outfile:
+        with open(os.path.join(options.OUTDIR, 'transcript_breaks.txt'), 'a') as breaks_outfile:
             for ix, row in enumerate(TPM.iterrows()):
 
                 # print progress
@@ -80,11 +84,14 @@ if __name__ == '__main__':
                     print("Processed {}/{} transcripts".format(ix, len(TPM)))
 
                 transcript = row[0]
-                utr = row[1]['sequence']
+                utr3 = row[1]['sequence']
                 orf = ORF_SEQS.loc[transcript][2]
+                utr5 = UTR5_SEQS.loc[transcript][2]
 
-                utr_sites_df = []
-                orf_sites_df = []
+                transcript_seq = utr5 + orf + utr3
+                breaks_outfile.write('{}\t{}\t{}\n'.format(transcript, len(utr5), len(utr5 + orf)))
+
+                sites_df = []
 
                 for mir in ALL_MIRS:
 
@@ -92,7 +99,7 @@ if __name__ == '__main__':
                     mirseq = MIR_DICT[mir]['mirseq']
 
                     # get sites and 12mer sequences from UTR
-                    seqs, locs = get_site_features.get_sites_from_utr(utr, site8, overlap_dist=options.OVERLAP_DIST, only_canon=options.ONLY_CANON)
+                    seqs, locs = get_site_features.get_sites_from_utr(transcript_seq, site8, overlap_dist=options.OVERLAP_DIST, only_canon=options.ONLY_CANON)
 
                     if len(locs) > 0:
                         features = pd.DataFrame({
@@ -110,33 +117,8 @@ if __name__ == '__main__':
                         else:
                             features['log_KA'] = np.nan
 
-                        utr_sites_df.append(features)
+                        sites_df.append(features)
 
-                    # get sites and 12mer sequences for ORF sites
-                    seqs, locs = get_site_features.get_sites_from_utr(orf, site8, overlap_dist=options.OVERLAP_DIST, only_canon=options.ONLY_CANON)
-
-                    if len(locs) > 0:
-                        features = pd.DataFrame({
-                            'transcript': [transcript] * len(locs),
-                            'transcript_ix': [ix] * len(locs),
-                            'mir': [mir] * len(locs),
-                            'seq': seqs,
-                            '6mer_loc': locs
-                        })
-                        features['mirseq'] = mirseq
-                        stypes = [utils.get_centered_stype(site8, seq) for seq in seqs]
-                        features['stype'] = stypes
-                        if mir in kd_dict:
-                            features['log_KA'] = -1 * kd_dict[mir].loc[seqs]['log_kd'].values
-                        else:
-                            features['log_KA'] = np.nan
-
-                        orf_sites_df.append(features)
-
-                if len(utr_sites_df) > 0:
-                    utr_sites_df = pd.concat(utr_sites_df, sort=True)[col_order]
-                    utr_sites_df.to_csv(outfile, sep='\t', header=False, index=False, float_format='%.3f')
-
-                if len(orf_sites_df) > 0:
-                    orf_sites_df = pd.concat(orf_sites_df, sort=True)[col_order]
-                    orf_sites_df.to_csv(orf_sites_outfile, sep='\t', header=False, index=False, float_format='%.3f')
+                if len(sites_df) > 0:
+                    sites_df = pd.concat(sites_df, sort=True)[col_order]
+                    sites_df.to_csv(outfile, sep='\t', header=False, index=False, float_format='%.3f')

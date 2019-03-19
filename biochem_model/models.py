@@ -39,18 +39,24 @@ class Model():
 
 
 class OccupancyOnlyModel(Model):
-    def __init__(self, num_mirs, withORF, with_init):
+    def __init__(self, num_mirs, withORF, withUTR5, with_init):
         super().__init__()
         self.vars['freeAgo'] = tf.get_variable('freeAgo', shape=[1, num_mirs, 1],
             initializer=tf.constant_initializer(-5.5))
+        self.vars['log_decay'] = tf.get_variable('log_decay', shape=(), initializer=tf.constant_initializer(0.0))
+
         self.with_init = with_init
         if self.with_init:
             self.vars['freeAgo_init'] = tf.get_variable('freeAgo_init', shape=[1, num_mirs, 1],
                 initializer=tf.constant_initializer(-8.5))
-        self.vars['log_decay'] = tf.get_variable('log_decay', shape=(), initializer=tf.constant_initializer(0.0))
+
         self.withORF = withORF
         if self.withORF:
             self.vars['orf_ka_offset'] = tf.get_variable('orf_ka_offset', shape=(), initializer=tf.constant_initializer(-2.0))
+
+        self.withUTR5 = withUTR5
+        if self.withUTR5:
+            self.vars['utr5_ka_offset'] = tf.get_variable('utr5_ka_offset', shape=(), initializer=tf.constant_initializer(-2.0))
 
     def get_nbound(self, ka_vals, mask, freeAgo):
         occ = tf.sigmoid(ka_vals + freeAgo)
@@ -58,17 +64,25 @@ class OccupancyOnlyModel(Model):
         return nbound
 
     def get_pred(self, data):
-        nbound = self.get_nbound(data['utr_ka_vals'], data['utr_mask'], self.vars['freeAgo'])
+        nbound = self.get_nbound(data['utr3_ka_vals'], data['utr3_mask'], self.vars['freeAgo'])
         if self.withORF:
             nbound_orf = self.get_nbound(data['orf_ka_vals'] + self.vars['orf_ka_offset'], data['orf_mask'], self.vars['freeAgo'])
             nbound = nbound + nbound_orf
 
+        if self.withUTR5:
+            nbound_utr5 = self.get_nbound(data['utr5_ka_vals'] + self.vars['utr5_ka_offset'], data['utr5_mask'], self.vars['freeAgo'])
+            nbound = nbound + nbound_utr5
+
         pred = -1 * tf.log1p(tf.exp(self.vars['log_decay']) * nbound)
         if self.with_init:
-            nbound_init = self.get_nbound(data['utr_ka_vals'], data['utr_mask'], self.vars['freeAgo_init'])
+            nbound_init = self.get_nbound(data['utr3_ka_vals'], data['utr3_mask'], self.vars['freeAgo_init'])
             if self.withORF:
                 nbound_orf_init = self.get_nbound(data['orf_ka_vals'] + self.vars['orf_ka_offset'], data['orf_mask'], self.vars['freeAgo_init'])
                 nbound_init = nbound_init + nbound_orf_init
+
+            if self.withUTR5:
+                nbound_utr5_init = self.get_nbound(data['utr5_ka_vals'] + self.vars['utr5_ka_offset'], data['utr5_mask'], self.vars['freeAgo_init'])
+                nbound_init = nbound_init + nbound_utr5_init
 
             pred = pred + tf.log1p(tf.exp(self.vars['log_decay']) * nbound_init)
 
@@ -77,29 +91,40 @@ class OccupancyOnlyModel(Model):
 
 
 class OriginalModel(OccupancyOnlyModel):
-    def __init__(self, num_mirs, withORF, with_init):
-        super().__init__(num_mirs, withORF, with_init)
-        self.vars['log_utr_coef'] = tf.get_variable('log_utr_coef', shape=(), initializer=tf.constant_initializer(-2.0))
+    def __init__(self, num_mirs, withORF, withUTR5, with_init):
+        super().__init__(num_mirs, withORF, withUTR5, with_init)
+        self.vars['log_utr3_coef'] = tf.get_variable('log_utr3_coef', shape=(), initializer=tf.constant_initializer(-2.0))
         if self.withORF:
             self.vars['log_orf_coef'] = tf.get_variable('log_orf_coef', shape=(), initializer=tf.constant_initializer(-2.0))
 
+        if self.withUTR5:
+            self.vars['log_utr5_coef'] = tf.get_variable('log_utr5_coef', shape=(), initializer=tf.constant_initializer(-2.0))
+
 
     def get_pred(self, data):
-        nbound = self.get_nbound(data['utr_ka_vals'], data['utr_mask'], self.vars['freeAgo'])
-        nbound_endog = tf.exp(self.vars['log_utr_coef']) * tf.reshape(data['utr_len'], [-1, 1])
+        nbound = self.get_nbound(data['utr3_ka_vals'], data['utr3_mask'], self.vars['freeAgo'])
+        nbound_endog = tf.exp(self.vars['log_utr3_coef']) * tf.reshape(data['utr3_len'], [-1, 1])
         if self.withORF:
             nbound += self.get_nbound(data['orf_ka_vals'] + self.vars['orf_ka_offset'], data['orf_mask'], self.vars['freeAgo'])
             nbound_endog += tf.exp(self.vars['log_orf_coef']) * tf.reshape(data['orf_len'], [-1, 1])
+
+        if self.withUTR5:
+            nbound += self.get_nbound(data['utr5_ka_vals'] + self.vars['utr5_ka_offset'], data['utr5_mask'], self.vars['freeAgo'])
+            nbound_endog += tf.exp(self.vars['log_utr5_coef']) * tf.reshape(data['utr5_len'], [-1, 1])
 
         pred_endog = tf.log1p(nbound_endog)
         pred_transfect = tf.log1p((tf.exp(self.vars['log_decay']) * nbound) + nbound_endog)
         pred = -1 * (pred_transfect - pred_endog)
 
         if self.with_init:
-            nbound_init = self.get_nbound(data['utr_ka_vals'], data['utr_mask'], self.vars['freeAgo_init'])
+            nbound_init = self.get_nbound(data['utr3_ka_vals'], data['utr3_mask'], self.vars['freeAgo_init'])
             if self.withORF:
                 nbound_orf_init = self.get_nbound(data['orf_ka_vals'] + self.vars['orf_ka_offset'], data['orf_mask'], self.vars['freeAgo_init'])
                 nbound_init = nbound_init + nbound_orf_init
+
+            if self.withUTR5:
+                nbound_utr5_init = self.get_nbound(data['utr5_ka_vals'] + self.vars['utr5_ka_offset'], data['utr5_mask'], self.vars['freeAgo_init'])
+                nbound_init = nbound_init + nbound_utr5_init
 
             pred += (tf.log1p(nbound_init + nbound_endog) - pred_endog)
 
