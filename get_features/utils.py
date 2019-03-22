@@ -66,6 +66,40 @@ def test_threepscore_NB():
 
 ### end functions from Namita
 
+def site_to_ints(site):
+    nt_dict = {
+        'A': 0,
+        'T': 1,
+        'C': 2,
+        'G': 3,
+        'X': -1
+    }
+
+    return [nt_dict[x] for x in site]
+
+def mir_site_pair_to_ints(mir, site):
+    nt_dict = {
+        'A': 0,
+        'T': 1,
+        'C': 2,
+        'G': 3,
+    }
+
+    ints = []
+    for nt1 in mir:
+        if nt1 == 'X':
+            ints += [-1] * len(site)
+            continue
+        for nt2 in site:
+            if nt2 == 'X':
+                ints.append(-1)
+
+            else:
+                ints.append((nt_dict[nt1] * 4) + nt_dict[nt2])
+
+    return ints
+
+
 
 ### TFRecords Functions ###
 def _float_feature(value):
@@ -76,10 +110,13 @@ def _int64_feature(value):
     """Returns an int64_list from a bool / enum / int / uint."""
     return tf.train.Feature(int64_list=tf.train.Int64List(value=value))
 
-
 def _bytes_feature(value):
     """Returns a bytes_list from a string / byte."""
     return tf.train.Feature(bytes_list=tf.train.BytesList(value=[value]))
+
+def _string_feature(value):
+    """Returns a bytes_list from a list of strings."""
+    return tf.train.Feature(bytes_list=tf.train.BytesList(value=value))
 
 
 # def calc_r2(xs, ys):
@@ -108,6 +145,9 @@ def rev_comp(seq):
     return ''.join([match_dict[x] for x in seq][::-1])
 
 def one_hot_encode(seq):
+    if len(seq) == 0:
+        return []
+
     """ 1-hot encode ATCG sequence """
     nt_dict = {
         'A': 0,
@@ -120,7 +160,7 @@ def one_hot_encode(seq):
     targets[:4, :] = np.eye(4)
 
     seq = [nt_dict[nt] for nt in seq]
-    return targets[seq].flatten().astype(int)
+    return list(targets[seq].flatten().astype(int))
 
 
 def generate_random_seq(length):

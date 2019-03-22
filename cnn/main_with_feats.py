@@ -35,7 +35,7 @@ if __name__ == '__main__':
     parser.add_option("--kd_batch_size", dest="KD_BATCH_SIZE", type=int)
     parser.add_option("--num_epochs", dest="NUM_EPOCHS", type=int)
     parser.add_option("--val_mir", dest="VAL_MIR", help="testing miRNA")
-    # parser.add_option("--baseline", dest="BASELINE_METHOD", help="which baseline to use")
+    parser.add_option("--batch", dest="BATCH", help="which batch to withold from training", type=int)
     parser.add_option("--loss_type", dest="LOSS_TYPE", help="which loss strategy")
     parser.add_option("--lambda", dest="LAMBDA", help="regularizer weight", type=float)
     parser.add_option("--lr", dest="LEARNING_RATE", help="starting learning rate", type=float)
@@ -60,21 +60,17 @@ if __name__ == '__main__':
     MIRNA_DATA_WITH_RBNS = MIRNA_DATA[MIRNA_DATA['has_rbns']]
     MIRNA_DATA_USE_TPMS = MIRNA_DATA[MIRNA_DATA['use_tpms']]
 
-    ALL_GUIDES = list(MIRNA_DATA_USE_TPMS.index)
+    ALL_GUIDES = sorted(list(MIRNA_DATA_USE_TPMS.index))
 
     # split miRNAs into training and testing
     if options.VAL_MIR == 'none':
         TRAIN_GUIDES = ALL_GUIDES
-        VAL_GUIDES = ['mir139']
-        COLORS = ['black'] * len(ALL_GUIDES)
-        VAL_IX = ALL_GUIDES.index('mir139')
+        VAL_GUIDES = ALL_GUIDES[-1:]
     else:
         if options.VAL_MIR not in ALL_GUIDES:
             raise ValueError('Test miRNA not in mirseqs file.')
         TRAIN_GUIDES = [m for m in ALL_GUIDES if m != options.VAL_MIR]
         VAL_GUIDES = [options.VAL_MIR]
-        COLORS = ['red' if x == options.VAL_MIR else 'black' for x in ALL_GUIDES]
-        VAL_IX = ALL_GUIDES.index(options.VAL_MIR)
 
     if options.VAL_MIR in list(MIRNA_DATA_WITH_RBNS.index):
         TRAIN_MIRS_KDS = [x for x in list(MIRNA_DATA_WITH_RBNS.index) if x != options.VAL_MIR]
@@ -85,35 +81,39 @@ if __name__ == '__main__':
 
     NUM_TRAIN_GUIDES = len(TRAIN_GUIDES)
 
-    if options.PASSENGER:
-        TRAIN_MIRS = np.array(list(zip(TRAIN_GUIDES, [x + '*' for x in TRAIN_GUIDES]))).flatten().tolist()
-        VAL_MIRS = np.array(list(zip(VAL_GUIDES, [x + '*' for x in VAL_GUIDES]))).flatten().tolist()
-        ALL_MIRS = np.array(list(zip(ALL_GUIDES, [x + '*' for x in ALL_GUIDES]))).flatten().tolist()
-    else:
-        TRAIN_MIRS = TRAIN_GUIDES
-        ALL_MIRS = ALL_GUIDES
+    # if options.PASSENGER:
+    #     TRAIN_MIRS = np.array(list(zip(TRAIN_GUIDES, [x + '*' for x in TRAIN_GUIDES]))).flatten().tolist()
+    #     VAL_MIRS = np.array(list(zip(VAL_GUIDES, [x + '*' for x in VAL_GUIDES]))).flatten().tolist()
+    #     ALL_MIRS = np.array(list(zip(ALL_GUIDES, [x + '*' for x in ALL_GUIDES]))).flatten().tolist()
+    # else:
+    #     TRAIN_MIRS = TRAIN_GUIDES
+    #     ALL_MIRS = ALL_GUIDES
 
     print("Repression datasets for training: {}".format(TRAIN_GUIDES))
-    print("Repression miRNAs for training: {}".format(TRAIN_MIRS))
+    print("Repression datasets for validating: {}".format(VAL_GUIDES))
+    # print("Repression miRNAs for training: {}".format(TRAIN_MIRS))
     print("RBNS miRNAs for training: {}".format(TRAIN_MIRS_KDS))
+    print("RBNS miRNAs for validating: {}".format(VAL_MIRS_KDS))
 
     # TPM data reader
     tpm_dataset = tf.data.TFRecordDataset(options.TPM_TFRECORDS)
     # tpm_dataset = tpm_dataset.shuffle(buffer_size=1000)
 
     def _parse_fn_train(x):
-        return parse_data_utils._parse_repression_function(x, TRAIN_MIRS, ALL_MIRS, options.MIRLEN, SEQLEN, options.NUM_FEATS)
+        return parse_data_utils._parse_repression_function(x, TRAIN_GUIDES, options.MIRLEN, SEQLEN, options.NUM_FEATS, options.PASSENGER)
 
     def _parse_fn_val(x):
-        return parse_data_utils._parse_repression_function(x, ALL_MIRS, ALL_MIRS, options.MIRLEN, SEQLEN, options.NUM_FEATS)
+        return parse_data_utils._parse_repression_function(x, TRAIN_GUIDES + VAL_GUIDES, options.MIRLEN, SEQLEN, options.NUM_FEATS, options.PASSENGER)
 
     # preprocess data
-    tpm_train_dataset = tpm_dataset.skip(400).shuffle(buffer_size=1000)
-    # tpm_train_dataset = tpm_train_dataset.prefetch(options.REPRESSION_BATCH_SIZE)
-    tpm_train_dataset = tpm_train_dataset.map(_parse_fn_train, num_parallel_calls=16)
-    tpm_val_dataset = tpm_dataset.take(400)
-    # tpm_val_dataset = tpm_val_dataset.prefetch(options.REPRESSION_BATCH_SIZE)
-    tpm_val_dataset = tpm_val_dataset.map(_parse_fn_val, num_parallel_calls=16)
+    tpm_dataset = tpm_dataset.shuffle(buffer_size=20)
+    tpm_dataset = tpm_dataset.prefetch(options.REPRESSION_BATCH_SIZE)
+    tpm_train_dataset = tpm_dataset.map(_parse_fn_train, num_parallel_calls=16)
+    tpm_val_dataset = tpm_dataset.map(_parse_fn_val, num_parallel_calls=16)
+
+    # filter genes by batch
+    tpm_train_dataset = tpm_train_dataset.filter(lambda x1, x2, x3, x4, x5, x6: tf.not_equal(x6, options.BATCH))
+    tpm_val_dataset = tpm_val_dataset.filter(lambda x1, x2, x3, x4, x5, x6: tf.equal(x6, options.BATCH))
 
     # make feedable iterators
     tpm_train_iterator = tpm_train_dataset.make_initializable_iterator()
@@ -150,11 +150,11 @@ if __name__ == '__main__':
             kd_val_dataset = kd_dataset.take(1000)
             kd_train_dataset = kd_dataset.skip(1000)
 
-    # kd_train_dataset = kd_train_dataset.prefetch(options.KD_BATCH_SIZE)
-    # kd_val_dataset = kd_val_dataset.prefetch(1000)
+    kd_train_dataset = kd_train_dataset.prefetch(options.KD_BATCH_SIZE)
+    kd_val_dataset = kd_val_dataset.prefetch(1000)
 
     # shuffle, batch, and map datasets
-    kd_train_dataset = kd_train_dataset.apply(tf.data.experimental.shuffle_and_repeat(buffer_size=1000))
+    kd_train_dataset = kd_train_dataset.apply(tf.data.experimental.shuffle_and_repeat(buffer_size=100))
     # kd_train_dataset = kd_train_dataset.shuffle(buffer_size=1000, reshuffle_each_iteration=None)
     # kd_train_dataset = kd_train_dataset.repeat()  # repeat as long as needed for tpm epochs
     kd_train_dataset = kd_train_dataset.map(parse_data_utils._parse_log_kd_function, num_parallel_calls=16)
@@ -164,10 +164,10 @@ if __name__ == '__main__':
     kd_train_dataset = kd_train_dataset.batch(options.KD_BATCH_SIZE, drop_remainder=True)
 
     kd_val_dataset = kd_val_dataset.shuffle(buffer_size=1000, reshuffle_each_iteration=None)
-    kd_val_dataset = kd_val_dataset.apply(tf.data.experimental.map_and_batch(
-            map_func=parse_data_utils._parse_log_kd_function, batch_size=1000))
-    # kd_val_dataset = kd_val_dataset.map(parse_data_utils._parse_log_kd_function)
-    # kd_val_dataset = kd_val_dataset.batch(1000)
+    # kd_val_dataset = kd_val_dataset.apply(tf.data.experimental.map_and_batch(
+    #         map_func=parse_data_utils._parse_log_kd_function, batch_size=1000))
+    kd_val_dataset = kd_val_dataset.map(parse_data_utils._parse_log_kd_function)
+    kd_val_dataset = kd_val_dataset.batch(1000)
 
     # make feedable iterators
     kd_train_iterator = kd_train_dataset.make_initializable_iterator()
@@ -215,35 +215,27 @@ if __name__ == '__main__':
 
     # split data into biochem and repression and get biochem loss
     _pred_biochem = _pred_ka_values[:tf.shape(next_kd_batch['images'])[0], :]
-    # _ka_loss = (tf.nn.l2_loss(tf.subtract(tf.nn.relu(_pred_biochem), next_kd_batch['labels'])))# / options.KD_BATCH_SIZE
-    _ka_loss_weights = tf.sqrt(next_kd_batch['labels'] + 1.0)
-    _ka_loss = tf.nn.l2_loss(tf.subtract(tf.nn.relu(_pred_biochem), next_kd_batch['labels']) * _ka_loss_weights)
+    _ka_loss = (tf.nn.l2_loss(tf.subtract(tf.nn.relu(_pred_biochem), next_kd_batch['labels'])))# / options.KD_BATCH_SIZE
+    # _ka_loss_weights = tf.sqrt(next_kd_batch['labels'] + 1.0)
+    # _ka_loss = tf.nn.l2_loss(tf.subtract(tf.nn.relu(_pred_biochem), next_kd_batch['labels']) * _ka_loss_weights)
     _utr_ka_values = _pred_ka_values[tf.shape(next_kd_batch['images'])[0]:, :]
 
     # make model saver
     saver = tf.train.Saver(tf.global_variables(), max_to_keep=options.NUM_EPOCHS)
 
     # create freeAGO concentration variables
-    _freeAGO_mean = tf.get_variable('freeAGO_mean', shape=(), initializer=tf.constant_initializer(-5.0))
-    _freeAGO_offset = tf.get_variable('freeAGO_offset', shape=[len(TRAIN_MIRS)], initializer=tf.constant_initializer(0.0))
-    _freeAGO_all = _freeAGO_mean + _freeAGO_offset + tf.tile(tf.constant([0.0, -1.0]), tf.constant([NUM_TRAIN_GUIDES]))
-    
-    if options.VAL_MIR  == 'none':
-        _freeAGO_all_val = _freeAGO_all
+    _freeAGO_mean = tf.get_variable('freeAGO_mean', shape=(), initializer=tf.constant_initializer(-4.5))
+    _freeAGO_guide_offset = tf.get_variable('freeAGO_guide_offset', shape=[NUM_TRAIN_GUIDES], initializer=tf.constant_initializer(0.0))
+    if options.PASSENGER:
+        _freeAGO_pass_offset = tf.get_variable('freeAGO_pass_offset', shape=[NUM_TRAIN_GUIDES], initializer=tf.constant_initializer(-1.0))
+        _freeAGO_all = tf.reshape(tf.stack([_freeAGO_guide_offset, _freeAGO_pass_offset], axis=1), [-1]) + _freeAGO_mean
+        _freeAGO_all_val = tf.placeholder(tf.float32, shape=[len(ALL_GUIDES) * 2], name='freeAGO_val')
     else:
-        if options.PASSENGER:
-            _freeAGO_all_val = tf.concat([
-                _freeAGO_all[:(VAL_IX * 2)],
-                tf.reshape(tf.reduce_mean(tf.reshape(_freeAGO_all, [-1, 2]), axis=0), [2]),
-                _freeAGO_all[(VAL_IX * 2):]], axis=0)
-        else:
-            _freeAGO_all_val = tf.concat([
-                _freeAGO_all[:VAL_IX],
-                tf.reshape(tf.reduce_mean(_freeAGO_all, axis=0), [1]),
-                _freeAGO_all[VAL_IX:]], axis=0)
+        _freeAGO_all = _freeAGO_guide_offset + _freeAGO_mean
+        _freeAGO_all_val = tf.placeholder(tf.float32, shape=[len(ALL_GUIDES)], name='freeAGO_val')
 
     # make feature weights
-    weights_init = np.array([0.001]*options.NUM_FEATS).reshape([options.NUM_FEATS, 1])
+    weights_init = np.array([-1.0]*options.NUM_FEATS).reshape([options.NUM_FEATS, 1])
 
     # create ts7 weight variable
     with tf.name_scope('ts7_layer'):
@@ -251,12 +243,12 @@ if __name__ == '__main__':
             _ts7_weights = tf.get_variable("ts7_weights", shape=[options.NUM_FEATS, 1],
                                         initializer=tf.constant_initializer(weights_init))
             tf.add_to_collection('weight', _ts7_weights)
-            _decay = tf.get_variable('decay', initializer=-1.0)
+            _decay = tf.get_variable('decay', initializer=0.0)
             _ts7_bias = tf.get_variable('ts7_bias', initializer=1.0)
             # _ts7_weights = tf.concat([tf.constant(np.array([[1.0]]), dtype=tf.float32), _ts7_weights], axis=0)
 
     # get logfc prediction
-    _pred_logfc, _pred_logfc_normed, _repression_y_normed = model.get_pred_logfc_separate(
+    _pred_logfc, _pred_logfc_normed, _repression_y_normed, _debug_item = model.get_pred_logfc_occupancy_only(
         _utr_ka_values,
         _freeAGO_all,
         next_tpm_batch,
@@ -270,7 +262,7 @@ if __name__ == '__main__':
         options.LOSS_TYPE
     )
 
-    _pred_logfc_val, _pred_logfc_val_normed, _repression_y_val_normed = model.get_pred_logfc_separate(
+    _pred_logfc_val, _pred_logfc_val_normed, _repression_y_val_normed, _ = model.get_pred_logfc_occupancy_only(
         _utr_ka_values,
         _freeAGO_all_val,
         next_tpm_batch,
@@ -289,14 +281,11 @@ if __name__ == '__main__':
     print(_repression_y_normed)
     _repression_loss = 5.0 * tf.nn.l2_loss(tf.subtract(_pred_logfc_normed, _repression_y_normed))# / (options.REPRESSION_BATCH_SIZE * NUM_TRAIN_GUIDES)
 
-    if options.PASSENGER:
-        offset_weight = tf.reduce_sum(tf.reshape(_freeAGO_all, [-1, 2])[:, 0])
-    else:
-        offset_weight = tf.reduce_sum(_freeAGO_all)
+    _offset_weight = tf.abs(tf.reduce_sum(_freeAGO_guide_offset))
 
     # define regularizer
     _weight_regularize = tf.multiply(
-        offset_weight +
+        _offset_weight +
         tf.nn.l2_loss(_cnn_weights['w1']) +
         tf.nn.l2_loss(_cnn_weights['w2']) +
         tf.nn.l2_loss(_cnn_weights['w3']) +
@@ -314,7 +303,8 @@ if __name__ == '__main__':
 
     _update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
     with tf.control_dependencies(_update_ops):
-        _train_step = tf.train.AdamOptimizer(options.LEARNING_RATE).minimize(_loss)
+        # _train_step = tf.train.AdamOptimizer(options.LEARNING_RATE).minimize(_loss)
+        _train_step = tf.contrib.opt.AdamWOptimizer(0.001, learning_rate=options.LEARNING_RATE).minimize(_loss)
 
     if not options.DRY_RUN:
         logfile = open(os.path.join(options.LOGDIR, 'out.log'), 'w', -1)
@@ -348,38 +338,86 @@ if __name__ == '__main__':
                 sess.run(kd_val_iterator.initializer)
                 tpm_val_handle = sess.run(tpm_val_iterator.string_handle())
                 kd_val_handle = sess.run(kd_val_iterator.string_handle())
-                val_feed_dict = {_phase_train: False, _keep_prob: 1.0, tpm_handle: tpm_val_handle, kd_handle: kd_val_handle}
 
-                print(COLORS)
+                print(sess.run(_freeAGO_all))
 
                 train_evals = sess.run([
                     next_kd_batch,  #0
                     _pred_biochem,  #1
                     next_tpm_batch,  #2
                     _repression_y_normed,  #3
-                    _pred_logfc_normed,  #4
-                    _train_step,  #5
-                    random_seq_mirs,
-                    random_seq_images,
-                    random_seq_labels,
-                    _utr_ka_values
+                    _debug_item, #4
+                    _pred_logfc_normed,  #5
+                    _train_step,  #6
+                    random_seq_mirs,  #7
+                    random_seq_images,  #8
+                    random_seq_labels,  #9
+                    _utr_ka_values,
+                    _debug_item
                 ], feed_dict=train_feed_dict)
+
+                print(sess.run(_freeAGO_all))
 
                 print(train_evals[0]['mirs'])
                 print(train_evals[0]['labels'].shape, train_evals[1].shape)
                 print(train_evals[0]['labels'], train_evals[1])
                 print(train_evals[2]['images'].shape)
                 print(train_evals[2]['labels'].shape)
+                print(train_evals[2]['features'].shape)
+                print(train_evals[2]['transcripts'])
+                print(train_evals[2]['batches'])
                 print(train_evals[2]['nsites'].shape, np.sum(train_evals[2]['nsites']))
-                print(train_evals[3].shape, train_evals[4].shape)
-                print(train_evals[6])
-                print(train_evals[7].shape, train_evals[8])
-                print(np.min(train_evals[-1]), np.max(train_evals[-1]))
+                print(train_evals[2]['batches'])
+                print(train_evals[4])
+                print(train_evals[3].shape, train_evals[5].shape)
+                print(train_evals[7])
+                print(train_evals[8].shape, train_evals[9])
+                print(np.min(train_evals[-2]), np.max(train_evals[-2]))
 
                 fig = plt.figure(figsize=(7, 7))
                 plt.scatter(train_evals[1].flatten(), train_evals[0]['labels'].flatten())
                 plt.savefig(os.path.join(options.LOGDIR, 'train_ka_scatter.png'))
                 plt.close()
+
+                if options.PASSENGER:
+                    current_freeAGO_all = sess.run(_freeAGO_all).reshape([-1, 2])
+                else:
+                    current_freeAGO_all = sess.run(_freeAGO_all).reshape([-1, 1])
+
+                train_guide_tas = MIRNA_DATA_USE_TPMS.loc[TRAIN_GUIDES]['guide_TA'].values
+
+                slope, inter = stats.linregress(train_guide_tas, current_freeAGO_all[:, 0])[:2]
+                val_guide_ta = MIRNA_DATA_USE_TPMS.loc[VAL_GUIDES[0]]['guide_TA']
+                new_freeago = [slope * val_guide_ta + inter]
+
+                fig = plt.figure(figsize=(7, 7))
+                plt.scatter(train_guide_tas, current_freeAGO_all[:, 0])
+                plt.scatter([val_guide_ta], new_freeago[0], color='red')
+                plt.savefig(os.path.join(options.LOGDIR, 'train_ta_guide_freeago.png'))
+                plt.close()
+
+                if options.PASSENGER:
+                    train_pass_tas = MIRNA_DATA_USE_TPMS.loc[TRAIN_GUIDES]['pass_TA'].values
+
+                    slope, inter = stats.linregress(train_pass_tas, current_freeAGO_all[:, 1])[:2]
+                    val_pass_ta = MIRNA_DATA_USE_TPMS.loc[VAL_GUIDES[0]]['pass_TA']
+                    new_freeago.append(slope * val_pass_ta + inter)
+
+                    fig = plt.figure(figsize=(7, 7))
+                    plt.scatter(train_pass_tas, current_freeAGO_all[:, 1])
+                    plt.scatter([val_pass_ta], new_freeago[1], color='red')
+                    plt.savefig(os.path.join(options.LOGDIR, 'train_ta_pass_freeago.png'))
+                    plt.close()
+
+                current_freeAGO_all_val = np.concatenate([current_freeAGO_all, np.array([new_freeago])], axis=0).flatten()
+
+                val_feed_dict = {
+                    _phase_train: False,
+                    _keep_prob: 1.0,
+                    tpm_handle: tpm_val_handle,
+                    kd_handle: kd_val_handle,
+                    _freeAGO_all_val:current_freeAGO_all_val
+                }
 
                 val_evals = sess.run([
                     next_kd_batch,
@@ -393,6 +431,8 @@ if __name__ == '__main__':
                 print(val_evals[0]['labels'].shape, val_evals[1].shape)
                 print(val_evals[2]['images'].shape)
                 print(val_evals[2]['labels'].shape)
+                print(val_evals[2]['transcripts'])
+                print(val_evals[2]['batches'])
                 print(val_evals[2]['nsites'].shape, np.sum(val_evals[2]['nsites']))
                 print(val_evals[3].shape, val_evals[4].shape)
 
@@ -419,10 +459,10 @@ if __name__ == '__main__':
                         break
 
                 pred_vals = np.concatenate(pred_vals)
-                pred_vals = pred_vals[:, VAL_IX] - np.mean(pred_vals, axis=1)
+                pred_vals = pred_vals[:, -1] - np.mean(pred_vals, axis=1)
 
                 real_vals = np.concatenate(real_vals)
-                real_vals = real_vals[:, VAL_IX] - np.mean(real_vals, axis=1)
+                real_vals = real_vals[:, -1] - np.mean(real_vals, axis=1)
                 
                 print(pred_vals.shape, real_vals.shape)
                 print(np.mean(pred_vals), np.mean(real_vals))
@@ -430,7 +470,7 @@ if __name__ == '__main__':
                 sess.run(_train_step, feed_dict=train_feed_dict)
 
                 sess.run(tpm_val_iterator.initializer)
-                pred_vals, real_vals = [], []
+                pred_vals, real_vals, real_nsites = [], [], []
                 while True:
                     try:
                         temp_tpm_batch = sess.run(next_tpm_batch, feed_dict={tpm_handle: tpm_val_handle})
@@ -442,21 +482,24 @@ if __name__ == '__main__':
                                 next_tpm_batch['nsites']: temp_tpm_batch['nsites'],
                                 next_tpm_batch['features']: temp_tpm_batch['features'],
                                 next_tpm_batch['labels']: temp_tpm_batch['labels'],
+                                _freeAGO_all_val: current_freeAGO_all_val
                             }))
                     except tf.errors.OutOfRangeError:
                         break
 
                 pred_vals = np.concatenate(pred_vals)
-                pred_vals = pred_vals[:, VAL_IX] - np.mean(pred_vals, axis=1)
+                pred_vals = pred_vals[:, -1] - np.mean(pred_vals, axis=1)
 
                 real_vals = np.concatenate(real_vals)
-                real_vals = real_vals[:, VAL_IX] - np.mean(real_vals, axis=1)
+                real_vals = real_vals[:, -1] - np.mean(real_vals, axis=1)
 
                 print(pred_vals.shape, real_vals.shape)
                 print(np.mean(pred_vals), np.mean(real_vals))
 
                 break
 
+            trained_genes = []
+            trained_batches = []
             time_start = time.time()
             while True:
                 try:
@@ -470,10 +513,17 @@ if __name__ == '__main__':
                         _ka_loss,
                         _repression_loss,
                         _weight_regularize,
-                        _freeAGO_mean
+                        _freeAGO_mean,
+                        _offset_weight,
+                        next_tpm_batch
                     ], feed_dict=train_feed_dict)
 
+                    trained_genes += list(evals[-1]['transcripts'].flatten())
+
                 except tf.errors.OutOfRangeError:
+
+                    print(len(trained_genes))
+                    print(len(list(set(trained_genes))))
 
                     saver.save(sess, os.path.join(SAVE_PATH, 'model'), global_step=current_epoch)
 
@@ -521,14 +571,54 @@ if __name__ == '__main__':
                     # logfile.write('Time for epoch: {}\n'.format(time.time() - time_start))
                     logfile.write('Epoch {}, {:.3f}, {:.3f}, {:.3f}, {:.3f}\n'.format(current_epoch, evals[5], evals[6], evals[7], evals[8]))
                     print('Epoch {}, {:.3f}, {:.3f}, {:.3f}, {:.3f}'.format(current_epoch, evals[5], evals[6], evals[7], evals[8]))
+                    print(evals[10])
                     print(sess.run(_ts7_weights).flatten())
+
+                    if options.PASSENGER:
+                        current_freeAGO_all = sess.run(_freeAGO_all).reshape([-1, 2])
+                    else:
+                        current_freeAGO_all = sess.run(_freeAGO_all).reshape([-1, 1])
+
+                    print(current_freeAGO_all)
+
+                    train_guide_tas = MIRNA_DATA_USE_TPMS.loc[TRAIN_GUIDES]['guide_TA'].values
+
+                    slope, inter = stats.linregress(train_guide_tas, current_freeAGO_all[:, 0])[:2]
+                    val_guide_ta = MIRNA_DATA_USE_TPMS.loc[VAL_GUIDES[0]]['guide_TA']
+                    new_freeago = [slope * val_guide_ta + inter]
+
+                    fig = plt.figure(figsize=(7, 7))
+                    plt.scatter(train_guide_tas, current_freeAGO_all[:, 0])
+                    plt.scatter([val_guide_ta], new_freeago[0], color='red')
+                    plt.savefig(os.path.join(options.LOGDIR, 'train_ta_guide_freeago.png'))
+                    plt.close()
+
+                    if options.PASSENGER:
+                        train_pass_tas = MIRNA_DATA_USE_TPMS.loc[TRAIN_GUIDES]['pass_TA'].values
+
+                        slope, inter = stats.linregress(train_pass_tas, current_freeAGO_all[:, 1])[:2]
+                        val_pass_ta = MIRNA_DATA_USE_TPMS.loc[VAL_GUIDES[0]]['pass_TA']
+                        new_freeago.append(slope * val_pass_ta + inter)
+
+                        fig = plt.figure(figsize=(7, 7))
+                        plt.scatter(train_pass_tas, current_freeAGO_all[:, 1])
+                        plt.scatter([val_pass_ta], new_freeago[1], color='red')
+                        plt.savefig(os.path.join(options.LOGDIR, 'train_ta_pass_freeago.png'))
+                        plt.close()
+
+                    current_freeAGO_all_val = np.concatenate([current_freeAGO_all, np.array([new_freeago])], axis=0).flatten()
 
                     sess.run(tpm_val_iterator.initializer)
                     tpm_val_handle = sess.run(tpm_val_iterator.string_handle())
-                    pred_vals, real_vals = [], []
+                    pred_vals, real_vals, real_nsites = [], [], []
                     while True:
                         try:
                             temp_tpm_batch = sess.run(next_tpm_batch, feed_dict={tpm_handle: tpm_val_handle})
+                            temp_nsites = temp_tpm_batch['nsites']
+                            if options.PASSENGER:
+                                real_nsites.append(temp_nsites.reshape([-1, len(ALL_GUIDES), 2])[:, :, 0])
+                            else:
+                                real_nsites.append(temp_nsites.reshape([-1, len(ALL_GUIDES)]))
                             real_vals.append(temp_tpm_batch['labels'])
                             ka_vals = sess.run(_pred_ka_values, feed_dict={_phase_train: False, _keep_prob: 1.0, _combined_x: temp_tpm_batch['images']})
                             pred_vals.append(sess.run(_pred_logfc_val,
@@ -537,25 +627,40 @@ if __name__ == '__main__':
                                     next_tpm_batch['nsites']: temp_tpm_batch['nsites'],
                                     next_tpm_batch['features']: temp_tpm_batch['features'],
                                     next_tpm_batch['labels']: temp_tpm_batch['labels'],
+                                    _freeAGO_all_val: current_freeAGO_all_val
                                 }))
                         except tf.errors.OutOfRangeError:
                             break
 
+                    real_nsites = np.concatenate(real_nsites)
+                    print(real_nsites.shape)
+
                     pred_vals = np.concatenate(pred_vals)
-                    pred_vals = pred_vals[:, VAL_IX] - np.mean(pred_vals, axis=1)
+
+                    fig = plt.figure(figsize=(7, 7))
+                    plt.scatter(real_nsites[:, -1], pred_vals[:, -1])
+                    plt.savefig(os.path.join(options.LOGDIR, 'val_nsites_scatter.png'))
+                    plt.close()
+
+                    pred_vals = pred_vals - np.mean(pred_vals, axis=1).reshape([-1,1])
 
                     real_vals = np.concatenate(real_vals)
-                    real_vals = real_vals[:, VAL_IX] - np.mean(real_vals, axis=1)
+                    real_vals = real_vals - np.mean(real_vals, axis=1).reshape([-1,1])
 
-                    r2s.append(stats.linregress(pred_vals, real_vals)[2]**2)
+                    r2s.append(stats.linregress(pred_vals[:, -1], real_vals[:, -1])[2]**2)
                     fig = plt.figure(figsize=(7, 5))
                     plt.plot(r2s)
                     plt.savefig(os.path.join(options.LOGDIR, 'val_r2s.png'))
                     plt.close()
 
                     fig = plt.figure(figsize=(7, 7))
-                    plt.scatter(pred_vals, real_vals)
+                    plt.scatter(pred_vals[:, -1], real_vals[:, -1], c=real_nsites[:, -1])
                     plt.savefig(os.path.join(options.LOGDIR, 'val_tpm_scatter.png'))
+                    plt.close()
+
+                    fig = plt.figure(figsize=(7, 7))
+                    plt.scatter(pred_vals.flatten(), real_vals.flatten(), c=real_nsites.flatten(), alpha=0.5)
+                    plt.savefig(os.path.join(options.LOGDIR, 'all_tpm_scatter.png'))
                     plt.close()
 
                     sess.run(kd_val_iterator.initializer)

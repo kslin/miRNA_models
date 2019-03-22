@@ -20,7 +20,7 @@ def _priority_order(locs, overlap_dist):
         new_locs.append(top_loc)
         temp = temp[np.abs(temp['loc'] - top_loc) > overlap_dist].sort_values('priority')
 
-    return new_locs
+    return sorted(new_locs)
 
 
 def get_sites_from_utr(utr, site8, overlap_dist, only_canon):

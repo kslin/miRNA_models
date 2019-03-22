@@ -59,7 +59,7 @@ if __name__ == '__main__':
     # read in orf sequences
     ORF_SEQS = pd.read_csv(options.ORF_FILE, sep='\t', header=None, index_col=0)
 
-    # read in orf sequences
+    # read in 5`UTR sequences
     UTR5_SEQS = pd.read_csv(options.UTR5_FILE, sep='\t', header=None, index_col=0)
 
     col_order = ['transcript', 'transcript_ix', 'mir', 'mirseq', '6mer_loc', 'seq', 'stype', 'log_KA']

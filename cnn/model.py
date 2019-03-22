@@ -81,7 +81,7 @@ def seq2ka_predictor(input_data, keep_prob, phase_train, hidden1, hidden2, hidde
     return _pred_ka_values, _cnn_weights
 
 
-def pad_vals(vals, split_sizes, num_mirs, batch_size):
+def pad_vals(vals, split_sizes, num_mirs, batch_size, fill_val):
 
     # get padding dimensions
     split_sizes_expand = tf.expand_dims(split_sizes, 1)
@@ -91,12 +91,47 @@ def pad_vals(vals, split_sizes, num_mirs, batch_size):
     # split repression data and pad into batch_size_biochem x num_mirs x max_size matrix
     vals_split = tf.split(vals, tf.reshape(split_sizes, [num_mirs * batch_size]))
 
-    # apply pads, fill with very small KA values
-    fill_val = tf.constant(-100.0, dtype=tf.float32)
+    # apply pads, fill with fill_val
+    fill_val = tf.constant(fill_val, dtype=tf.float32)
     vals_split_padded = [tf.pad(vals_split[ix], paddings[ix:ix + 1, :], constant_values=fill_val) for ix in range(batch_size * num_mirs)]
     vals_reshaped = tf.reshape(tf.stack(vals_split_padded), [batch_size, num_mirs, -1])
 
     return vals_reshaped
+
+
+def get_pred_logfc_occupancy_only(_utr_ka_values, _freeAGO_all, _tpm_batch, _ts7_weights, _ts7_bias, _decay, batch_size, passenger, num_guides, name, loss_type):
+    if passenger:
+        num_mirs = num_guides * 2
+    else:
+        num_mirs = num_guides
+
+    # merge with other features
+    _merged_features = tf.squeeze(_utr_ka_values + tf.matmul(_tpm_batch['features'], _ts7_weights))# + _ts7_bias
+
+    # pad values
+    _merged_features_padded = pad_vals(_merged_features, _tpm_batch['nsites'], num_mirs, batch_size, fill_val=-100.0)
+    _merged_features_mask = tf.cast(tf.greater(_merged_features_padded, 0), tf.float32)
+
+    _masked_nbound = tf.multiply(tf.sigmoid(_merged_features_padded + tf.reshape(_freeAGO_all, [1, -1, 1])), _merged_features_mask)
+
+    # calculate occupancy
+    _occupancy = tf.exp(_decay) * tf.reduce_sum(_masked_nbound, axis=2)
+
+    # Add guide and passenger strand occupancies, if applicable
+    if passenger:
+        _occupancy = tf.reduce_sum(tf.reshape(_occupancy, [-1, num_guides, 2]), axis=2)
+
+    # get logfc
+    _pred_logfc = -1 * tf.log1p(_occupancy)
+
+    if loss_type == 'MEAN_CENTER':
+        _pred_logfc_normed = _pred_logfc - tf.reshape(tf.reduce_mean(_pred_logfc, axis=1), [-1, 1])
+        _repression_y_normed = _tpm_batch['labels'] - tf.reshape(tf.reduce_mean(_tpm_batch['labels'], axis=1), [-1, 1])
+    else:
+        _pred_logfc_normed = _pred_logfc
+        _repression_y_normed = _tpm_batch['labels']
+
+    return _pred_logfc, _pred_logfc_normed, _repression_y_normed, (_merged_features_padded, _masked_nbound, _occupancy, _pred_logfc)
 
 
 def get_pred_logfc_separate(_utr_ka_values, _freeAGO_all, _tpm_batch, _ts7_weights, _ts7_bias, _decay, batch_size, passenger, num_guides, name, loss_type):

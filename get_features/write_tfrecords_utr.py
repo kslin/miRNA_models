@@ -20,7 +20,7 @@ if __name__ == '__main__':
     parser.add_option("-t", "--tpmfile", dest="TPM_FILE", help="tpm data")
     parser.add_option("-m", "--mirseqs", dest="MIR_SEQS", help="tsv with miRNAs and their sequences")
     parser.add_option("--pct", dest="PCT_FILE", help="file with PCTs")
-    # parser.add_option("--orf_file", dest="ORF_FILE", help="ORF sequences in tsv format")
+    parser.add_option("--orf_file", dest="ORF_FILE", help="ORF sequences in tsv format")
     parser.add_option("-r", "--rnaplfold_folder", dest="RNAPLFOLD_FOLDER", help="location of RNAPLfold lunp files")
     parser.add_option("-w", "--outfile", dest="OUTFILE", help="location for tfrecords")
     parser.add_option("--mirlen", dest="MIRLEN", type=int)
@@ -35,7 +35,7 @@ if __name__ == '__main__':
     ### READ miRNA DATA and filter for ones to keep ###
     MIRNAS = pd.read_csv(options.MIR_SEQS, sep='\t')
     MIRNAS = MIRNAS[MIRNAS['use_tpms']]
-    ALL_GUIDES = list(MIRNAS['mir'].values)
+    ALL_GUIDES = sorted(list(MIRNAS['mir'].values))
 
     MIR_DICT = {}
     ALL_MIRS = []
@@ -56,11 +56,16 @@ if __name__ == '__main__':
             }
             ALL_MIRS.append(row[1]['mir'] + '*')
 
+    ALL_MIRS = sorted(ALL_MIRS)
+
     ### READ EXPRESSION DATA ###
     TPM = pd.read_csv(options.TPM_FILE, sep='\t', index_col=0)
     for mir in ALL_GUIDES:
         if mir not in TPM.columns:
             raise ValueError('{} given in mirseqs file but not in TPM file.'.format(mir))
+
+    num_batches = 10
+    TPM['batch'] = [ix % num_batches for ix in TPM['ix']]
 
     print("Using mirs: {}".format(ALL_MIRS))
 
@@ -70,8 +75,8 @@ if __name__ == '__main__':
     pct_df['ID'] = pct_df['Gene ID'] + pct_df['miRNA family']
     pct_df = pct_df[['ID', 'Site start', 'PCT']].set_index('Site start')
 
-    # # read in orf sequences
-    # ORF_SEQS = pd.read_csv(options.ORF_FILE, sep='\t', header=None, index_col=0)
+    # read in orf sequences
+    ORF_SEQS = pd.read_csv(options.ORF_FILE, sep='\t', header=None, index_col=0)
 
     if options.WRITE_SEQS is not None:
         seq_writer = open(options.WRITE_SEQS, 'w')
@@ -84,20 +89,27 @@ if __name__ == '__main__':
                 print("Processed {}/{} transcripts".format(ix, len(TPM)))
 
             transcript = row[0]
-            utr = row[1]['sequence']
+            utr3 = row[1]['sequence']
+            orf = ORF_SEQS.loc[transcript][2]
+            transcript_sequence = orf + utr3
+            orf_length = len(orf)
 
-            lunp_file = os.path.join(options.RNAPLFOLD_FOLDER, transcript) + '_lunp'
-            rnaplfold_data = pd.read_csv(lunp_file, sep='\t', header=1).set_index(' #i$').astype(float)
+            # lunp_file = os.path.join(options.RNAPLFOLD_FOLDER, transcript) + '_lunp'
+            # rnaplfold_data = pd.read_csv(lunp_file, sep='\t', header=1).set_index(' #i$').astype(float)
 
-            utr_len = row[1]['utr_length']
-            orf_len = row[1]['orf_length']
+            # utr_len = row[1]['utr_length']
+            # orf_len = row[1]['orf_length']
 
             feature_dict = {
                 'transcript': utils._bytes_feature(transcript.encode('utf-8')),
-                'tpms': utils._float_feature(list(row[1][ALL_GUIDES].values)),
+                'batch': utils._int64_feature([row[1]['batch']]),
+                # 'tpms': utils._float_feature(list(row[1][ALL_GUIDES].values)),
+                # 'guides': utils._string_feature([x.encode('utf-8') for x in ALL_GUIDES]),
+                # 'mirs': utils._string_feature([x.encode('utf-8') for x in ALL_MIRS])
             }
 
-            nsites = []
+            for guide in ALL_GUIDES:
+                feature_dict['{}_tpm'.format(guide)] = utils._float_feature([row[1][guide]])
 
             for mir in ALL_MIRS:
 
@@ -107,8 +119,10 @@ if __name__ == '__main__':
                 feature_dict['{}_mir_1hot'.format(mir)] = utils._float_feature(utils.one_hot_encode(mirseq[:options.MIRLEN]))
 
                 # get sites and 12mer sequences
-                seqs, locs = get_site_features.get_sites_from_utr(utr, site8, overlap_dist=options.OVERLAP_DIST, only_canon=options.ONLY_CANON)
-                nsites.append(len(locs))
+                seqs, locs = get_site_features.get_sites_from_utr(transcript_sequence, site8, overlap_dist=options.OVERLAP_DIST, only_canon=options.ONLY_CANON)
+                feature_dict['{}_nsites'.format(mir)] = utils._int64_feature([len(locs)])
+
+                # nsites.append(len(locs))
 
                 if len(locs) > 0:
                     if options.WRITE_SEQS is not None:
@@ -116,13 +130,14 @@ if __name__ == '__main__':
                     long_seq = ''.join(seqs)
                     feature_dict['{}_seqs_1hot'.format(mir)] = utils._float_feature(utils.one_hot_encode(long_seq))
 
-                    stypes = [utils.get_centered_stype(site8, seq) for seq in seqs]
-                    pct_df_temp = pct_df[pct_df['ID'] == transcript + mir]
-                    if len(pct_df_temp) == 0:
-                        pct_df_temp = None
-                    features = get_site_features.get_ts7_features(mirseq, locs, stypes, utr, utr_len, orf_len,
-                                                                      options.UPSTREAM_LIMIT, rnaplfold_data,
-                                                                      pct_df_temp).flatten()
+                    features = [1.0 if (l < orf_length) else 0.0 for l in locs]
+                    # stypes = [utils.get_centered_stype(site8, seq) for seq in seqs]
+                    # pct_df_temp = pct_df[pct_df['ID'] == transcript + mir]
+                    # if len(pct_df_temp) == 0:
+                    #     pct_df_temp = None
+                    # features = get_site_features.get_ts7_features(mirseq, locs, stypes, utr, utr_len, orf_len,
+                    #                                                   options.UPSTREAM_LIMIT, rnaplfold_data,
+                    #                                                   pct_df_temp).flatten()
                     # print(features)
                     feature_dict['{}_ts7_features'.format(mir)] = utils._float_feature(features)
 
@@ -130,15 +145,12 @@ if __name__ == '__main__':
                     feature_dict['{}_seqs_1hot'.format(mir)] = utils._float_feature([])
                     feature_dict['{}_ts7_features'.format(mir)] = utils._float_feature([])
 
-            feature_dict['nsites'] = utils._int64_feature(nsites)
+            # feature_dict['nsites'] = utils._int64_feature(nsites)
 
-            if np.sum(nsites) == 0:
-                print('Skipping {} because no sites found'.format(transcript))
-            else:
-                # Create a Features message using tf.train.Example.
-                example_proto = tf.train.Example(features=tf.train.Features(feature=feature_dict))
-                example_proto = example_proto.SerializeToString()
+            # Create a Features message using tf.train.Example.
+            example_proto = tf.train.Example(features=tf.train.Features(feature=feature_dict))
+            example_proto = example_proto.SerializeToString()
 
-                tfwriter.write(example_proto)
+            tfwriter.write(example_proto)
             # break
 
