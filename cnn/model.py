@@ -10,42 +10,54 @@ def get_conv_params(dim1, dim2, in_channels, out_channels, layer_name):
     with tf.name_scope('weights'):
         weights = tf.get_variable("{}_weight".format(layer_name),
                                shape=[dim1, dim2, in_channels, out_channels],
-                               initializer=tf.truncated_normal_initializer(stddev=0.1))
+                               initializer=tf.truncated_normal_initializer(stddev=0.05))
 
         # add variable to collection of variables
         tf.add_to_collection('weight', weights)
     with tf.name_scope('biases'):
         biases = tf.get_variable("{}_bias".format(layer_name), shape=[out_channels],
-                              initializer=tf.constant_initializer(0.0))
+                              initializer=tf.constant_initializer(0.1))
 
         # add variable to collection of variables
         tf.add_to_collection('bias', biases)
 
     return weights, biases
 
-def seq2ka_predictor(input_data, keep_prob, phase_train, hidden1, hidden2, hidden3, mirlen, seqlen):
+def seq2ka_predictor(input_data, dropout_rate, phase_train, hidden1, hidden2, hidden3, mirlen, seqlen):
     # add layer 1
     with tf.name_scope('layer1'):
         _w1, _b1 = get_conv_params(4, 4, 1, hidden1, 'layer1')
         _preactivate1 = tf.nn.conv2d(input_data, _w1, strides=[1, 4, 4, 1], padding='VALID') + _b1
-        _preactivate1_bn = tf.layers.batch_normalization(_preactivate1, training=phase_train)
-        _layer1 = tf.nn.leaky_relu(_preactivate1_bn)
+        # _preactivate1_bn = tf.keras.layers.BatchNormalization(axis=-1, scale=False)(_preactivate1, training=phase_train)
+        # _preactivate1_bn = tf.layers.batch_normalization(_preactivate1, training=phase_train)
+        _layer1 = tf.nn.leaky_relu(_preactivate1)
 
     # add layer 2
     with tf.name_scope('layer2'):
         _w2, _b2 = get_conv_params(2, 2, hidden1, hidden2, 'layer2')
         _preactivate2 = tf.nn.conv2d(_layer1, _w2, strides=[1, 1, 1, 1], padding='VALID') + _b2
-        _preactivate2_bn = tf.layers.batch_normalization(_preactivate2, training=phase_train)
-        _layer2 = tf.nn.leaky_relu(_preactivate2_bn)
-        _dropout2 = tf.nn.dropout(_layer2, rate=1.0 - keep_prob)
+        # _preactivate2_bn = tf.keras.layers.BatchNormalization(axis=-1, scale=False)(_preactivate2, training=phase_train)
+        # _preactivate2_bn = tf.layers.batch_normalization(_preactivate2, training=phase_train)
+        _layer2 = tf.nn.leaky_relu(_preactivate2)
+        _dropout2 = tf.nn.dropout(_layer2, rate=dropout_rate)
+
+    # # add layer 2.5
+    # with tf.name_scope('layer2_5'):
+    #     _w2_5, _b2_5 = get_conv_params(4, 4, hidden2, hidden2, 'layer2_5')
+    #     _preactivate2_5 = tf.nn.conv2d(_dropout2, _w2_5, strides=[1, 1, 1, 1], padding='VALID') + _b2_5
+    #     # _preactivate2_bn = tf.keras.layers.BatchNormalization(axis=-1, scale=False)(_preactivate2, training=phase_train)
+    #     # _preactivate2_bn = tf.layers.batch_normalization(_preactivate2, training=phase_train)
+    #     _layer2_5 = tf.nn.leaky_relu(_preactivate2_5)
+    #     _dropout2_5 = tf.nn.dropout(_layer2_5, rate=dropout_rate)
 
     # add layer 3
     with tf.name_scope('layer3'):
         _w3, _b3 = get_conv_params(mirlen - 1, seqlen - 1, hidden2, hidden3, 'layer3')
         _preactivate3 = tf.nn.conv2d(_dropout2, _w3, strides=[1, 1, 1, 1], padding='VALID') + _b3
-        _preactivate3_bn = tf.layers.batch_normalization(_preactivate3, training=phase_train)
-        _layer3 = tf.nn.leaky_relu(_preactivate3_bn)
-        _dropout3 = tf.nn.dropout(_layer3, rate=1.0 - keep_prob)
+        # _preactivate3_bn = tf.keras.layers.BatchNormalization(axis=-1, scale=False)(_preactivate3, training=phase_train)
+        # _preactivate3_bn = tf.layers.batch_normalization(_preactivate3, training=phase_train)
+        _layer3 = tf.nn.leaky_relu(_preactivate3)
+        _dropout3 = tf.nn.dropout(_layer3, rate=dropout_rate)
 
     print('layer1: {}'.format(_layer1))
     print('layer2: {}'.format(_layer2))
@@ -62,11 +74,11 @@ def seq2ka_predictor(input_data, keep_prob, phase_train, hidden1, hidden2, hidde
             tf.add_to_collection('weight', _w4)
         with tf.name_scope('biases'):
             _b4 = tf.get_variable("final_layer_bias", shape=[1],
-                                initializer=tf.constant_initializer(0.0))
+                                initializer=tf.constant_initializer(1.0))
             tf.add_to_collection('bias', _b4)
 
         # apply final layer
-        _pred_ka_values = tf.add(tf.matmul(_layer_flat, _w4), _b4, name='pred_ka')
+        _pred_ka_values = tf.nn.relu(tf.add(tf.matmul(_layer_flat, _w4), _b4, name='pred_ka'))
 
     _cnn_weights = {
         'w1': _w1,
@@ -110,13 +122,14 @@ def get_pred_logfc_occupancy_only(_utr_ka_values, _freeAGO_all, _tpm_batch, _ts7
 
     # pad values
     _merged_features_padded = pad_vals(_merged_features, _tpm_batch['nsites'], num_mirs, batch_size, fill_val=-100.0)
-    _merged_features_mask = tf.cast(tf.greater(_merged_features_padded, 0), tf.float32)
 
+    _merged_features_mask = tf.cast(tf.greater(_merged_features_padded, 0), tf.float32)
     _masked_nbound = tf.multiply(tf.sigmoid(_merged_features_padded + tf.reshape(_freeAGO_all, [1, -1, 1])), _merged_features_mask)
+    # _masked_nbound = tf.sigmoid(_merged_features_padded + tf.reshape(_freeAGO_all, [1, -1, 1]))
 
     # calculate occupancy
     _occupancy = tf.exp(_decay) * tf.reduce_sum(_masked_nbound, axis=2)
-
+    # _occupancy = tf.reduce_sum(_masked_nbound, axis=2)
     # Add guide and passenger strand occupancies, if applicable
     if passenger:
         _occupancy = tf.reduce_sum(tf.reshape(_occupancy, [-1, num_guides, 2]), axis=2)

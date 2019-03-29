@@ -156,18 +156,21 @@ def _parse_log_kd_function(serialized_example):
         'mir': tf.FixedLenFeature([], tf.string, default_value=''),
         'mir_1hot': tf.FixedLenSequenceFeature([], tf.float32, default_value=0.0, allow_missing=True),
         'seq_1hot': tf.FixedLenSequenceFeature([], tf.float32, default_value=0.0, allow_missing=True),
-        'log_kd': tf.FixedLenSequenceFeature([], tf.float32, default_value=0.0, allow_missing=True)
+        'log_kd': tf.FixedLenSequenceFeature([], tf.float32, default_value=0.0, allow_missing=True),
+        'keep_prob': tf.FixedLenSequenceFeature([], tf.float32, default_value=0.0, allow_missing=True),
+        'stype': tf.FixedLenFeature([], tf.string, default_value=''),
     }
 
     parsed = tf.parse_single_example(serialized_example, feature_description)
     image = tf.tensordot(parsed['mir_1hot'], parsed['seq_1hot'], axes=0)
 
     # return parsed data
-    return parsed['mir'], image, parsed['log_kd']
+    return parsed['mir'], image, parsed['log_kd'], parsed['keep_prob'], parsed['stype']
 
 
-def _filter_kds(mir, image, kd):
-    return tf.math.greater(tf.sigmoid((-1.0 * kd) - 3.0), tf.random.uniform(shape=(), minval=0, maxval=1))[0]
+def _filter_kds(mir, image, kd, keep_prob, stype):
+    return tf.math.greater(keep_prob[0], tf.random.uniform(shape=(), minval=0, maxval=1))
+    # return tf.math.greater(tf.sigmoid((-1.0 * kd) - 3.0), tf.random.uniform(shape=(), minval=0, maxval=1))[0]
     # return tf.math.greater(tf.sigmoid((-1.0 * kd) - 2.0), tf.constant([0.5]))[0]
 
 

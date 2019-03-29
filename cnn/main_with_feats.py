@@ -49,8 +49,53 @@ if __name__ == '__main__':
 
     SAVE_PATH = os.path.join(options.LOGDIR, 'saved')
 
+    tf.reset_default_graph()
+
     if (not os.path.isdir(options.LOGDIR)):
         os.makedirs(options.LOGDIR)
+
+
+    test_case = np.array([[
+ [0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.],
+ [1.,0.,0.,0.,1.,0.,0.,0.,1.,0.,0.,0.,0.,0.,1.,0.,1.,0.,0.,0.,0.,1.,0.,0.,0.,1.,0.,0.,0.,0.,1.,0.,0.,0.,1.,0.,1.,0.,0.,0.,1.,0.,0.,0.,0.,0.,0.,0.],
+ [0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.],
+ [0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.],
+ [0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.],
+ [0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.],
+ [0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.],
+ [1.,0.,0.,0.,1.,0.,0.,0.,1.,0.,0.,0.,0.,0.,1.,0.,1.,0.,0.,0.,0.,1.,0.,0.,0.,1.,0.,0.,0.,0.,1.,0.,0.,0.,1.,0.,1.,0.,0.,0.,1.,0.,0.,0.,0.,0.,0.,0.],
+ [0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.],
+ [0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.],
+ [0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.],
+ [1.,0.,0.,0.,1.,0.,0.,0.,1.,0.,0.,0.,0.,0.,1.,0.,1.,0.,0.,0.,0.,1.,0.,0.,0.,1.,0.,0.,0.,0.,1.,0.,0.,0.,1.,0.,1.,0.,0.,0.,1.,0.,0.,0.,0.,0.,0.,0.],
+ [1.,0.,0.,0.,1.,0.,0.,0.,1.,0.,0.,0.,0.,0.,1.,0.,1.,0.,0.,0.,0.,1.,0.,0.,0.,1.,0.,0.,0.,0.,1.,0.,0.,0.,1.,0.,1.,0.,0.,0.,1.,0.,0.,0.,0.,0.,0.,0.],
+ [0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.],
+ [0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.],
+ [0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.],
+ [1.,0.,0.,0.,1.,0.,0.,0.,1.,0.,0.,0.,0.,0.,1.,0.,1.,0.,0.,0.,0.,1.,0.,0.,0.,1.,0.,0.,0.,0.,1.,0.,0.,0.,1.,0.,1.,0.,0.,0.,1.,0.,0.,0.,0.,0.,0.,0.],
+ [0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.],
+ [0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.],
+ [0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.],
+ [0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.],
+ [1.,0.,0.,0.,1.,0.,0.,0.,1.,0.,0.,0.,0.,0.,1.,0.,1.,0.,0.,0.,0.,1.,0.,0.,0.,1.,0.,0.,0.,0.,1.,0.,0.,0.,1.,0.,1.,0.,0.,0.,1.,0.,0.,0.,0.,0.,0.,0.],
+ [0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.],
+ [0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.],
+ [0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.],
+ [0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.],
+ [0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.],
+ [1.,0.,0.,0.,1.,0.,0.,0.,1.,0.,0.,0.,0.,0.,1.,0.,1.,0.,0.,0.,0.,1.,0.,0.,0.,1.,0.,0.,0.,0.,1.,0.,0.,0.,1.,0.,1.,0.,0.,0.,1.,0.,0.,0.,0.,0.,0.,0.],
+ [0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.],
+ [1.,0.,0.,0.,1.,0.,0.,0.,1.,0.,0.,0.,0.,0.,1.,0.,1.,0.,0.,0.,0.,1.,0.,0.,0.,1.,0.,0.,0.,0.,1.,0.,0.,0.,1.,0.,1.,0.,0.,0.,1.,0.,0.,0.,0.,0.,0.,0.],
+ [0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.],
+ [0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.],
+ [1.,0.,0.,0.,1.,0.,0.,0.,1.,0.,0.,0.,0.,0.,1.,0.,1.,0.,0.,0.,0.,1.,0.,0.,0.,1.,0.,0.,0.,0.,1.,0.,0.,0.,1.,0.,1.,0.,0.,0.,1.,0.,0.,0.,0.,0.,0.,0.],
+ [0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.],
+ [0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.],
+ [0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.],
+ [1.,0.,0.,0.,1.,0.,0.,0.,1.,0.,0.,0.,0.,0.,1.,0.,1.,0.,0.,0.,0.,1.,0.,0.,0.,1.,0.,0.,0.,0.,1.,0.,0.,0.,1.,0.,1.,0.,0.,0.,1.,0.,0.,0.,0.,0.,0.,0.],
+ [0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.],
+ [0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.],
+ [0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,0.]]])
 
     # SEQLEN must be 12
     SEQLEN = 12
@@ -65,7 +110,7 @@ if __name__ == '__main__':
     # split miRNAs into training and testing
     if options.VAL_MIR == 'none':
         TRAIN_GUIDES = ALL_GUIDES
-        VAL_GUIDES = ALL_GUIDES[-1:]
+        VAL_GUIDES = []
     else:
         if options.VAL_MIR not in ALL_GUIDES:
             raise ValueError('Test miRNA not in mirseqs file.')
@@ -75,11 +120,24 @@ if __name__ == '__main__':
     if options.VAL_MIR in list(MIRNA_DATA_WITH_RBNS.index):
         TRAIN_MIRS_KDS = [x for x in list(MIRNA_DATA_WITH_RBNS.index) if x != options.VAL_MIR]
         VAL_MIRS_KDS = [options.VAL_MIR]
+    elif options.VAL_MIR == 'none':
+        TRAIN_MIRS_KDS = list(MIRNA_DATA_WITH_RBNS.index)
+        VAL_MIRS_KDS = ['mir204']
     else:
         TRAIN_MIRS_KDS = list(MIRNA_DATA_WITH_RBNS.index)
-        VAL_MIRS_KDS = []
+        VAL_MIRS_KDS = [options.VAL_MIR]
 
     NUM_TRAIN_GUIDES = len(TRAIN_GUIDES)
+
+    STYPE_COLOR_DICT = {
+        b'8mer': 'red',
+        b'7mer-m8': 'orange',
+        b'7mer-a1': 'yellow',
+        b'6mer': 'green',
+        b'6mer-m8': 'blue',
+        b'6mer-a1': 'purple',
+        b'no site': 'grey'
+    }
 
     # if options.PASSENGER:
     #     TRAIN_MIRS = np.array(list(zip(TRAIN_GUIDES, [x + '*' for x in TRAIN_GUIDES]))).flatten().tolist()
@@ -106,7 +164,8 @@ if __name__ == '__main__':
         return parse_data_utils._parse_repression_function(x, TRAIN_GUIDES + VAL_GUIDES, options.MIRLEN, SEQLEN, options.NUM_FEATS, options.PASSENGER)
 
     # preprocess data
-    tpm_dataset = tpm_dataset.shuffle(buffer_size=20)
+    if not options.DRY_RUN:
+        tpm_dataset = tpm_dataset.shuffle(buffer_size=20)
     tpm_dataset = tpm_dataset.prefetch(options.REPRESSION_BATCH_SIZE)
     tpm_train_dataset = tpm_dataset.map(_parse_fn_train, num_parallel_calls=16)
     tpm_val_dataset = tpm_dataset.map(_parse_fn_val, num_parallel_calls=16)
@@ -126,6 +185,8 @@ if __name__ == '__main__':
 
     # KD data reader
     if options.PRETRAIN:
+        print("Loading training KD data from")
+        print(options.KD_TFRECORDS)
         kd_dataset = tf.data.TFRecordDataset(options.KD_TFRECORDS)
         kd_val_dataset = kd_dataset.take(1000)
         kd_train_dataset = kd_dataset.skip(1000)
@@ -167,6 +228,7 @@ if __name__ == '__main__':
     # kd_val_dataset = kd_val_dataset.apply(tf.data.experimental.map_and_batch(
     #         map_func=parse_data_utils._parse_log_kd_function, batch_size=1000))
     kd_val_dataset = kd_val_dataset.map(parse_data_utils._parse_log_kd_function)
+    kd_val_dataset = kd_val_dataset.filter(parse_data_utils._filter_kds)
     kd_val_dataset = kd_val_dataset.batch(1000)
 
     # make feedable iterators
@@ -176,7 +238,7 @@ if __name__ == '__main__':
     # create handle for switching between training and validation
     kd_handle = tf.placeholder(tf.string, shape=[])
     kd_iterator = tf.data.Iterator.from_string_handle(kd_handle, kd_train_dataset.output_types)
-    next_kd_batch_mirs, next_kd_batch_images, next_kd_batch_labels = kd_iterator.get_next()
+    next_kd_batch_mirs, next_kd_batch_images, next_kd_batch_labels, next_kd_batch_keep_probs, next_kd_batch_stypes = kd_iterator.get_next()
 
     # add random sequences generator
     def gen():
@@ -185,46 +247,56 @@ if __name__ == '__main__':
             random_target = utils.get_target_no_match(random_mirseq, SEQLEN)
             random_image = np.outer(utils.one_hot_encode(random_mirseq), utils.one_hot_encode(random_target))
 
-            rbns_mir = np.random.choice(TRAIN_MIRS_KDS)
-            rbns_mirseq = MIRNA_DATA.loc[rbns_mir]['guide_seq'][:options.MIRLEN]
-            rbns_target = utils.get_target_no_match(rbns_mirseq, SEQLEN)
-            rbns_image = np.outer(utils.one_hot_encode(rbns_mirseq), utils.one_hot_encode(rbns_target))
-            yield np.array([b'random', rbns_mir.encode('utf-8')]), np.stack([random_image, rbns_image]), np.array([[0.0], [0.0]])
+            rbns1_mir = np.random.choice(TRAIN_MIRS_KDS)
+            rbns1_mirseq = MIRNA_DATA.loc[rbns1_mir]['guide_seq'][:options.MIRLEN]
+            rbns1_target = utils.get_target_no_match(rbns1_mirseq, SEQLEN)
+            rbns1_image = np.outer(utils.one_hot_encode(rbns1_mirseq), utils.one_hot_encode(rbns1_target))
 
-    random_seq_dataset = tf.data.Dataset.from_generator(gen, (tf.string, tf.float32, tf.float32))
+            rbns2_mir = np.random.choice(TRAIN_MIRS_KDS)
+            rbns2_target = utils.generate_random_seq(3) + utils.rev_comp(MIRNA_DATA.loc[rbns2_mir]['guide_seq'][1:7]) + utils.generate_random_seq(3)
+            rbns2_mirseq = utils.get_mir_no_match(rbns2_target, options.MIRLEN)
+            rbns2_image = np.outer(utils.one_hot_encode(rbns2_mirseq), utils.one_hot_encode(rbns2_target))
+
+            yield np.array([b'random', rbns1_mir.encode('utf-8'), rbns2_mir.encode('utf-8')]), np.stack([random_image, rbns1_image, rbns2_image]), np.array([[0.0], [0.0], [0.0]]), np.array([b'no site', b'no site', b'no site'])
+
+    random_seq_dataset = tf.data.Dataset.from_generator(gen, (tf.string, tf.float32, tf.float32, tf.string))
     random_seq_iterator = random_seq_dataset.make_initializable_iterator()
-    random_seq_mirs, random_seq_images, random_seq_labels = random_seq_iterator.get_next()
+    random_seq_mirs, random_seq_images, random_seq_labels, random_seq_stypes = random_seq_iterator.get_next()
+
+    NUM_EXTRA_KD_VALS = 3
 
     next_kd_batch = {
         'mirs': tf.concat([next_kd_batch_mirs, random_seq_mirs], axis=0),
         'images': tf.concat([next_kd_batch_images, random_seq_images], axis=0),
-        'labels': tf.nn.relu(-1 * tf.concat([next_kd_batch_labels, random_seq_labels], axis=0))
+        'labels': tf.nn.relu(-1 * tf.concat([next_kd_batch_labels, random_seq_labels], axis=0)),
+        'stypes': tf.concat([next_kd_batch_stypes, random_seq_stypes], axis=0),
     }
 
     # create placeholders for input data
-    _keep_prob = tf.placeholder(tf.float32, name='keep_prob')
+    _dropout_rate = tf.placeholder(tf.float32, name='dropout_rate')
     _phase_train = tf.placeholder(tf.bool, name='phase_train')
 
     # build KA predictor
     _combined_x = tf.concat([next_kd_batch['images'], next_tpm_batch['images']], axis=0)
     _combined_x_4D = tf.expand_dims((_combined_x * 4.0) - 0.25, axis=3)  # reshape, zero-center input
     _pred_ka_values, _cnn_weights = model.seq2ka_predictor(
-        _combined_x_4D, _keep_prob, _phase_train,
+        _combined_x_4D, _dropout_rate, _phase_train,
         options.HIDDEN1, options.HIDDEN2, options.HIDDEN3, options.MIRLEN, SEQLEN
     )  # pred ka
 
+    # make model saver
+    pretrain_saver = tf.train.Saver(max_to_keep=options.NUM_EPOCHS)
+    # saver = tf.train.Saver(tf.global_variables(), max_to_keep=options.NUM_EPOCHS)
+
     # split data into biochem and repression and get biochem loss
     _pred_biochem = _pred_ka_values[:tf.shape(next_kd_batch['images'])[0], :]
-    _ka_loss = (tf.nn.l2_loss(tf.subtract(tf.nn.relu(_pred_biochem), next_kd_batch['labels'])))# / options.KD_BATCH_SIZE
-    # _ka_loss_weights = tf.sqrt(next_kd_batch['labels'] + 1.0)
-    # _ka_loss = tf.nn.l2_loss(tf.subtract(tf.nn.relu(_pred_biochem), next_kd_batch['labels']) * _ka_loss_weights)
+    # _ka_loss = (tf.nn.l2_loss(tf.subtract(tf.nn.relu(_pred_biochem), next_kd_batch['labels'])))# / options.KD_BATCH_SIZE
+    _ka_loss_weights = next_kd_batch['labels'] + 1
+    _ka_loss = tf.reduce_sum(tf.square(tf.nn.relu(_pred_biochem) - next_kd_batch['labels']) * _ka_loss_weights) / options.KD_BATCH_SIZE
     _utr_ka_values = _pred_ka_values[tf.shape(next_kd_batch['images'])[0]:, :]
 
-    # make model saver
-    saver = tf.train.Saver(tf.global_variables(), max_to_keep=options.NUM_EPOCHS)
-
     # create freeAGO concentration variables
-    _freeAGO_mean = tf.get_variable('freeAGO_mean', shape=(), initializer=tf.constant_initializer(-4.5))
+    _freeAGO_mean = tf.get_variable('freeAGO_mean', shape=(), initializer=tf.constant_initializer(-4.0))
     _freeAGO_guide_offset = tf.get_variable('freeAGO_guide_offset', shape=[NUM_TRAIN_GUIDES], initializer=tf.constant_initializer(0.0))
     if options.PASSENGER:
         _freeAGO_pass_offset = tf.get_variable('freeAGO_pass_offset', shape=[NUM_TRAIN_GUIDES], initializer=tf.constant_initializer(-1.0))
@@ -243,7 +315,7 @@ if __name__ == '__main__':
             _ts7_weights = tf.get_variable("ts7_weights", shape=[options.NUM_FEATS, 1],
                                         initializer=tf.constant_initializer(weights_init))
             tf.add_to_collection('weight', _ts7_weights)
-            _decay = tf.get_variable('decay', initializer=0.0)
+            _decay = tf.get_variable('decay', initializer=-1.0)
             _ts7_bias = tf.get_variable('ts7_bias', initializer=1.0)
             # _ts7_weights = tf.concat([tf.constant(np.array([[1.0]]), dtype=tf.float32), _ts7_weights], axis=0)
 
@@ -281,400 +353,345 @@ if __name__ == '__main__':
     print(_repression_y_normed)
     _repression_loss = 5.0 * tf.nn.l2_loss(tf.subtract(_pred_logfc_normed, _repression_y_normed))# / (options.REPRESSION_BATCH_SIZE * NUM_TRAIN_GUIDES)
 
-    _offset_weight = tf.abs(tf.reduce_sum(_freeAGO_guide_offset))
+    # _offset_weight = tf.abs(tf.reduce_sum(_freeAGO_guide_offset))
+    _offset_weight = tf.nn.l2_loss(_freeAGO_guide_offset)
 
     # define regularizer
-    _weight_regularize = tf.multiply(
-        _offset_weight +
+    _weight_regularize = (
         tf.nn.l2_loss(_cnn_weights['w1']) +
         tf.nn.l2_loss(_cnn_weights['w2']) +
         tf.nn.l2_loss(_cnn_weights['w3']) +
-        tf.nn.l2_loss(_cnn_weights['w4']),
-        options.LAMBDA
+        tf.nn.l2_loss(_cnn_weights['w4'])
     )
+
+    # _weight_regularize = _offset_weight
 
     # define loss and train_step
     if options.PRETRAIN:
         _loss = _ka_loss
         
     else:
-        _loss = _ka_loss + _repression_loss + _weight_regularize
+        _loss = _ka_loss + _repression_loss + (options.LAMBDA * (_offset_weight + _weight_regularize))
+        # _loss = _repression_loss
 
 
     _update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
     with tf.control_dependencies(_update_ops):
-        # _train_step = tf.train.AdamOptimizer(options.LEARNING_RATE).minimize(_loss)
-        _train_step = tf.contrib.opt.AdamWOptimizer(0.001, learning_rate=options.LEARNING_RATE).minimize(_loss)
+        _train_step = tf.train.AdamOptimizer(options.LEARNING_RATE).minimize(_loss)
+        # _train_step = tf.contrib.opt.AdamWOptimizer(0.001, learning_rate=options.LEARNING_RATE).minimize(_loss)
 
-    if not options.DRY_RUN:
-        logfile = open(os.path.join(options.LOGDIR, 'out.log'), 'w', -1)
+    saver = tf.train.Saver(max_to_keep=options.NUM_EPOCHS)
+
+    logfile = open(os.path.join(options.LOGDIR, 'out.log'), 'w', -1)
 
     # train model
-    losses = []
+    train_losses = []
+    val_losses = []
     means = []
     r2s = []
     conf = tf.ConfigProto(inter_op_parallelism_threads=4, intra_op_parallelism_threads=24) 
     with tf.Session(config=conf) as sess:
         sess.run(tf.global_variables_initializer())
+        sess.run(kd_train_iterator.initializer)
+        kd_train_handle = sess.run(kd_train_iterator.string_handle())
+        sess.run(random_seq_iterator.initializer)
+
+        print(sess.run(_pred_ka_values, feed_dict={_phase_train: False, _dropout_rate: 0.0, _combined_x: test_case}))
+        print(sess.run(_pred_ka_values, feed_dict={_phase_train: True, _dropout_rate: 0.0, _combined_x: test_case}))
+        print(sess.run(_pred_ka_values, feed_dict={_phase_train: True, _dropout_rate: 0.5, _combined_x: test_case}))
 
         if options.LOAD_MODEL is not None:
             latest = tf.train.latest_checkpoint(options.LOAD_MODEL)
             print('Restoring from {}'.format(latest))
-            saver.restore(sess, latest)
+            pretrain_saver.restore(sess, latest)
+
+        print(sess.run(_pred_ka_values, feed_dict={_phase_train: False, _dropout_rate: 0.0, _combined_x: test_case}))
+        print(sess.run(_pred_ka_values, feed_dict={_phase_train: True, _dropout_rate: 0.0, _combined_x: test_case}))
+        print(sess.run(_pred_ka_values, feed_dict={_phase_train: True, _dropout_rate: 0.5, _combined_x: test_case}))
 
         for current_epoch in range(options.NUM_EPOCHS):
             sess.run(tpm_train_iterator.initializer)
-            sess.run(kd_train_iterator.initializer)
-            sess.run(random_seq_iterator.initializer)
-
-            # get training and validation handles
+            
+            # get training handle for repression data
             tpm_train_handle = sess.run(tpm_train_iterator.string_handle())
-            kd_train_handle = sess.run(kd_train_iterator.string_handle())
 
-            train_feed_dict = {_phase_train: True, _keep_prob: 0.5, tpm_handle: tpm_train_handle, kd_handle: kd_train_handle}
+            train_feed_dict = {
+                _phase_train: True,
+                _dropout_rate: 0.5,
+                tpm_handle: tpm_train_handle,
+                kd_handle: kd_train_handle
+            }
 
-            if options.DRY_RUN:
-                sess.run(tpm_val_iterator.initializer)
-                sess.run(kd_val_iterator.initializer)
-                tpm_val_handle = sess.run(tpm_val_iterator.string_handle())
-                kd_val_handle = sess.run(kd_val_iterator.string_handle())
-
-                print(sess.run(_freeAGO_all))
-
-                train_evals = sess.run([
-                    next_kd_batch,  #0
-                    _pred_biochem,  #1
-                    next_tpm_batch,  #2
-                    _repression_y_normed,  #3
-                    _debug_item, #4
-                    _pred_logfc_normed,  #5
-                    _train_step,  #6
-                    random_seq_mirs,  #7
-                    random_seq_images,  #8
-                    random_seq_labels,  #9
-                    _utr_ka_values,
-                    _debug_item
-                ], feed_dict=train_feed_dict)
-
-                print(sess.run(_freeAGO_all))
-
-                print(train_evals[0]['mirs'])
-                print(train_evals[0]['labels'].shape, train_evals[1].shape)
-                print(train_evals[0]['labels'], train_evals[1])
-                print(train_evals[2]['images'].shape)
-                print(train_evals[2]['labels'].shape)
-                print(train_evals[2]['features'].shape)
-                print(train_evals[2]['transcripts'])
-                print(train_evals[2]['batches'])
-                print(train_evals[2]['nsites'].shape, np.sum(train_evals[2]['nsites']))
-                print(train_evals[2]['batches'])
-                print(train_evals[4])
-                print(train_evals[3].shape, train_evals[5].shape)
-                print(train_evals[7])
-                print(train_evals[8].shape, train_evals[9])
-                print(np.min(train_evals[-2]), np.max(train_evals[-2]))
-
-                fig = plt.figure(figsize=(7, 7))
-                plt.scatter(train_evals[1].flatten(), train_evals[0]['labels'].flatten())
-                plt.savefig(os.path.join(options.LOGDIR, 'train_ka_scatter.png'))
-                plt.close()
-
-                if options.PASSENGER:
-                    current_freeAGO_all = sess.run(_freeAGO_all).reshape([-1, 2])
-                else:
-                    current_freeAGO_all = sess.run(_freeAGO_all).reshape([-1, 1])
-
-                train_guide_tas = MIRNA_DATA_USE_TPMS.loc[TRAIN_GUIDES]['guide_TA'].values
-
-                slope, inter = stats.linregress(train_guide_tas, current_freeAGO_all[:, 0])[:2]
-                val_guide_ta = MIRNA_DATA_USE_TPMS.loc[VAL_GUIDES[0]]['guide_TA']
-                new_freeago = [slope * val_guide_ta + inter]
-
-                fig = plt.figure(figsize=(7, 7))
-                plt.scatter(train_guide_tas, current_freeAGO_all[:, 0])
-                plt.scatter([val_guide_ta], new_freeago[0], color='red')
-                plt.savefig(os.path.join(options.LOGDIR, 'train_ta_guide_freeago.png'))
-                plt.close()
-
-                if options.PASSENGER:
-                    train_pass_tas = MIRNA_DATA_USE_TPMS.loc[TRAIN_GUIDES]['pass_TA'].values
-
-                    slope, inter = stats.linregress(train_pass_tas, current_freeAGO_all[:, 1])[:2]
-                    val_pass_ta = MIRNA_DATA_USE_TPMS.loc[VAL_GUIDES[0]]['pass_TA']
-                    new_freeago.append(slope * val_pass_ta + inter)
-
-                    fig = plt.figure(figsize=(7, 7))
-                    plt.scatter(train_pass_tas, current_freeAGO_all[:, 1])
-                    plt.scatter([val_pass_ta], new_freeago[1], color='red')
-                    plt.savefig(os.path.join(options.LOGDIR, 'train_ta_pass_freeago.png'))
-                    plt.close()
-
-                current_freeAGO_all_val = np.concatenate([current_freeAGO_all, np.array([new_freeago])], axis=0).flatten()
-
-                val_feed_dict = {
-                    _phase_train: False,
-                    _keep_prob: 1.0,
-                    tpm_handle: tpm_val_handle,
-                    kd_handle: kd_val_handle,
-                    _freeAGO_all_val:current_freeAGO_all_val
-                }
-
-                val_evals = sess.run([
-                    next_kd_batch,
-                    _pred_biochem,
-                    next_tpm_batch,
-                    _repression_y_val_normed,
-                    _pred_logfc_val_normed
-                ], feed_dict=val_feed_dict)
-
-                print(list(set(list(val_evals[0]['mirs']))))
-                print(val_evals[0]['labels'].shape, val_evals[1].shape)
-                print(val_evals[2]['images'].shape)
-                print(val_evals[2]['labels'].shape)
-                print(val_evals[2]['transcripts'])
-                print(val_evals[2]['batches'])
-                print(val_evals[2]['nsites'].shape, np.sum(val_evals[2]['nsites']))
-                print(val_evals[3].shape, val_evals[4].shape)
-
-                fig = plt.figure(figsize=(7, 7))
-                plt.scatter(val_evals[1].flatten(), val_evals[0]['labels'].flatten())
-                plt.savefig(os.path.join(options.LOGDIR, 'val_ka_scatter.png'))
-                plt.close()
-
-                sess.run(tpm_val_iterator.initializer)
-                pred_vals, real_vals = [], []
-                while True:
-                    try:
-                        temp_tpm_batch = sess.run(next_tpm_batch, feed_dict={tpm_handle: tpm_val_handle})
-                        real_vals.append(temp_tpm_batch['labels'])
-                        ka_vals = sess.run(_pred_ka_values, feed_dict={_phase_train: False, _keep_prob: 1.0, _combined_x: temp_tpm_batch['images']})
-                        pred_vals.append(sess.run(_pred_logfc_val,
-                            feed_dict={
-                                _utr_ka_values: ka_vals,
-                                next_tpm_batch['nsites']: temp_tpm_batch['nsites'],
-                                next_tpm_batch['features']: temp_tpm_batch['features'],
-                                next_tpm_batch['labels']: temp_tpm_batch['labels'],
-                            }))
-                    except tf.errors.OutOfRangeError:
-                        break
-
-                pred_vals = np.concatenate(pred_vals)
-                pred_vals = pred_vals[:, -1] - np.mean(pred_vals, axis=1)
-
-                real_vals = np.concatenate(real_vals)
-                real_vals = real_vals[:, -1] - np.mean(real_vals, axis=1)
-                
-                print(pred_vals.shape, real_vals.shape)
-                print(np.mean(pred_vals), np.mean(real_vals))
-
-                sess.run(_train_step, feed_dict=train_feed_dict)
-
-                sess.run(tpm_val_iterator.initializer)
-                pred_vals, real_vals, real_nsites = [], [], []
-                while True:
-                    try:
-                        temp_tpm_batch = sess.run(next_tpm_batch, feed_dict={tpm_handle: tpm_val_handle})
-                        real_vals.append(temp_tpm_batch['labels'])
-                        ka_vals = sess.run(_pred_ka_values, feed_dict={_phase_train: False, _keep_prob: 1.0, _combined_x: temp_tpm_batch['images']})
-                        pred_vals.append(sess.run(_pred_logfc_val,
-                            feed_dict={
-                                _utr_ka_values: ka_vals,
-                                next_tpm_batch['nsites']: temp_tpm_batch['nsites'],
-                                next_tpm_batch['features']: temp_tpm_batch['features'],
-                                next_tpm_batch['labels']: temp_tpm_batch['labels'],
-                                _freeAGO_all_val: current_freeAGO_all_val
-                            }))
-                    except tf.errors.OutOfRangeError:
-                        break
-
-                pred_vals = np.concatenate(pred_vals)
-                pred_vals = pred_vals[:, -1] - np.mean(pred_vals, axis=1)
-
-                real_vals = np.concatenate(real_vals)
-                real_vals = real_vals[:, -1] - np.mean(real_vals, axis=1)
-
-                print(pred_vals.shape, real_vals.shape)
-                print(np.mean(pred_vals), np.mean(real_vals))
-
-                break
-
-            trained_genes = []
-            trained_batches = []
             time_start = time.time()
             while True:
                 try:
                     evals = sess.run([
                         next_kd_batch,
+                        next_tpm_batch,
                         _pred_biochem,
+                        _pred_logfc,
                         _repression_y_normed,
                         _pred_logfc_normed,
-                        _train_step,
                         _loss,
                         _ka_loss,
                         _repression_loss,
                         _weight_regularize,
                         _freeAGO_mean,
                         _offset_weight,
-                        next_tpm_batch
+                        _utr_ka_values,
+                        _debug_item,
+                        _train_step,
                     ], feed_dict=train_feed_dict)
 
-                    trained_genes += list(evals[-1]['transcripts'].flatten())
+                    if options.DRY_RUN:
+                        break
 
                 except tf.errors.OutOfRangeError:
-
-                    print(len(trained_genes))
-                    print(len(list(set(trained_genes))))
-
-                    saver.save(sess, os.path.join(SAVE_PATH, 'model'), global_step=current_epoch)
-
-                    # plot weights
-                    conv_weights = sess.run(_cnn_weights['w1'])
-                    xlabels = ['A', 'U', 'C', 'G']
-                    ylabels = ['A', 'U', 'C', 'G']
-                    utils.graph_convolutions(conv_weights, xlabels, ylabels, os.path.join(options.LOGDIR, 'convolution1.pdf'))
-
-                    # plot importance matrix
-                    conv_weights = np.abs(sess.run(_cnn_weights['w3']))
-                    conv_weights = np.sum(conv_weights, axis=(2, 3))
-                    vmin, vmax = np.min(conv_weights), np.max(conv_weights)
-                    xlabels = ['s{}'.format(i + 1) for i in range(SEQLEN)]
-                    ylabels = ['m{}'.format(i + 1) for i in list(range(options.MIRLEN))[::-1]]
-                    fig = plt.figure(figsize=(4, 4))
-                    sns.heatmap(conv_weights, xticklabels=xlabels, yticklabels=ylabels,
-                                cmap=plt.cm.plasma, vmin=vmin, vmax=vmax)
-                    plt.savefig(os.path.join(options.LOGDIR, 'convolution3.pdf'))
-                    plt.close()
-
-                    colors = ['black'] * options.KD_BATCH_SIZE + ['red'] * 2
-                    fig = plt.figure(figsize=(7, 7))
-                    plt.scatter(evals[1].flatten(), evals[0]['labels'].flatten(), color=colors)
-                    plt.savefig(os.path.join(options.LOGDIR, 'train_ka_scatter.png'))
-                    plt.close()
-
-                    fig = plt.figure(figsize=(7, 7))
-                    plt.scatter(evals[3].flatten(), evals[2].flatten())
-                    plt.savefig(os.path.join(options.LOGDIR, 'train_repression_scatter.png'))
-                    plt.close()
-
-                    losses.append(evals[5])
-                    fig = plt.figure(figsize=(7, 5))
-                    plt.plot(losses)
-                    plt.savefig(os.path.join(options.LOGDIR, 'train_losses.png'))
-                    plt.close()
-
-                    means.append(evals[9])
-                    fig = plt.figure(figsize=(7, 5))
-                    plt.plot(means)
-                    plt.savefig(os.path.join(options.LOGDIR, 'train_freeAGO_means.png'))
-                    plt.close()
-
-                    # logfile.write('Time for epoch: {}\n'.format(time.time() - time_start))
-                    logfile.write('Epoch {}, {:.3f}, {:.3f}, {:.3f}, {:.3f}\n'.format(current_epoch, evals[5], evals[6], evals[7], evals[8]))
-                    print('Epoch {}, {:.3f}, {:.3f}, {:.3f}, {:.3f}'.format(current_epoch, evals[5], evals[6], evals[7], evals[8]))
-                    print(evals[10])
-                    print(sess.run(_ts7_weights).flatten())
-
-                    if options.PASSENGER:
-                        current_freeAGO_all = sess.run(_freeAGO_all).reshape([-1, 2])
-                    else:
-                        current_freeAGO_all = sess.run(_freeAGO_all).reshape([-1, 1])
-
-                    print(current_freeAGO_all)
-
-                    train_guide_tas = MIRNA_DATA_USE_TPMS.loc[TRAIN_GUIDES]['guide_TA'].values
-
-                    slope, inter = stats.linregress(train_guide_tas, current_freeAGO_all[:, 0])[:2]
-                    val_guide_ta = MIRNA_DATA_USE_TPMS.loc[VAL_GUIDES[0]]['guide_TA']
-                    new_freeago = [slope * val_guide_ta + inter]
-
-                    fig = plt.figure(figsize=(7, 7))
-                    plt.scatter(train_guide_tas, current_freeAGO_all[:, 0])
-                    plt.scatter([val_guide_ta], new_freeago[0], color='red')
-                    plt.savefig(os.path.join(options.LOGDIR, 'train_ta_guide_freeago.png'))
-                    plt.close()
-
-                    if options.PASSENGER:
-                        train_pass_tas = MIRNA_DATA_USE_TPMS.loc[TRAIN_GUIDES]['pass_TA'].values
-
-                        slope, inter = stats.linregress(train_pass_tas, current_freeAGO_all[:, 1])[:2]
-                        val_pass_ta = MIRNA_DATA_USE_TPMS.loc[VAL_GUIDES[0]]['pass_TA']
-                        new_freeago.append(slope * val_pass_ta + inter)
-
-                        fig = plt.figure(figsize=(7, 7))
-                        plt.scatter(train_pass_tas, current_freeAGO_all[:, 1])
-                        plt.scatter([val_pass_ta], new_freeago[1], color='red')
-                        plt.savefig(os.path.join(options.LOGDIR, 'train_ta_pass_freeago.png'))
-                        plt.close()
-
-                    current_freeAGO_all_val = np.concatenate([current_freeAGO_all, np.array([new_freeago])], axis=0).flatten()
-
-                    sess.run(tpm_val_iterator.initializer)
-                    tpm_val_handle = sess.run(tpm_val_iterator.string_handle())
-                    pred_vals, real_vals, real_nsites = [], [], []
-                    while True:
-                        try:
-                            temp_tpm_batch = sess.run(next_tpm_batch, feed_dict={tpm_handle: tpm_val_handle})
-                            temp_nsites = temp_tpm_batch['nsites']
-                            if options.PASSENGER:
-                                real_nsites.append(temp_nsites.reshape([-1, len(ALL_GUIDES), 2])[:, :, 0])
-                            else:
-                                real_nsites.append(temp_nsites.reshape([-1, len(ALL_GUIDES)]))
-                            real_vals.append(temp_tpm_batch['labels'])
-                            ka_vals = sess.run(_pred_ka_values, feed_dict={_phase_train: False, _keep_prob: 1.0, _combined_x: temp_tpm_batch['images']})
-                            pred_vals.append(sess.run(_pred_logfc_val,
-                                feed_dict={
-                                    _utr_ka_values: ka_vals,
-                                    next_tpm_batch['nsites']: temp_tpm_batch['nsites'],
-                                    next_tpm_batch['features']: temp_tpm_batch['features'],
-                                    next_tpm_batch['labels']: temp_tpm_batch['labels'],
-                                    _freeAGO_all_val: current_freeAGO_all_val
-                                }))
-                        except tf.errors.OutOfRangeError:
-                            break
-
-                    real_nsites = np.concatenate(real_nsites)
-                    print(real_nsites.shape)
-
-                    pred_vals = np.concatenate(pred_vals)
-
-                    fig = plt.figure(figsize=(7, 7))
-                    plt.scatter(real_nsites[:, -1], pred_vals[:, -1])
-                    plt.savefig(os.path.join(options.LOGDIR, 'val_nsites_scatter.png'))
-                    plt.close()
-
-                    pred_vals = pred_vals - np.mean(pred_vals, axis=1).reshape([-1,1])
-
-                    real_vals = np.concatenate(real_vals)
-                    real_vals = real_vals - np.mean(real_vals, axis=1).reshape([-1,1])
-
-                    r2s.append(stats.linregress(pred_vals[:, -1], real_vals[:, -1])[2]**2)
-                    fig = plt.figure(figsize=(7, 5))
-                    plt.plot(r2s)
-                    plt.savefig(os.path.join(options.LOGDIR, 'val_r2s.png'))
-                    plt.close()
-
-                    fig = plt.figure(figsize=(7, 7))
-                    plt.scatter(pred_vals[:, -1], real_vals[:, -1], c=real_nsites[:, -1])
-                    plt.savefig(os.path.join(options.LOGDIR, 'val_tpm_scatter.png'))
-                    plt.close()
-
-                    fig = plt.figure(figsize=(7, 7))
-                    plt.scatter(pred_vals.flatten(), real_vals.flatten(), c=real_nsites.flatten(), alpha=0.5)
-                    plt.savefig(os.path.join(options.LOGDIR, 'all_tpm_scatter.png'))
-                    plt.close()
-
-                    sess.run(kd_val_iterator.initializer)
-                    kd_val_handle = sess.run(kd_val_iterator.string_handle())
-                    temp_kd_batch = sess.run(next_kd_batch, feed_dict={kd_handle: kd_val_handle})
-                    ka_vals = sess.run(_pred_ka_values, feed_dict={_phase_train: False, _keep_prob: 1.0, _combined_x: temp_kd_batch['images']})
-
-                    fig = plt.figure(figsize=(7, 7))
-                    plt.scatter(ka_vals.flatten(), temp_kd_batch['labels'].flatten())
-                    plt.savefig(os.path.join(options.LOGDIR, 'val_ka_scatter.png'))
-                    plt.close()
-
                     break
 
-    if not options.DRY_RUN:
-        logfile.close()
+            eval_names = [
+                'next_kd_batch', 'next_tpm_batch', 'ka_pred', 'pred_repression',
+                'normed_tpms', 'normed_pred_repression', 'loss',
+                'ka_loss', 'repression_loss', 'weight_regularize',
+                'freeAGO_mean', 'offset_weight', 'utr_ka_values', 'debug'
+            ]
+            evals_dict = {eval_names[ix]: evals[ix] for ix in range(len(eval_names))}
+
+            if options.PRETRAIN:
+                pretrain_saver.save(sess, os.path.join(SAVE_PATH, 'model'), global_step=current_epoch)
+
+            else:
+                saver.save(sess, os.path.join(SAVE_PATH, 'model'), global_step=current_epoch)
+
+            print('weights:')
+            temp_weights = sess.run(_cnn_weights['w3'])
+            print(np.min(temp_weights), np.max(temp_weights), np.mean(temp_weights), np.std(temp_weights))
+
+            # plot weights
+            conv_weights = sess.run(_cnn_weights['w1'])
+            xlabels = ['A', 'U', 'C', 'G']
+            ylabels = ['A', 'U', 'C', 'G']
+            utils.graph_convolutions(conv_weights, xlabels, ylabels, os.path.join(options.LOGDIR, 'convolution1.pdf'))
+
+            # plot importance matrix
+            conv_weights = np.abs(sess.run(_cnn_weights['w3']))
+            conv_weights = np.sum(conv_weights, axis=(2, 3))
+            vmin, vmax = np.min(conv_weights), np.max(conv_weights)
+            xlabels = ['s{}'.format(i + 1) for i in range(SEQLEN)]
+            ylabels = ['m{}'.format(i + 1) for i in list(range(options.MIRLEN))[::-1]]
+            fig = plt.figure(figsize=(4, 4))
+            sns.heatmap(conv_weights, xticklabels=xlabels, yticklabels=ylabels,
+                        cmap=plt.cm.plasma, vmin=vmin, vmax=vmax)
+            plt.savefig(os.path.join(options.LOGDIR, 'convolution3.pdf'))
+            plt.close()
+
+            colors = [STYPE_COLOR_DICT[x] for x in evals_dict['next_kd_batch']['stypes']]
+            fig = plt.figure(figsize=(7, 7))
+            plt.scatter(evals_dict['ka_pred'].flatten(), evals_dict['next_kd_batch']['labels'].flatten(), color=colors)
+            plt.savefig(os.path.join(options.LOGDIR, 'train_ka_scatter.png'))
+            plt.close()
+
+            fig = plt.figure(figsize=(7, 7))
+            plt.scatter(evals_dict['normed_pred_repression'].flatten(), evals_dict['normed_tpms'].flatten())
+            plt.savefig(os.path.join(options.LOGDIR, 'train_repression_scatter.png'))
+            plt.close()
+
+            train_losses.append(evals_dict['loss'])
+            fig = plt.figure(figsize=(7, 5))
+            plt.plot(train_losses)
+            plt.savefig(os.path.join(options.LOGDIR, 'train_losses.png'))
+            plt.close()
+
+            means.append(evals_dict['freeAGO_mean'])
+            fig = plt.figure(figsize=(7, 5))
+            plt.plot(means)
+            plt.savefig(os.path.join(options.LOGDIR, 'train_freeAGO_means.png'))
+            plt.close()
+
+            # logfile.write('Time for epoch: {}\n'.format(time.time() - time_start))
+            logfile.write('Epoch {}, {:.3f}, {:.3f}, {:.3f}, {:.3f}\n'.format(current_epoch, evals_dict['loss'], evals_dict['ka_loss'], evals_dict['repression_loss'], evals_dict['weight_regularize']))
+            print('Epoch {}, {:.3f}, {:.3f}, {:.3f}, {:.3f}'.format(current_epoch, evals_dict['loss'], evals_dict['ka_loss'], evals_dict['repression_loss'], evals_dict['weight_regularize']))
+            print(sess.run(_ts7_weights).flatten())
+            print(sess.run(_decay))
+            print(evals_dict['offset_weight'])
+
+            if options.PASSENGER:
+                current_freeAGO_all = sess.run(_freeAGO_all).reshape([-1, 2])
+            else:
+                current_freeAGO_all = sess.run(_freeAGO_all).reshape([-1, 1])
+
+            print(current_freeAGO_all)
+
+            train_guide_tas = MIRNA_DATA_USE_TPMS.loc[TRAIN_GUIDES]['guide_TA'].values
+            new_freeago = []
+
+            fig = plt.figure(figsize=(7, 7))
+            plt.scatter(train_guide_tas, current_freeAGO_all[:, 0])
+
+            if len(VAL_GUIDES) > 0:
+                slope, inter = stats.linregress(train_guide_tas, current_freeAGO_all[:, 0])[:2]
+                val_guide_ta = MIRNA_DATA_USE_TPMS.loc[VAL_GUIDES[0]]['guide_TA']
+                new_freeago.append(slope * val_guide_ta + inter)
+                plt.scatter([val_guide_ta], new_freeago[0], color='red')
+
+            plt.savefig(os.path.join(options.LOGDIR, 'train_ta_guide_freeago.png'))
+            plt.close()
+
+            if options.PASSENGER:
+                train_pass_tas = MIRNA_DATA_USE_TPMS.loc[TRAIN_GUIDES]['pass_TA'].values
+
+                fig = plt.figure(figsize=(7, 7))
+                plt.scatter(train_pass_tas, current_freeAGO_all[:, 1])
+
+                if len(VAL_GUIDES) > 0:
+                    slope, inter = stats.linregress(train_pass_tas, current_freeAGO_all[:, 1])[:2]
+                    val_pass_ta = MIRNA_DATA_USE_TPMS.loc[VAL_GUIDES[0]]['pass_TA']
+                    new_freeago.append(slope * val_pass_ta + inter)
+                    plt.scatter([val_pass_ta], new_freeago[1], color='red')
+
+                plt.savefig(os.path.join(options.LOGDIR, 'train_ta_pass_freeago.png'))
+                plt.close()
+
+            if len(VAL_GUIDES) > 0:
+                current_freeAGO_all_val = np.concatenate([current_freeAGO_all, np.array([new_freeago])], axis=0).flatten()
+            else:
+                current_freeAGO_all_val = current_freeAGO_all.flatten()
+
+            sess.run(tpm_val_iterator.initializer)
+            tpm_val_handle = sess.run(tpm_val_iterator.string_handle())
+            pred_vals, real_vals, real_nsites = [], [], []
+            current_transcripts = []
+            while True:
+                try:
+                    temp_tpm_batch = sess.run(next_tpm_batch, feed_dict={tpm_handle: tpm_val_handle})
+                    temp_nsites = temp_tpm_batch['nsites']
+                    current_transcripts += list(temp_tpm_batch['transcripts'].flatten())
+                    if options.PASSENGER:
+                        real_nsites.append(temp_nsites.reshape([-1, len(ALL_GUIDES), 2])[:, :, 0])
+                    else:
+                        real_nsites.append(temp_nsites.reshape([-1, len(ALL_GUIDES)]))
+                    real_vals.append(temp_tpm_batch['labels'])
+                    ka_vals = sess.run(_pred_ka_values, feed_dict={_phase_train: False, _dropout_rate: 0.0, _combined_x: temp_tpm_batch['images']})
+                    pred_vals.append(sess.run(_pred_logfc_val,
+                        feed_dict={
+                            _utr_ka_values: ka_vals,
+                            next_tpm_batch['nsites']: temp_tpm_batch['nsites'],
+                            next_tpm_batch['features']: temp_tpm_batch['features'],
+                            next_tpm_batch['labels']: temp_tpm_batch['labels'],
+                            _freeAGO_all_val: current_freeAGO_all_val
+                        }))
+                except tf.errors.OutOfRangeError:
+                    break
+
+            real_nsites = np.concatenate(real_nsites)
+            pred_vals = np.concatenate(pred_vals)
+            real_vals = np.concatenate(real_vals)
+
+            fig = plt.figure(figsize=(7, 7))
+            plt.scatter(real_nsites[:, -1], pred_vals[:, -1])
+            plt.savefig(os.path.join(options.LOGDIR, 'val_nsites_scatter.png'))
+            plt.close()
+
+            pred_vals_normed = pred_vals - np.mean(pred_vals, axis=1).reshape([-1,1])
+            real_vals_normed = real_vals - np.mean(real_vals, axis=1).reshape([-1,1])
+
+            pred_df = pd.DataFrame({
+                'transcript': np.repeat(current_transcripts, len(ALL_GUIDES)),
+                'batch': options.BATCH,
+                'mir': (TRAIN_GUIDES + VAL_GUIDES) * len(current_transcripts),
+                'pred': pred_vals.flatten(),
+                'label': real_vals.flatten(),
+                'pred_normed': pred_vals_normed.flatten(),
+                'label_normed': real_vals_normed.flatten()
+            })
+
+            pred_df.to_csv(os.path.join(options.LOGDIR, 'pred_df.txt'), sep='\t', index=False)
+
+            val_losses.append(np.sum(np.square(pred_vals_normed[:, -1] - real_vals_normed[:, -1])))
+            fig = plt.figure(figsize=(7, 5))
+            plt.plot(val_losses)
+            plt.savefig(os.path.join(options.LOGDIR, 'val_losses.png'))
+            plt.close()
+
+            r2s.append(stats.linregress(pred_vals_normed[:, -1], real_vals_normed[:, -1])[2]**2)
+            fig = plt.figure(figsize=(7, 5))
+            plt.plot(r2s)
+            plt.savefig(os.path.join(options.LOGDIR, 'val_r2s.png'))
+            plt.close()
+
+            fig = plt.figure(figsize=(7, 7))
+            plt.scatter(pred_vals_normed[:, -1], real_vals_normed[:, -1], c=real_nsites[:, -1])
+            plt.savefig(os.path.join(options.LOGDIR, 'val_tpm_scatter.png'))
+            plt.close()
+
+            fig = plt.figure(figsize=(7, 7))
+            plt.scatter(pred_vals_normed.flatten(), real_vals_normed.flatten(), c=real_nsites.flatten(), alpha=0.5)
+            plt.savefig(os.path.join(options.LOGDIR, 'all_tpm_scatter.png'))
+            plt.close()
+
+            sess.run(kd_val_iterator.initializer)
+            kd_val_handle = sess.run(kd_val_iterator.string_handle())
+            temp_kd_batch = sess.run(next_kd_batch, feed_dict={kd_handle: kd_val_handle})
+            ka_vals = sess.run(_pred_ka_values, feed_dict={_phase_train: False, _dropout_rate: 0.0, _combined_x: temp_kd_batch['images']})
+
+            fig = plt.figure(figsize=(7, 7))
+            colors = [STYPE_COLOR_DICT[x] for x in temp_kd_batch['stypes']]
+            plt.scatter(ka_vals.flatten(), temp_kd_batch['labels'].flatten(), color=colors)
+            plt.savefig(os.path.join(options.LOGDIR, 'val_ka_scatter.png'))
+            plt.close()
+            
+            print(sess.run(_pred_ka_values, feed_dict={_phase_train: False, _dropout_rate: 0.0, _combined_x: test_case}))
+            print(sess.run(_pred_ka_values, feed_dict={_phase_train: True, _dropout_rate: 0.0, _combined_x: test_case}))
+            print(sess.run(_pred_ka_values, feed_dict={_phase_train: True, _dropout_rate: 0.5, _combined_x: test_case}))
+
+            if options.DRY_RUN:
+                print(evals_dict['next_tpm_batch']['images'].shape)
+                print(evals_dict['next_kd_batch']['images'].shape)
+                print(test_case.shape)
+                print(evals_dict['next_tpm_batch']['transcripts'])
+                print(evals_dict['next_tpm_batch']['nsites'])
+                print(evals_dict['next_tpm_batch']['labels'])
+                print(evals_dict['utr_ka_values'][-1])
+                print(np.max(evals_dict['next_tpm_batch']['images'][-1, :, :], axis=0).reshape([-1, 4]))
+                print(np.max(evals_dict['next_tpm_batch']['images'][-1, :, :], axis=1).reshape([-1, 4]))
+                # print(evals_dict['next_tpm_batch']['transcripts'])
+                # temp_nsites = evals_dict['next_tpm_batch']['nsites']
+                # temp_pred_ka = evals_dict['utr_ka_values'].flatten()
+                # temp_is_orf = evals_dict['next_tpm_batch']['features'].flatten()
+                # print(evals_dict['pred_repression'])
+                # temp_total = 0
+                # for ix, n in enumerate(temp_nsites):
+                #     print(n, temp_pred_ka[temp_total: temp_total + n], temp_is_orf[temp_total: temp_total + n])
+                #     temp_total += n
+
+                # print(evals_dict['pred_repression'], evals_dict['normed_pred_repression'])
+                # print(evals_dict['next_tpm_batch']['labels'], evals_dict['normed_tpms'])
+                # A = evals_dict['next_kd_batch']['labels']
+                # B = np.maximum(0, evals_dict['ka_pred'])
+                # print(A, B)
+                # print(np.sum(np.square(A-B)))
+                # print(evals_dict['ka_loss'] * 2)
+
+                # while True:
+                #     temp_kd_batch = sess.run(next_kd_batch, feed_dict={kd_handle: kd_train_handle})
+                #     if b'8mer' in temp_kd_batch['stypes']:
+                #         break
+
+                # vals1 = sess.run(_pred_ka_values, feed_dict={_phase_train: False, _dropout_rate: 0.0, _combined_x: temp_kd_batch['images']}).flatten()
+                # vals2 = sess.run(_pred_ka_values, feed_dict={_phase_train: True, _dropout_rate: 0.0, _combined_x: temp_kd_batch['images']}).flatten()
+                # vals3 = sess.run(_pred_ka_values, feed_dict={_phase_train: True, _dropout_rate: 0.5, _combined_x: temp_kd_batch['images']}).flatten()
+
+                # ix = 0
+                # for blah in zip(temp_kd_batch['mirs'], temp_kd_batch['stypes'], temp_kd_batch['labels'].flatten(), vals1, vals2, vals3):
+                #     print(blah)
+                #     if blah[1] == b'8mer':
+                #         print(np.max(temp_kd_batch['images'][ix, :, :], axis=0).reshape([-1, 4]).astype(int))
+                #         print(np.max(temp_kd_batch['images'][ix, :, :], axis=1).reshape([-1, 4]).astype(int))
+                #         print(temp_kd_batch['images'][ix, :, :])
+                #     ix += 1
+
+                
+                
+                break
+
 

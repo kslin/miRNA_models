@@ -52,6 +52,21 @@ def get_target_no_match(mirna_sequence, length):
         if keep:
             return target
 
+def get_mir_no_match(site_sequence, length):
+    """Given a target sequence, return a random miRNA sequence without 4 nt of contiguous pairing"""
+    rc = rev_comp(site_sequence[2:-3])
+    off_limits = [rc[ix:ix + 4] for ix in range(4)]
+    while True:
+        target = generate_random_seq(length)
+        keep = True
+        for subseq in off_limits:
+            if subseq in target:
+                keep = False
+                break
+
+        if keep:
+            return target
+
 ### GRAPHING FUNCTIONS ###
 
 def graph_convolutions(conv_weights, xlabels, ylabels, fname):
