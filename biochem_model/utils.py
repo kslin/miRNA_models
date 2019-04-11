@@ -68,6 +68,19 @@ def expand_features_3D(transcripts, mirs, feature_df):
                 all_sites.append([])
                 
     return boolean_indexing(all_sites)
+
+def expand_features_4D_fast(transcripts, mirs, feature_list, feature_df):
+    all_sites = []
+    for ix, transcript in enumerate(transcripts):
+        for iy, mir in enumerate(mirs):
+            try:
+                temp = feature_df.loc[(transcript, mir)]
+                nsites = len(temp)
+                all_sites.append(list(temp[feature_list].values.flatten()))
+            except KeyError:
+                all_sites.append([])
+                
+    return boolean_indexing(all_sites)
                 
 
 def expand_features_4D(transcripts, mirs, max_nsites, feature_list, feature_df):
@@ -90,7 +103,7 @@ def expand_feats_stypes(features, stypes, expand_vars, single_vars):
     for stype in stypes:
         temp = features[expand_vars]
         stype_filter = features[[stype]].values
-        temp.columns = [x + ':' + stype for x in temp.columns]
+        temp.columns = [x + '_' + stype for x in temp.columns]
         temp *= stype_filter
         expanded_features.append(temp)
 

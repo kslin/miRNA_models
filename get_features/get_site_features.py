@@ -149,7 +149,8 @@ def get_ts7_features(mirseq, locs, stypes, utr, utr_len, orf_len, upstream_limit
         # get ts7 features
         local_au = calculate_local_au(utr, loc - 3)
         threep = calculate_threep_score(mirseq, utr, loc - 3, upstream_limit)
-        min_dist = min(loc, utr_len - (loc + 6))
+        # min_dist = min(loc, utr_len - (loc + 6))
+        min_dist = utr_len - (loc + 6)
         assert (min_dist >= 0), (loc, utr_len)
 
         # use the rnaplfold data to calculate the site accessibility
@@ -186,6 +187,6 @@ def get_ts7_features(mirseq, locs, stypes, utr, utr_len, orf_len, upstream_limit
                 print(pct_df)
                 raise ValueError('PCT locations do not match for {}'.format(transcript))
 
-        features.append([local_au, threep, sa_score, min_dist/2000.0, utr_len/2000.0, orf_len/2000.0, pct])
+        features.append([1.0, local_au, threep, sa_score, min_dist/2000.0, utr_len/2000.0, orf_len/2000.0, pct])
 
     return np.array(features).astype(float)

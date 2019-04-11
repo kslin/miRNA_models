@@ -43,7 +43,7 @@ def parse_sites_function(serialized_example, num_mirs, mirlen, seqlen):
     return transcript_data['batch'], guide_orf_image
 
 
-def _parse_repression_function(serialized_example, parse_guides, mirlen, seqlen, num_feats, passenger):
+def _parse_repression_function(serialized_example, parse_guides, mirlen, seqlen, num_feats, use_feats, passenger):
     """Parse the serialized example from tfrecords
     Inputs:
         serialized_example: input of reading tfrecords
@@ -103,7 +103,7 @@ def _parse_repression_function(serialized_example, parse_guides, mirlen, seqlen,
         images.append(image)
 
         # reshape features to [num_sites, num_ts7_features]
-        ts7_features.append(tf.reshape(parsed['{}_ts7_features'.format(mir)], [-1, num_feats]))
+        ts7_features.append(tf.reshape(parsed['{}_ts7_features'.format(mir)], [-1, num_feats])[:, :use_feats])
 
     images = tf.concat(images, axis=0)
     ts7_features = tf.concat(ts7_features, axis=0)
@@ -114,8 +114,9 @@ def _parse_repression_function(serialized_example, parse_guides, mirlen, seqlen,
 
 def _build_tpm_batch(iterator, batch_size):
     images, features, labels, nsites, transcripts, batches = [], [], [], [], [], []
-    for _ in range(batch_size):
+    for ix in range(batch_size):
         results = iterator.get_next()
+
         images.append(results[0])
         features.append(results[1])
         labels.append(results[2])
@@ -169,7 +170,9 @@ def _parse_log_kd_function(serialized_example):
 
 
 def _filter_kds(mir, image, kd, keep_prob, stype):
-    return tf.math.greater(keep_prob[0], tf.random.uniform(shape=(), minval=0, maxval=1))
+    better_than_nosites = tf.math.less(kd[0], 0.0)
+    keep = tf.math.greater(keep_prob[0], tf.random.uniform(shape=(), minval=0, maxval=1))
+    return tf.logical_and(better_than_nosites, keep)
     # return tf.math.greater(tf.sigmoid((-1.0 * kd) - 3.0), tf.random.uniform(shape=(), minval=0, maxval=1))[0]
     # return tf.math.greater(tf.sigmoid((-1.0 * kd) - 2.0), tf.constant([0.5]))[0]
 

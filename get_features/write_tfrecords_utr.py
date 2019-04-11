@@ -29,6 +29,7 @@ if __name__ == '__main__':
     parser.add_option("--passenger", dest="PASSENGER", help="include passenger", default=False, action='store_true')
     parser.add_option("--only_canon", dest="ONLY_CANON", help="only use canonical sites", default=False, action='store_true')
     parser.add_option("--write_seqs", dest="WRITE_SEQS", help="write seqs found", default=None)
+    parser.add_option("--calc_ts7", dest="CALC_TS7", help="calculate TS7 features", default=False, action='store_true')
 
     (options, args) = parser.parse_args()
 
@@ -64,8 +65,10 @@ if __name__ == '__main__':
         if mir not in TPM.columns:
             raise ValueError('{} given in mirseqs file but not in TPM file.'.format(mir))
 
-    num_batches = 10
+    num_batches = 11
     TPM['batch'] = [ix % num_batches for ix in TPM['ix']]
+
+    print(TPM['batch'].unique())
 
     print("Using mirs: {}".format(ALL_MIRS))
 
@@ -91,21 +94,19 @@ if __name__ == '__main__':
             transcript = row[0]
             utr3 = row[1]['sequence']
             orf = ORF_SEQS.loc[transcript][2]
-            transcript_sequence = orf + utr3
-            orf_length = len(orf)
+            # transcript_sequence = orf + utr3
+            # orf_length = len(orf)
+            # transcript_length = len(transcript_sequence)
 
-            # lunp_file = os.path.join(options.RNAPLFOLD_FOLDER, transcript) + '_lunp'
-            # rnaplfold_data = pd.read_csv(lunp_file, sep='\t', header=1).set_index(' #i$').astype(float)
+            lunp_file = os.path.join(options.RNAPLFOLD_FOLDER, transcript) + '_lunp'
+            rnaplfold_data = pd.read_csv(lunp_file, sep='\t', header=1).set_index(' #i$').astype(float)
 
-            # utr_len = row[1]['utr_length']
-            # orf_len = row[1]['orf_length']
+            utr_len = row[1]['utr_length']
+            orf_len = row[1]['orf_length']
 
             feature_dict = {
                 'transcript': utils._bytes_feature(transcript.encode('utf-8')),
                 'batch': utils._int64_feature([row[1]['batch']]),
-                # 'tpms': utils._float_feature(list(row[1][ALL_GUIDES].values)),
-                # 'guides': utils._string_feature([x.encode('utf-8') for x in ALL_GUIDES]),
-                # 'mirs': utils._string_feature([x.encode('utf-8') for x in ALL_MIRS])
             }
 
             for guide in ALL_GUIDES:
@@ -119,33 +120,62 @@ if __name__ == '__main__':
                 feature_dict['{}_mir_1hot'.format(mir)] = utils._float_feature(utils.one_hot_encode(mirseq[:options.MIRLEN]))
 
                 # get sites and 12mer sequences
-                seqs, locs = get_site_features.get_sites_from_utr(transcript_sequence, site8, overlap_dist=options.OVERLAP_DIST, only_canon=options.ONLY_CANON)
-                feature_dict['{}_nsites'.format(mir)] = utils._int64_feature([len(locs)])
+                orf_seqs, orf_locs = get_site_features.get_sites_from_utr(orf, site8,
+                    overlap_dist=options.OVERLAP_DIST, only_canon=True)
 
-                # nsites.append(len(locs))
+                utr3_seqs, utr3_locs = get_site_features.get_sites_from_utr(utr3, site8,
+                    overlap_dist=options.OVERLAP_DIST, only_canon=options.ONLY_CANON)
 
-                if len(locs) > 0:
+                all_seqs = orf_seqs + utr3_seqs
+                nsites = len(all_seqs)
+
+                if nsites > 0:
+                    if options.CALC_TS7:
+                        orf_features = [0.0] * len(orf_seqs)
+
+                        utr3_stypes = [utils.get_centered_stype(site8, seq) for seq in utr3_seqs]
+                        pct_df_temp = pct_df[pct_df['ID'] == transcript + mir]
+                        if len(pct_df_temp) == 0:
+                            pct_df_temp = None
+                        utr3_features = get_site_features.get_ts7_features(mirseq, utr3_locs, utr3_stypes, utr3, utr_len, orf_len,
+                                                                          options.UPSTREAM_LIMIT, rnaplfold_data,
+                                                                          pct_df_temp).flatten()
+                        features = orf_features + list(utr3_features)
+                    else:
+                        features = ([0.0] * len(orf_seqs)) + ([1.0] * len(utr3_seqs))
+                    long_seq = ''.join(all_seqs)
+
+                    
+
                     if options.WRITE_SEQS is not None:
-                        seq_writer.write('{}\t{}\t{}\t{}\n'.format(transcript, mir, mirseq, ','.join(seqs)))
-                    long_seq = ''.join(seqs)
-                    feature_dict['{}_seqs_1hot'.format(mir)] = utils._float_feature(utils.one_hot_encode(long_seq))
+                        seq_writer.write('{}\t{}\t{}\t{}\n'.format(transcript, mir, mirseq, ','.join(all_seqs)))
 
-                    features = [1.0 if (l < orf_length) else 0.0 for l in locs]
-                    # stypes = [utils.get_centered_stype(site8, seq) for seq in seqs]
-                    # pct_df_temp = pct_df[pct_df['ID'] == transcript + mir]
-                    # if len(pct_df_temp) == 0:
-                    #     pct_df_temp = None
-                    # features = get_site_features.get_ts7_features(mirseq, locs, stypes, utr, utr_len, orf_len,
-                    #                                                   options.UPSTREAM_LIMIT, rnaplfold_data,
-                    #                                                   pct_df_temp).flatten()
-                    # print(features)
+                    feature_dict['{}_seqs_1hot'.format(mir)] = utils._float_feature(utils.one_hot_encode(long_seq))
                     feature_dict['{}_ts7_features'.format(mir)] = utils._float_feature(features)
+
+
+                    # features = []
+                    # for l in locs:
+                    #     features += [float(l < orf_length), float((transcript_length - l) < 500)]
+
+                    # # features = [1.0 if (l < orf_length) else 0.0 for l in locs]
+
+                    # # stypes = [utils.get_centered_stype(site8, seq) for seq in seqs]
+                    # # pct_df_temp = pct_df[pct_df['ID'] == transcript + mir]
+                    # # if len(pct_df_temp) == 0:
+                    # #     pct_df_temp = None
+                    # # features = get_site_features.get_ts7_features(mirseq, locs, stypes, utr, utr_len, orf_len,
+                    # #                                                   options.UPSTREAM_LIMIT, rnaplfold_data,
+                    # #                                                   pct_df_temp).flatten()
+                    # # print(features)
+                    # feature_dict['{}_ts7_features'.format(mir)] = utils._float_feature(features)
 
                 else:
                     feature_dict['{}_seqs_1hot'.format(mir)] = utils._float_feature([])
                     feature_dict['{}_ts7_features'.format(mir)] = utils._float_feature([])
+                    nsites = 0
 
-            # feature_dict['nsites'] = utils._int64_feature(nsites)
+                feature_dict['{}_nsites'.format(mir)] = utils._int64_feature([nsites])
 
             # Create a Features message using tf.train.Example.
             example_proto = tf.train.Example(features=tf.train.Features(feature=feature_dict))

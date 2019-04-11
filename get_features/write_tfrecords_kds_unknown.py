@@ -62,8 +62,6 @@ if __name__ == '__main__':
 
     for row in MIRNA_DATA.iterrows():
         MIRNAME = row[0]
-        if MIRNAME != 'mir204':
-            continue
 
         # if no rbns data, get 12mers for guide strand
         if not row[1]['has_rbns']:

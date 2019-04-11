@@ -4,22 +4,37 @@ import tensorflow as tf
 
 import parse_data_utils
 
+def variable_summaries(var):
+    """Attach a lot of summaries to a Tensor (for TensorBoard visualization)."""
+    with tf.name_scope('summaries'):
+        mean = tf.reduce_mean(var)
+        tf.summary.scalar('mean', mean)
+        with tf.name_scope('stddev'):
+            stddev = tf.sqrt(tf.reduce_mean(tf.square(var - mean)))
+        tf.summary.scalar('stddev', stddev)
+        tf.summary.scalar('max', tf.reduce_max(var))
+        tf.summary.scalar('min', tf.reduce_min(var))
+        tf.summary.histogram('histogram', var)
+
 def get_conv_params(dim1, dim2, in_channels, out_channels, layer_name):
 
     # create variables for weights and biases
     with tf.name_scope('weights'):
         weights = tf.get_variable("{}_weight".format(layer_name),
                                shape=[dim1, dim2, in_channels, out_channels],
-                               initializer=tf.truncated_normal_initializer(stddev=0.05))
+                               initializer=tf.contrib.layers.xavier_initializer())
+                               # initializer=tf.truncated_normal_initializer(stddev=0.05))
 
         # add variable to collection of variables
         tf.add_to_collection('weight', weights)
+        variable_summaries(weights)
     with tf.name_scope('biases'):
         biases = tf.get_variable("{}_bias".format(layer_name), shape=[out_channels],
                               initializer=tf.constant_initializer(0.1))
 
         # add variable to collection of variables
         tf.add_to_collection('bias', biases)
+        variable_summaries(biases)
 
     return weights, biases
 
@@ -29,56 +44,66 @@ def seq2ka_predictor(input_data, dropout_rate, phase_train, hidden1, hidden2, hi
         _w1, _b1 = get_conv_params(4, 4, 1, hidden1, 'layer1')
         _preactivate1 = tf.nn.conv2d(input_data, _w1, strides=[1, 4, 4, 1], padding='VALID') + _b1
         # _preactivate1_bn = tf.keras.layers.BatchNormalization(axis=-1, scale=False)(_preactivate1, training=phase_train)
-        # _preactivate1_bn = tf.layers.batch_normalization(_preactivate1, training=phase_train)
-        _layer1 = tf.nn.leaky_relu(_preactivate1)
+        _preactivate1_bn = tf.layers.batch_normalization(_preactivate1, training=phase_train, renorm=True)
+        _layer1 = tf.nn.leaky_relu(_preactivate1_bn)
+        tf.summary.histogram('activations', _layer1)
+        # _dropout1 = tf.nn.dropout(_layer1, rate=dropout_rate)
 
     # add layer 2
     with tf.name_scope('layer2'):
         _w2, _b2 = get_conv_params(2, 2, hidden1, hidden2, 'layer2')
         _preactivate2 = tf.nn.conv2d(_layer1, _w2, strides=[1, 1, 1, 1], padding='VALID') + _b2
         # _preactivate2_bn = tf.keras.layers.BatchNormalization(axis=-1, scale=False)(_preactivate2, training=phase_train)
-        # _preactivate2_bn = tf.layers.batch_normalization(_preactivate2, training=phase_train)
-        _layer2 = tf.nn.leaky_relu(_preactivate2)
-        _dropout2 = tf.nn.dropout(_layer2, rate=dropout_rate)
+        _preactivate2_bn = tf.layers.batch_normalization(_preactivate2, training=phase_train, renorm=True)
+        _layer2 = tf.nn.leaky_relu(_preactivate2_bn)
+        tf.summary.histogram('activations', _layer2)
 
-    # # add layer 2.5
-    # with tf.name_scope('layer2_5'):
-    #     _w2_5, _b2_5 = get_conv_params(4, 4, hidden2, hidden2, 'layer2_5')
-    #     _preactivate2_5 = tf.nn.conv2d(_dropout2, _w2_5, strides=[1, 1, 1, 1], padding='VALID') + _b2_5
-    #     # _preactivate2_bn = tf.keras.layers.BatchNormalization(axis=-1, scale=False)(_preactivate2, training=phase_train)
-    #     # _preactivate2_bn = tf.layers.batch_normalization(_preactivate2, training=phase_train)
-    #     _layer2_5 = tf.nn.leaky_relu(_preactivate2_5)
-    #     _dropout2_5 = tf.nn.dropout(_layer2_5, rate=dropout_rate)
+        # _dropout2 = tf.nn.dropout(_layer2, rate=(dropout_rate/2))
+
+    # add layer 2.5
+    with tf.name_scope('layer2_5'):
+        _w2_5, _b2_5 = get_conv_params(4, 4, hidden2, 16, 'layer2_5')
+        _preactivate2_5 = tf.nn.conv2d(_layer2, _w2_5, strides=[1, 1, 1, 1], padding='VALID') + _b2_5
+        # _preactivate2_5_bn = tf.keras.layers.BatchNormalization(axis=-1, scale=False)(_preactivate2_5, training=phase_train)
+        _preactivate2_5_bn = tf.layers.batch_normalization(_preactivate2_5, training=phase_train, renorm=True)
+        _layer2_5 = tf.nn.leaky_relu(_preactivate2_5_bn)
+        tf.summary.histogram('activations', _layer2_5)
+        # _dropout2_5 = tf.nn.dropout(_layer2_5, rate=dropout_rate)
 
     # add layer 3
     with tf.name_scope('layer3'):
-        _w3, _b3 = get_conv_params(mirlen - 1, seqlen - 1, hidden2, hidden3, 'layer3')
-        _preactivate3 = tf.nn.conv2d(_dropout2, _w3, strides=[1, 1, 1, 1], padding='VALID') + _b3
-        # _preactivate3_bn = tf.keras.layers.BatchNormalization(axis=-1, scale=False)(_preactivate3, training=phase_train)
-        # _preactivate3_bn = tf.layers.batch_normalization(_preactivate3, training=phase_train)
-        _layer3 = tf.nn.leaky_relu(_preactivate3)
-        _dropout3 = tf.nn.dropout(_layer3, rate=dropout_rate)
+        _w3, _b3 = get_conv_params(mirlen - 4, seqlen - 4, 16, hidden3, 'layer3')
+        _preactivate3 = tf.nn.conv2d(_layer2_5, _w3, strides=[1, 1, 1, 1], padding='VALID') + _b3
+        # _preactivate3_bn = tf.keras.layers.BatchNormalization()(_preactivate3, training=phase_train)
+        _preactivate3_bn = tf.layers.batch_normalization(_preactivate3, training=phase_train, renorm=True)
+        _layer3 = tf.nn.leaky_relu(_preactivate3_bn)
+        tf.summary.histogram('activations', _layer3)
+        # _dropout3 = tf.nn.dropout(_layer3, rate=dropout_rate)
 
     print('layer1: {}'.format(_layer1))
     print('layer2: {}'.format(_layer2))
+    print('layer2.5: {}'.format(_layer2_5))
     print('layer3: {}'.format(_layer3))
 
     # reshape to 1D tensor
-    _layer_flat = tf.reshape(_dropout3, [-1, hidden3])
+    _layer_flat = tf.reshape(_layer3, [-1, hidden3])
 
     # add last layer
     with tf.name_scope('final_layer'):
         with tf.name_scope('weights'):
             _w4 = tf.get_variable("final_layer_weight", shape=[hidden3, 1],
-                                        initializer=tf.truncated_normal_initializer(stddev=0.1))
+                                        initializer=tf.contrib.layers.xavier_initializer())
+                                        # initializer=tf.truncated_normal_initializer(stddev=0.1))
             tf.add_to_collection('weight', _w4)
+            variable_summaries(_w4)
         with tf.name_scope('biases'):
             _b4 = tf.get_variable("final_layer_bias", shape=[1],
                                 initializer=tf.constant_initializer(1.0))
             tf.add_to_collection('bias', _b4)
+            variable_summaries(_b4)
 
         # apply final layer
-        _pred_ka_values = tf.nn.relu(tf.add(tf.matmul(_layer_flat, _w4), _b4, name='pred_ka'))
+        _pred_ka_values = tf.nn.leaky_relu(tf.add(tf.matmul(_layer_flat, _w4), _b4), name='pred_ka')
 
     _cnn_weights = {
         'w1': _w1,
@@ -118,13 +143,20 @@ def get_pred_logfc_occupancy_only(_utr_ka_values, _freeAGO_all, _tpm_batch, _ts7
         num_mirs = num_guides
 
     # merge with other features
-    _merged_features = tf.squeeze(_utr_ka_values + tf.matmul(_tpm_batch['features'], _ts7_weights))# + _ts7_bias
+    _weighted_features = tf.squeeze(tf.matmul(_tpm_batch['features'], _ts7_weights))
+    _utr_ka_values_squeezed = tf.squeeze(_utr_ka_values)
+    # _merged_features = tf.squeeze(_utr_ka_values) + _weighted_features # + _ts7_bias
 
     # pad values
-    _merged_features_padded = pad_vals(_merged_features, _tpm_batch['nsites'], num_mirs, batch_size, fill_val=-100.0)
+    _weighted_features_padded = pad_vals(_weighted_features, _tpm_batch['nsites'], num_mirs, batch_size, fill_val=-100.0)
+    _ka_vals_padded = pad_vals(_utr_ka_values_squeezed, _tpm_batch['nsites'], num_mirs, batch_size, fill_val=-100.0)
 
-    _merged_features_mask = tf.cast(tf.greater(_merged_features_padded, 0), tf.float32)
-    _masked_nbound = tf.multiply(tf.sigmoid(_merged_features_padded + tf.reshape(_freeAGO_all, [1, -1, 1])), _merged_features_mask)
+    _merged_features_mask = tf.cast(tf.greater(_ka_vals_padded, 0), tf.float32)
+    _nbound_init = tf.sigmoid(_weighted_features_padded + tf.reshape(_freeAGO_all, [1, -1, 1]))
+    _nbound = tf.sigmoid((_weighted_features_padded + _ka_vals_padded) + tf.reshape(_freeAGO_all, [1, -1, 1]))
+    _nbound_net = _nbound - _nbound_init
+
+    _masked_nbound = tf.multiply(_nbound_net, _merged_features_mask)
     # _masked_nbound = tf.sigmoid(_merged_features_padded + tf.reshape(_freeAGO_all, [1, -1, 1]))
 
     # calculate occupancy
@@ -144,7 +176,7 @@ def get_pred_logfc_occupancy_only(_utr_ka_values, _freeAGO_all, _tpm_batch, _ts7
         _pred_logfc_normed = _pred_logfc
         _repression_y_normed = _tpm_batch['labels']
 
-    return _pred_logfc, _pred_logfc_normed, _repression_y_normed, (_merged_features_padded, _masked_nbound, _occupancy, _pred_logfc)
+    return _pred_logfc, _pred_logfc_normed, _repression_y_normed, (_masked_nbound)
 
 
 def get_pred_logfc_separate(_utr_ka_values, _freeAGO_all, _tpm_batch, _ts7_weights, _ts7_bias, _decay, batch_size, passenger, num_guides, name, loss_type):
