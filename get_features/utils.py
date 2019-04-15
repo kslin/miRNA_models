@@ -147,7 +147,6 @@ def rev_comp(seq):
 def one_hot_encode(seq):
     if len(seq) == 0:
         return []
-
     """ 1-hot encode ATCG sequence """
     nt_dict = {
         'A': 0,
@@ -156,11 +155,10 @@ def one_hot_encode(seq):
         'G': 3,
         'X': 4
     }
-    targets = np.zeros([5, 4])
+    targets = np.ones([5, 4]) / 4.0
     targets[:4, :] = np.eye(4)
-
     seq = [nt_dict[nt] for nt in seq]
-    return list(targets[seq].flatten().astype(int))
+    return list(targets[seq].flatten())
 
 
 def generate_random_seq(length):

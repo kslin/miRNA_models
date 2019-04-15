@@ -58,27 +58,27 @@ def seq2ka_predictor(input_data, dropout_rate, phase_train, hidden1, hidden2, hi
         _layer2 = tf.nn.leaky_relu(_preactivate2_bn)
         tf.summary.histogram('activations', _layer2)
 
-        # _dropout2 = tf.nn.dropout(_layer2, rate=(dropout_rate/2))
+        _dropout2 = tf.nn.dropout(_layer2, rate=(dropout_rate/2))
 
     # add layer 2.5
     with tf.name_scope('layer2_5'):
-        _w2_5, _b2_5 = get_conv_params(4, 4, hidden2, 16, 'layer2_5')
-        _preactivate2_5 = tf.nn.conv2d(_layer2, _w2_5, strides=[1, 1, 1, 1], padding='VALID') + _b2_5
+        _w2_5, _b2_5 = get_conv_params(4, 4, hidden2, hidden2, 'layer2_5')
+        _preactivate2_5 = tf.nn.conv2d(_dropout2, _w2_5, strides=[1, 1, 1, 1], padding='VALID') + _b2_5
         # _preactivate2_5_bn = tf.keras.layers.BatchNormalization(axis=-1, scale=False)(_preactivate2_5, training=phase_train)
         _preactivate2_5_bn = tf.layers.batch_normalization(_preactivate2_5, training=phase_train, renorm=True)
         _layer2_5 = tf.nn.leaky_relu(_preactivate2_5_bn)
         tf.summary.histogram('activations', _layer2_5)
-        # _dropout2_5 = tf.nn.dropout(_layer2_5, rate=dropout_rate)
+        _dropout2_5 = tf.nn.dropout(_layer2_5, rate=dropout_rate/2)
 
     # add layer 3
     with tf.name_scope('layer3'):
-        _w3, _b3 = get_conv_params(mirlen - 4, seqlen - 4, 16, hidden3, 'layer3')
-        _preactivate3 = tf.nn.conv2d(_layer2_5, _w3, strides=[1, 1, 1, 1], padding='VALID') + _b3
+        _w3, _b3 = get_conv_params(mirlen - 4, seqlen - 4, hidden2, hidden3, 'layer3')
+        _preactivate3 = tf.nn.conv2d(_dropout2_5, _w3, strides=[1, 1, 1, 1], padding='VALID') + _b3
         # _preactivate3_bn = tf.keras.layers.BatchNormalization()(_preactivate3, training=phase_train)
         _preactivate3_bn = tf.layers.batch_normalization(_preactivate3, training=phase_train, renorm=True)
         _layer3 = tf.nn.leaky_relu(_preactivate3_bn)
         tf.summary.histogram('activations', _layer3)
-        # _dropout3 = tf.nn.dropout(_layer3, rate=dropout_rate)
+        _dropout3 = tf.nn.dropout(_layer3, rate=dropout_rate)
 
     print('layer1: {}'.format(_layer1))
     print('layer2: {}'.format(_layer2))
@@ -86,7 +86,7 @@ def seq2ka_predictor(input_data, dropout_rate, phase_train, hidden1, hidden2, hi
     print('layer3: {}'.format(_layer3))
 
     # reshape to 1D tensor
-    _layer_flat = tf.reshape(_layer3, [-1, hidden3])
+    _layer_flat = tf.reshape(_dropout3, [-1, hidden3])
 
     # add last layer
     with tf.name_scope('final_layer'):
@@ -135,6 +135,18 @@ def pad_vals(vals, split_sizes, num_mirs, batch_size, fill_val):
 
     return vals_reshaped
 
+def pad_vals2(vals, split_sizes, num_mirs, batch_size, fill_val):
+
+    # get dense shape
+    dense_shape = tf.stack([tf.constant(batch_size, dtype=tf.int64), tf.constant(num_mirs, dtype=tf.int64), tf.cast(tf.reduce_max(split_sizes), dtype=tf.int64)])
+    
+    # get dense indices
+    mask = tf.greater(tf.reshape(split_sizes, [-1, 1]), tf.reshape(tf.range(tf.reduce_max(split_sizes)), [1, -1]))
+    mask = tf.reshape(mask, [batch_size, num_mirs, -1])
+    dense_indices = tf.where(mask)
+
+    padded = tf.sparse.to_dense(tf.sparse.SparseTensor(dense_indices, vals, dense_shape), default_value=fill_val)
+    return padded, tf.cast(mask, tf.float32)
 
 def get_pred_logfc_occupancy_only(_utr_ka_values, _freeAGO_all, _tpm_batch, _ts7_weights, _ts7_bias, _decay, batch_size, passenger, num_guides, name, loss_type):
     if passenger:
@@ -162,6 +174,47 @@ def get_pred_logfc_occupancy_only(_utr_ka_values, _freeAGO_all, _tpm_batch, _ts7
     # calculate occupancy
     _occupancy = tf.exp(_decay) * tf.reduce_sum(_masked_nbound, axis=2)
     # _occupancy = tf.reduce_sum(_masked_nbound, axis=2)
+    # Add guide and passenger strand occupancies, if applicable
+    if passenger:
+        _occupancy = tf.reduce_sum(tf.reshape(_occupancy, [-1, num_guides, 2]), axis=2)
+
+    # get logfc
+    _pred_logfc = -1 * tf.log1p(_occupancy)
+
+    if loss_type == 'MEAN_CENTER':
+        _pred_logfc_normed = _pred_logfc - tf.reshape(tf.reduce_mean(_pred_logfc, axis=1), [-1, 1])
+        _repression_y_normed = _tpm_batch['labels'] - tf.reshape(tf.reduce_mean(_tpm_batch['labels'], axis=1), [-1, 1])
+    else:
+        _pred_logfc_normed = _pred_logfc
+        _repression_y_normed = _tpm_batch['labels']
+
+    return _pred_logfc, _pred_logfc_normed, _repression_y_normed, (_masked_nbound)
+
+
+def get_pred_logfc_occupancy_only2(_utr_ka_values, _freeAGO_all, _tpm_batch, _ts7_weights, _ts7_bias, _decay, batch_size, passenger, num_guides, name, loss_type):
+    if passenger:
+        num_mirs = num_guides * 2
+    else:
+        num_mirs = num_guides
+
+    # merge with other features
+    _weighted_features = tf.squeeze(tf.matmul(_tpm_batch['features'], _ts7_weights))
+    _merged_features = tf.squeeze(_utr_ka_values) + _weighted_features # + _ts7_bias
+
+    # pad values
+    _weighted_features_padded, _ = pad_vals2(_weighted_features, _tpm_batch['nsites'], num_mirs, batch_size, fill_val=-100.0)
+    _merged_features_padded, _merged_features_mask = pad_vals2(_merged_features, _tpm_batch['nsites'], num_mirs, batch_size, fill_val=-100.0)
+
+    # _merged_features_mask = tf.cast(tf.greater(_ka_vals_padded, 0), tf.float32)
+    _nbound_init = tf.sigmoid(_weighted_features_padded + tf.reshape(_freeAGO_all, [1, -1, 1]))
+    _nbound = tf.sigmoid(_merged_features_padded + tf.reshape(_freeAGO_all, [1, -1, 1]))
+    _nbound_net = _nbound - _nbound_init
+
+    _masked_nbound = tf.multiply(_nbound_net, _merged_features_mask)
+
+    # calculate occupancy
+    _occupancy = tf.exp(_decay) * tf.reduce_sum(_masked_nbound, axis=2)
+
     # Add guide and passenger strand occupancies, if applicable
     if passenger:
         _occupancy = tf.reduce_sum(tf.reshape(_occupancy, [-1, num_guides, 2]), axis=2)

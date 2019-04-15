@@ -187,6 +187,6 @@ def get_ts7_features(mirseq, locs, stypes, utr, utr_len, orf_len, upstream_limit
                 print(pct_df)
                 raise ValueError('PCT locations do not match for {}'.format(transcript))
 
-        features.append([1.0, local_au, threep, sa_score, min_dist/2000.0, utr_len/2000.0, orf_len/2000.0, pct])
+        features.append([0.0, local_au, threep, sa_score, min_dist/2000.0, utr_len/2000.0, orf_len/2000.0, pct])
 
     return np.array(features).astype(float)

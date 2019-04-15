@@ -18,6 +18,7 @@ if __name__ == '__main__':
     (options, args) = parser.parse_args()
 
     KDS = pd.read_csv(options.KD_FILE, sep='\t')
+    KDS = KDS[['X' not in x for x in KDS['12mer'].values]]
 
     print("Length of KD data before removing sites in other registers: {}".format(len(KDS)))
     KDS = KDS[KDS['best_stype'] == KDS['aligned_stype']]
