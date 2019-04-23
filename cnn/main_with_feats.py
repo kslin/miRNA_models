@@ -36,7 +36,7 @@ if __name__ == '__main__':
     parser.add_option("--kd_batch_size", dest="KD_BATCH_SIZE", type=int)
     parser.add_option("--num_epochs", dest="NUM_EPOCHS", type=int)
     parser.add_option("--val_mir", dest="VAL_MIR", help="testing miRNA")
-    parser.add_option("--batch", dest="BATCH", help="which batch to withold from training", type=int)
+    parser.add_option("--batch", dest="BATCH", help="which batch to withold from training", type=int, default=None)
     parser.add_option("--loss_type", dest="LOSS_TYPE", help="which loss strategy")
     parser.add_option("--dropout_rate", dest="DROPOUT_RATE", help="dropout_rate", type=float)
     parser.add_option("--lambda1", dest="LAMBDA1", help="regularizer weight", type=float)
@@ -46,8 +46,10 @@ if __name__ == '__main__':
     parser.add_option("--logdir", dest="LOGDIR", help="directory for writing logs", default=None)
     parser.add_option("--load_model", dest="LOAD_MODEL", help="if supplied, load latest model from this directory", default=None)
     parser.add_option("--passenger", dest="PASSENGER", help="include passenger", default=False, action='store_true')
+    parser.add_option("--fix_layers", dest="FIX_LAYERS", help="if true, fix earlier layers", default=False, action='store_true')
     parser.add_option("--dry_run", dest="DRY_RUN", help="if true, do dry run", default=False, action='store_true')
     parser.add_option("--pretrain", dest="PRETRAIN", help="if true, do pretraining step", default=False, action='store_true')
+    parser.add_option("--predict", dest="PREDICT", help="if true, just load and predict", default=False, action='store_true')
 
     (options, args) = parser.parse_args()
 
@@ -84,7 +86,7 @@ if __name__ == '__main__':
 
     # split repression miRNAs into training and testing
     if options.VAL_MIR == 'none':
-        TRAIN_GUIDES = ALL_GUIDES
+        TRAIN_GUIDES = [x for x in ALL_GUIDES if x != 'mir223'] + ['mir223']
         VAL_GUIDES = []
     else:
         if options.VAL_MIR not in ALL_GUIDES:
@@ -138,8 +140,11 @@ if __name__ == '__main__':
     tpm_val_dataset = tpm_dataset.map(_parse_fn_val, num_parallel_calls=16)
 
     # filter genes by batch
-    tpm_train_dataset = tpm_train_dataset.filter(lambda x1, x2, x3, x4, x5, x6: tf.not_equal(x6, options.BATCH))
-    tpm_val_dataset = tpm_val_dataset.filter(lambda x1, x2, x3, x4, x5, x6: tf.equal(x6, options.BATCH))
+    if options.BATCH is not None:
+        tpm_train_dataset = tpm_train_dataset.filter(lambda x1, x2, x3, x4, x5, x6: tf.not_equal(x6, options.BATCH))
+        tpm_val_dataset = tpm_val_dataset.filter(lambda x1, x2, x3, x4, x5, x6: tf.equal(x6, options.BATCH))
+    # else:
+    #     tpm_val_dataset = tpm_val_dataset.filter(lambda x1, x2, x3, x4, x5, x6: tf.equal(x6, 3))
 
     # make feedable iterators
     tpm_train_iterator = tpm_train_dataset.make_initializable_iterator()
@@ -183,7 +188,7 @@ if __name__ == '__main__':
     kd_val_dataset = kd_val_dataset.prefetch(1000)
 
     # shuffle, batch, and map datasets
-    kd_train_dataset = kd_train_dataset.apply(tf.data.experimental.shuffle_and_repeat(buffer_size=100))
+    kd_train_dataset = kd_train_dataset.apply(tf.data.experimental.shuffle_and_repeat(buffer_size=1000))
     kd_train_dataset = kd_train_dataset.map(parse_data_utils._parse_log_kd_function, num_parallel_calls=16)
 
     # re-balance KD data towards high-affinity sites
@@ -205,6 +210,7 @@ if __name__ == '__main__':
     next_kd_batch_mirs, next_kd_batch_images, next_kd_batch_labels, next_kd_batch_keep_probs, next_kd_batch_stypes = kd_iterator.get_next()
 
     # augment data with random sequences generator
+    NUM_EXTRA_KD_VALS = 3
     def gen():
         while True:
             random_mirs, random_images, random_labels, random_stypes = [], [], [], []
@@ -218,25 +224,26 @@ if __name__ == '__main__':
             random_labels.append([0.0])
             random_stypes.append(b'no site')
 
-            # 10% of the time, generate random 8mer pair and assign KD of average 8mer
-            if np.random.random() < 0.1:
-                random_mirseq = utils.generate_random_seq(options.MIRLEN)
-                # random_target = utils.get_target_no_match(random_mirseq, SEQLEN)
-                random_mirs.append(b'random')
-                random_target = utils.generate_random_seq(2) + utils.rev_comp(random_mirseq[1:8]) + 'A' + utils.generate_random_seq(2)
-                random_images.append(np.outer(utils.one_hot_encode(random_mirseq), utils.one_hot_encode(random_target)))
-                random_labels.append([-5.3])
-                random_stypes.append(b'8mer')
+            # generate random 8mer pair and assign KD of average 8mer
+            random_mirseq = utils.generate_random_seq(options.MIRLEN)
+            # random_target = utils.get_target_no_match(random_mirseq, SEQLEN)
+            random_mirs.append(b'random')
+            up_flank = utils.generate_random_seq(2)
+            down_flank = utils.generate_random_seq(2)
+            random_target = up_flank + utils.rev_comp(random_mirseq[1:8]) + 'A' + down_flank
+            random_images.append(np.outer(utils.one_hot_encode(random_mirseq), utils.one_hot_encode(random_target)))
+            flank_ATs = np.sum([x in ['A','T'] for x in (up_flank + down_flank)])
+            random_labels.append([-4.5 - (0.5 * flank_ATs)])
+            random_stypes.append(b'8mer')
 
-            # 90% of the time, generate miRNA and target with no pairing and assign KD of 0
-            else:
-                rbns2_mir = np.random.choice(TRAIN_MIRS_KDS)
-                random_mirs.append(rbns2_mir.encode('utf-8'))
-                rbns2_target = utils.generate_random_seq(3) + utils.rev_comp(MIRNA_DATA.loc[rbns2_mir]['guide_seq'][1:7]) + utils.generate_random_seq(3)
-                rbns2_mirseq = utils.get_mir_no_match(rbns2_target, options.MIRLEN)
-                random_images.append(np.outer(utils.one_hot_encode(rbns2_mirseq), utils.one_hot_encode(rbns2_target)))
-                random_labels.append([0.0])
-                random_stypes.append(b'no site')
+            # generate miRNA and target with no pairing and assign KD of 0
+            rbns2_mir = np.random.choice(TRAIN_MIRS_KDS)
+            random_mirs.append(rbns2_mir.encode('utf-8'))
+            rbns2_target = utils.generate_random_seq(3) + utils.rev_comp(MIRNA_DATA.loc[rbns2_mir]['guide_seq'][1:7]) + utils.generate_random_seq(3)
+            rbns2_mirseq = utils.get_mir_no_match(rbns2_target, options.MIRLEN)
+            random_images.append(np.outer(utils.one_hot_encode(rbns2_mirseq), utils.one_hot_encode(rbns2_target)))
+            random_labels.append([0.0])
+            random_stypes.append(b'no site')
 
             yield np.array(random_mirs), np.stack(random_images), np.array(random_labels), np.array(random_stypes)
 
@@ -244,13 +251,12 @@ if __name__ == '__main__':
     random_seq_iterator = random_seq_dataset.make_initializable_iterator()
     random_seq_mirs, random_seq_images, random_seq_labels, random_seq_stypes = random_seq_iterator.get_next()
 
-    NUM_EXTRA_KD_VALS = 2
-
     next_kd_batch = {
         'mirs': tf.concat([next_kd_batch_mirs, random_seq_mirs], axis=0),
         'images': tf.concat([next_kd_batch_images, random_seq_images], axis=0),
         'labels': tf.nn.relu(-1 * tf.concat([next_kd_batch_labels, random_seq_labels], axis=0)),
         'stypes': tf.concat([next_kd_batch_stypes, random_seq_stypes], axis=0),
+        'weights': tf.constant(([[1.0]] * options.KD_BATCH_SIZE) + ([[0.1]] * NUM_EXTRA_KD_VALS))
     }
 
     # create placeholders for input data
@@ -270,14 +276,26 @@ if __name__ == '__main__':
 
     # split data into biochem and repression and get biochem loss
     _pred_biochem = _pred_ka_values[:tf.shape(next_kd_batch['images'])[0], :]
-    _ka_loss = tf.nn.l2_loss(tf.nn.relu(_pred_biochem) - next_kd_batch['labels']) / options.KD_BATCH_SIZE
+    _ka_weighted_difference = next_kd_batch['weights'] * tf.square(tf.nn.relu(_pred_biochem) - next_kd_batch['labels'])
+    _ka_loss = tf.reduce_sum(_ka_weighted_difference) / (2 * options.KD_BATCH_SIZE)
+    # _ka_loss = tf.nn.l2_loss(tf.nn.relu(_pred_biochem) - next_kd_batch['labels']) / options.KD_BATCH_SIZE
     _utr_ka_values = _pred_ka_values[tf.shape(next_kd_batch['images'])[0]:, :]
 
     # create freeAGO concentration variables
-    _freeAGO_mean = tf.get_variable('freeAGO_mean', shape=(), initializer=tf.constant_initializer(-4.0))
-    _freeAGO_guide_offset = tf.get_variable('freeAGO_guide_offset', shape=[NUM_TRAIN_GUIDES], initializer=tf.constant_initializer(0.0))
+    if options.FIX_LAYERS:
+        FREEAGO_INIT = -4.9
+        FREEAGO_GUIDE_OFFSET = 0.0
+        FREEAGO_PASS_OFFSET = -2.0
+    else:
+        FREEAGO_INIT = -4.0
+        FREEAGO_GUIDE_OFFSET = 0.0
+        FREEAGO_PASS_OFFSET = -1.0
+        
+
+    _freeAGO_mean = tf.get_variable('freeAGO_mean', shape=(), initializer=tf.constant_initializer(FREEAGO_INIT))
+    _freeAGO_guide_offset = tf.get_variable('freeAGO_guide_offset', shape=[NUM_TRAIN_GUIDES], initializer=tf.constant_initializer(FREEAGO_GUIDE_OFFSET))
     if options.PASSENGER:
-        _freeAGO_pass_offset = tf.get_variable('freeAGO_pass_offset', shape=[NUM_TRAIN_GUIDES], initializer=tf.constant_initializer(-1.0))
+        _freeAGO_pass_offset = tf.get_variable('freeAGO_pass_offset', shape=[NUM_TRAIN_GUIDES], initializer=tf.constant_initializer(FREEAGO_PASS_OFFSET))
         _freeAGO_all = tf.reshape(tf.stack([_freeAGO_guide_offset, _freeAGO_pass_offset], axis=1), [-1]) + _freeAGO_mean
         _freeAGO_all_val = tf.placeholder(tf.float32, shape=[len(ALL_GUIDES) * 2], name='freeAGO_val')
     else:
@@ -287,15 +305,20 @@ if __name__ == '__main__':
     tf.summary.scalar('freeAGO', _freeAGO_mean)
 
     # make feature weights
-    weights_init = np.array([-0.1]*options.USE_FEATS).reshape([options.USE_FEATS, 1])
+    if options.FIX_LAYERS:
+        WEIGHTS_INIT = np.array([-2.22] + [-0.1]*(options.USE_FEATS - 1)).reshape([options.USE_FEATS, 1])
+        DECAY_INIT = 0.0
+    else:
+        WEIGHTS_INIT = np.array([-1.0]*options.USE_FEATS).reshape([options.USE_FEATS, 1])
+        DECAY_INIT = -1.5
 
     # create ts7 weight variable
     with tf.name_scope('ts7_layer'):
         with tf.name_scope('weights'):
             _ts7_weights = tf.get_variable("ts7_weights", shape=[options.USE_FEATS, 1],
-                                        initializer=tf.constant_initializer(weights_init))
+                                        initializer=tf.constant_initializer(WEIGHTS_INIT))
             tf.add_to_collection('weight', _ts7_weights)
-            _decay = tf.get_variable('decay', initializer=-1.0)
+            _decay = tf.get_variable('decay', initializer=DECAY_INIT)
             _ts7_bias = tf.get_variable('ts7_bias', initializer=1.0, trainable=False)
             model.variable_summaries(_ts7_weights)
 
@@ -352,7 +375,7 @@ if __name__ == '__main__':
         _loss = _ka_loss
         
     else:
-        _loss = (_ka_loss + _repression_loss + _regularize_term)
+        _loss = (_ka_loss + _repression_loss)# + _regularize_term)
 
     # add to tensorboard
     tf.summary.scalar('ka_loss', _ka_loss)
@@ -360,11 +383,16 @@ if __name__ == '__main__':
     tf.summary.scalar('loss', _loss)
 
 
-    # add rate decay
     _global_step = tf.Variable(0, trainable=False)
-    _learning_rate = tf.train.exponential_decay(options.LEARNING_RATE, _global_step,
-                                           5000, 0.95, staircase=True)
-    tf.summary.scalar('learning_rate', _learning_rate)
+    # add rate decay
+    # _learning_rate = tf.train.exponential_decay(options.LEARNING_RATE, _global_step,
+    #                                        5000, 0.90, staircase=True)
+
+    _learning_rate = tf.train.cosine_decay(options.LEARNING_RATE, _global_step, 30000)
+
+    # # add SGDR decay
+    # _learning_rate = tf.train.cosine_decay_restarts(options.LEARNING_RATE, _global_step, 2000, t_mul=2.0, m_mul=0.75, alpha=0.0)
+    # tf.summary.scalar('learning_rate', _learning_rate)
 
     _update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
     print('Update OPs:')
@@ -372,13 +400,23 @@ if __name__ == '__main__':
     with tf.control_dependencies(_update_ops):
         optimizer = tf.train.AdamOptimizer(_learning_rate)
 
+        # get gradients, fix earlier layers if training more features
+        if options.FIX_LAYERS:
+            var_list = [_freeAGO_mean, _freeAGO_guide_offset, _ts7_weights, _decay]
+            if options.PASSENGER:
+                var_list.append(_freeAGO_pass_offset)
+            gradients, variables = zip(*optimizer.compute_gradients(loss=_loss, var_list=var_list))
+        else:
+            gradients, variables = zip(*optimizer.compute_gradients(loss=_loss))
+
         # clip gradients
-        gradients, variables = zip(*optimizer.compute_gradients(loss=_loss))
-        gradients, _ = tf.clip_by_global_norm(gradients, 5.0)
+        # gradients, _ = tf.clip_by_global_norm(gradients, 5.0)
         _train_step = optimizer.apply_gradients(zip(gradients, variables), global_step=_global_step)
 
         for gradient, variable in zip(gradients, variables):
-            tf.summary.histogram("gradients/" + variable.name, tf.nn.l2_loss(gradient))
+            if variable.name != 'decay:0':
+                print(variable.name)
+                tf.summary.histogram("gradients/" + variable.name, tf.nn.l2_loss(gradient))
             tf.summary.histogram("variables/" + variable.name, tf.nn.l2_loss(variable))
 
     # make saver for whole model
@@ -394,8 +432,112 @@ if __name__ == '__main__':
     decays = []
     r2s = []
     lrs = []
+    USE_BATCH_NORM = (options.FIX_LAYERS is False)
     conf = tf.ConfigProto(inter_op_parallelism_threads=4, intra_op_parallelism_threads=24) 
     with tf.Session(config=conf) as sess:
+        if options.PREDICT:
+            sess.run(tf.global_variables_initializer())
+
+            latest = tf.train.latest_checkpoint(options.LOAD_MODEL)
+            print('Restoring from {}'.format(latest))
+            saver.restore(sess, latest)
+
+            sess.run(tpm_val_iterator.initializer)
+            tpm_val_handle = sess.run(tpm_val_iterator.string_handle())
+
+            if options.PASSENGER:
+                current_freeAGO_all = sess.run(_freeAGO_all).reshape([-1, 2])
+            else:
+                current_freeAGO_all = sess.run(_freeAGO_all).reshape([-1, 1])
+
+            # new_freeago_dict = {
+            #     'lsy6': [-4.972625, -7.195750],
+            #     'mir1': [-4.878000, -6.243875],
+            #     'mir124': [-4.782875, -5.566750],
+            #     'mir137': [-4.523000, -6.573571],
+            #     'mir139': [-5.695286, -6.175000],
+            #     'mir143': [-5.303429, -6.507429],
+            #     'mir144': [-5.517143, -6.017286],
+            #     'mir153': [-4.930625, -6.278500],
+            #     'mir155': [-4.748500, -7.158875],
+            #     'mir182': [-5.479429, -6.230286],
+            #     'mir199a': [-4.991500, -6.119000],
+            #     'mir204': [-5.366000, -6.183286],
+            #     'mir205': [-5.319286, -7.051143],
+            #     'mir216b': [-5.345857, -6.223143],
+            #     'mir223': [-5.018250, -7.198500],
+            #     'mir7': [-5.377375, -7.859625],
+            # }
+
+            new_freeago_dict = {
+                'lsy6': [-4.745364, -7.256909],
+                'mir1': [-4.586545, -6.197455],
+                'mir124': [-4.651000, -10.88718],
+                'mir137': [-3.886800, -6.943700],
+                'mir139': [-5.591000, -5.881200],
+                'mir143': [-4.970400, -6.564500],
+                'mir144': [-5.394200, -5.908100],
+                'mir153': [-4.521300, -6.070700],
+                'mir155': [-4.482182, -7.813091],
+                'mir182': [-5.253100, -5.968500],
+                'mir199a': [-4.664700, -5.986600],
+                'mir204': [-4.900700, -6.092500],
+                'mir205': [-5.087600, -6.748800],
+                'mir216b': [-5.065900, -5.936400],
+                'mir223': [-4.652400, -7.334400],
+                'mir7': [-5.207000, -8.619455]
+            }
+
+            if len(VAL_GUIDES) > 0:
+                if options.PASSENGER:
+                    new_freeago = new_freeago_dict[options.VAL_MIR]
+                else:
+                    new_freeago = [new_freeago_dict[options.VAL_MIR][0]]
+                current_freeAGO_all_val = np.concatenate([current_freeAGO_all, np.array([new_freeago])], axis=0).flatten()
+            else:
+                current_freeAGO_all_val = current_freeAGO_all.flatten()
+
+
+            print(current_freeAGO_all_val.shape)
+            transcripts, pred_vals, real_vals, real_nsites = [], [], [], []
+            while True:
+                try:
+                    temp_tpm_batch = sess.run(next_tpm_sample, feed_dict={tpm_handle: tpm_val_handle})
+                    transcripts.append(temp_tpm_batch['transcripts'])
+                    real_vals.append(temp_tpm_batch['labels'])
+                    ka_vals = sess.run(_pred_ka_values, feed_dict={_phase_train: False, _dropout_rate: 0.0, _combined_x: temp_tpm_batch['images']})
+                    pred_vals.append(sess.run(_pred_logfc_val,
+                        feed_dict={
+                            _utr_ka_values: ka_vals,
+                            next_tpm_batch['nsites']: temp_tpm_batch['nsites'],
+                            next_tpm_batch['features']: temp_tpm_batch['features'],
+                            next_tpm_batch['labels']: temp_tpm_batch['labels'],
+                            _freeAGO_all_val: current_freeAGO_all_val
+                        }))
+                except tf.errors.OutOfRangeError:
+                    break
+
+            transcripts = np.concatenate(transcripts)
+            pred_vals = np.concatenate(pred_vals)
+            real_vals = np.concatenate(real_vals)
+
+            pred_vals_normed = pred_vals - np.mean(pred_vals, axis=1).reshape([-1,1])
+            real_vals_normed = real_vals - np.mean(real_vals, axis=1).reshape([-1,1])
+
+            pred_df = pd.DataFrame({
+                'transcript': np.repeat(transcripts.flatten(), len(TRAIN_GUIDES + VAL_GUIDES)),
+                'mir': list(TRAIN_GUIDES + VAL_GUIDES) * len(transcripts),
+                'pred': pred_vals.flatten(),
+                'label': real_vals.flatten(),
+                'pred_normed': pred_vals_normed.flatten(),
+                'label_normed': real_vals_normed.flatten()
+            })
+            temp = pred_df[pred_df['mir'] == options.VAL_MIR]
+            print(stats.linregress(temp['pred_normed'], temp['label_normed'])[2]**2)
+
+            pred_df.to_csv(os.path.join(options.LOGDIR, 'pred_df_all.txt'), sep='\t', index=False)
+
+            sys.exit()
 
         # Merge all the summaries and write them out
         _merged = tf.summary.merge_all()
@@ -409,17 +551,19 @@ if __name__ == '__main__':
         sess.run(random_seq_iterator.initializer)
 
         print(sess.run(_pred_ka_values, feed_dict={_phase_train: False, _dropout_rate: 0.0, _combined_x: testcase_image}))
-        print(sess.run(_pred_ka_values, feed_dict={_phase_train: True, _dropout_rate: 0.0, _combined_x: testcase_image}))
-        print(sess.run(_pred_ka_values, feed_dict={_phase_train: True, _dropout_rate: options.DROPOUT_RATE, _combined_x: testcase_image}))
+        print(sess.run(_pred_ka_values, feed_dict={_phase_train: USE_BATCH_NORM, _dropout_rate: 0.0, _combined_x: testcase_image}))
+        print(sess.run(_pred_ka_values, feed_dict={_phase_train: USE_BATCH_NORM, _dropout_rate: options.DROPOUT_RATE, _combined_x: testcase_image}))
 
         if options.LOAD_MODEL is not None:
             latest = tf.train.latest_checkpoint(options.LOAD_MODEL)
             print('Restoring from {}'.format(latest))
             saver.restore(sess, latest)
 
+            sess.run(tf.initialize_variables([_learning_rate]))
+
         print(sess.run(_pred_ka_values, feed_dict={_phase_train: False, _dropout_rate: 0.0, _combined_x: testcase_image}))
-        print(sess.run(_pred_ka_values, feed_dict={_phase_train: True, _dropout_rate: 0.0, _combined_x: testcase_image}))
-        print(sess.run(_pred_ka_values, feed_dict={_phase_train: True, _dropout_rate: options.DROPOUT_RATE, _combined_x: testcase_image}))
+        print(sess.run(_pred_ka_values, feed_dict={_phase_train: USE_BATCH_NORM, _dropout_rate: 0.0, _combined_x: testcase_image}))
+        print(sess.run(_pred_ka_values, feed_dict={_phase_train: USE_BATCH_NORM, _dropout_rate: options.DROPOUT_RATE, _combined_x: testcase_image}))
 
         num_steps = 0
         for current_epoch in range(options.NUM_EPOCHS):
@@ -429,7 +573,7 @@ if __name__ == '__main__':
             tpm_train_handle = sess.run(tpm_train_iterator.string_handle())
 
             train_feed_dict = {
-                _phase_train: True,
+                _phase_train: USE_BATCH_NORM,
                 _dropout_rate: options.DROPOUT_RATE,
                 tpm_handle: tpm_train_handle,
                 kd_handle: kd_train_handle
@@ -685,14 +829,15 @@ if __name__ == '__main__':
                 plt.close()
                 
                 print(sess.run(_pred_ka_values, feed_dict={_phase_train: False, _dropout_rate: 0.0, _combined_x: testcase_image}))
-                print(sess.run(_pred_ka_values, feed_dict={_phase_train: True, _dropout_rate: 0.0, _combined_x: testcase_image}))
-                print(sess.run(_pred_ka_values, feed_dict={_phase_train: True, _dropout_rate: options.DROPOUT_RATE, _combined_x: testcase_image}))
+                print(sess.run(_pred_ka_values, feed_dict={_phase_train: USE_BATCH_NORM, _dropout_rate: 0.0, _combined_x: testcase_image}))
+                print(sess.run(_pred_ka_values, feed_dict={_phase_train: USE_BATCH_NORM, _dropout_rate: options.DROPOUT_RATE, _combined_x: testcase_image}))
 
             if options.DRY_RUN:
                 print(evals_dict['next_tpm_batch']['images'].shape)
                 print(evals_dict['next_tpm_batch']['features'].shape)
                 print(evals_dict['next_kd_batch']['images'].shape)
-                print(test_case.shape)
+                print(evals_dict['next_kd_batch']['labels'].shape)
+                print(testcase_image.shape)
                 print(evals_dict['next_tpm_batch']['transcripts'])
                 print(evals_dict['next_tpm_batch']['nsites'])
                 print(evals_dict['next_tpm_batch']['labels'])

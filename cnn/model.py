@@ -28,21 +28,14 @@ def get_conv_params(dim1, dim2, in_channels, out_channels, layer_name):
         # add variable to collection of variables
         tf.add_to_collection('weight', weights)
         variable_summaries(weights)
-    with tf.name_scope('biases'):
-        biases = tf.get_variable("{}_bias".format(layer_name), shape=[out_channels],
-                              initializer=tf.constant_initializer(0.1))
 
-        # add variable to collection of variables
-        tf.add_to_collection('bias', biases)
-        variable_summaries(biases)
-
-    return weights, biases
+    return weights
 
 def seq2ka_predictor(input_data, dropout_rate, phase_train, hidden1, hidden2, hidden3, mirlen, seqlen):
     # add layer 1
     with tf.name_scope('layer1'):
-        _w1, _b1 = get_conv_params(4, 4, 1, hidden1, 'layer1')
-        _preactivate1 = tf.nn.conv2d(input_data, _w1, strides=[1, 4, 4, 1], padding='VALID') + _b1
+        _w1 = get_conv_params(4, 4, 1, hidden1, 'layer1')
+        _preactivate1 = tf.nn.conv2d(input_data, _w1, strides=[1, 4, 4, 1], padding='VALID')
         # _preactivate1_bn = tf.keras.layers.BatchNormalization(axis=-1, scale=False)(_preactivate1, training=phase_train)
         _preactivate1_bn = tf.layers.batch_normalization(_preactivate1, training=phase_train, renorm=True)
         _layer1 = tf.nn.leaky_relu(_preactivate1_bn)
@@ -51,8 +44,8 @@ def seq2ka_predictor(input_data, dropout_rate, phase_train, hidden1, hidden2, hi
 
     # add layer 2
     with tf.name_scope('layer2'):
-        _w2, _b2 = get_conv_params(2, 2, hidden1, hidden2, 'layer2')
-        _preactivate2 = tf.nn.conv2d(_layer1, _w2, strides=[1, 1, 1, 1], padding='VALID') + _b2
+        _w2 = get_conv_params(2, 2, hidden1, hidden2, 'layer2')
+        _preactivate2 = tf.nn.conv2d(_layer1, _w2, strides=[1, 1, 1, 1], padding='VALID')
         # _preactivate2_bn = tf.keras.layers.BatchNormalization(axis=-1, scale=False)(_preactivate2, training=phase_train)
         _preactivate2_bn = tf.layers.batch_normalization(_preactivate2, training=phase_train, renorm=True)
         _layer2 = tf.nn.leaky_relu(_preactivate2_bn)
@@ -62,8 +55,8 @@ def seq2ka_predictor(input_data, dropout_rate, phase_train, hidden1, hidden2, hi
 
     # add layer 2.5
     with tf.name_scope('layer2_5'):
-        _w2_5, _b2_5 = get_conv_params(4, 4, hidden2, hidden2, 'layer2_5')
-        _preactivate2_5 = tf.nn.conv2d(_dropout2, _w2_5, strides=[1, 1, 1, 1], padding='VALID') + _b2_5
+        _w2_5 = get_conv_params(4, 4, hidden2, hidden2, 'layer2_5')
+        _preactivate2_5 = tf.nn.conv2d(_dropout2, _w2_5, strides=[1, 1, 1, 1], padding='VALID')
         # _preactivate2_5_bn = tf.keras.layers.BatchNormalization(axis=-1, scale=False)(_preactivate2_5, training=phase_train)
         _preactivate2_5_bn = tf.layers.batch_normalization(_preactivate2_5, training=phase_train, renorm=True)
         _layer2_5 = tf.nn.leaky_relu(_preactivate2_5_bn)
@@ -72,8 +65,8 @@ def seq2ka_predictor(input_data, dropout_rate, phase_train, hidden1, hidden2, hi
 
     # add layer 3
     with tf.name_scope('layer3'):
-        _w3, _b3 = get_conv_params(mirlen - 4, seqlen - 4, hidden2, hidden3, 'layer3')
-        _preactivate3 = tf.nn.conv2d(_dropout2_5, _w3, strides=[1, 1, 1, 1], padding='VALID') + _b3
+        _w3 = get_conv_params(mirlen - 4, seqlen - 4, hidden2, hidden3, 'layer3')
+        _preactivate3 = tf.nn.conv2d(_dropout2_5, _w3, strides=[1, 1, 1, 1], padding='VALID')
         # _preactivate3_bn = tf.keras.layers.BatchNormalization()(_preactivate3, training=phase_train)
         _preactivate3_bn = tf.layers.batch_normalization(_preactivate3, training=phase_train, renorm=True)
         _layer3 = tf.nn.leaky_relu(_preactivate3_bn)
@@ -98,20 +91,17 @@ def seq2ka_predictor(input_data, dropout_rate, phase_train, hidden1, hidden2, hi
             variable_summaries(_w4)
         with tf.name_scope('biases'):
             _b4 = tf.get_variable("final_layer_bias", shape=[1],
-                                initializer=tf.constant_initializer(1.0))
+                                initializer=tf.constant_initializer(0.0))
             tf.add_to_collection('bias', _b4)
             variable_summaries(_b4)
 
         # apply final layer
-        _pred_ka_values = tf.nn.leaky_relu(tf.add(tf.matmul(_layer_flat, _w4), _b4), name='pred_ka')
+        _pred_ka_values = tf.add(tf.matmul(_layer_flat, _w4), _b4, name='pred_ka')
 
     _cnn_weights = {
         'w1': _w1,
-        'b1': _b1,
         'w2': _w2,
-        'b2': _b2,
         'w3': _w3,
-        'b3': _b3,
         'w4': _w4,
         'b4': _b4,
     }
@@ -135,18 +125,18 @@ def pad_vals(vals, split_sizes, num_mirs, batch_size, fill_val):
 
     return vals_reshaped
 
-def pad_vals2(vals, split_sizes, num_mirs, batch_size, fill_val):
+# def pad_vals2(vals, split_sizes, num_mirs, batch_size, fill_val):
 
-    # get dense shape
-    dense_shape = tf.stack([tf.constant(batch_size, dtype=tf.int64), tf.constant(num_mirs, dtype=tf.int64), tf.cast(tf.reduce_max(split_sizes), dtype=tf.int64)])
+#     # get dense shape
+#     dense_shape = tf.stack([tf.constant(batch_size, dtype=tf.int64), tf.constant(num_mirs, dtype=tf.int64), tf.cast(tf.reduce_max(split_sizes), dtype=tf.int64)])
     
-    # get dense indices
-    mask = tf.greater(tf.reshape(split_sizes, [-1, 1]), tf.reshape(tf.range(tf.reduce_max(split_sizes)), [1, -1]))
-    mask = tf.reshape(mask, [batch_size, num_mirs, -1])
-    dense_indices = tf.where(mask)
+#     # get dense indices
+#     mask = tf.greater(tf.reshape(split_sizes, [-1, 1]), tf.reshape(tf.range(tf.reduce_max(split_sizes)), [1, -1]))
+#     mask = tf.reshape(mask, [batch_size, num_mirs, -1])
+#     dense_indices = tf.where(mask)
 
-    padded = tf.sparse.to_dense(tf.sparse.SparseTensor(dense_indices, vals, dense_shape), default_value=fill_val)
-    return padded, tf.cast(mask, tf.float32)
+#     padded = tf.sparse.to_dense(tf.sparse.SparseTensor(dense_indices, vals, dense_shape), default_value=fill_val)
+#     return padded, tf.cast(mask, tf.float32)
 
 def get_pred_logfc_occupancy_only(_utr_ka_values, _freeAGO_all, _tpm_batch, _ts7_weights, _ts7_bias, _decay, batch_size, passenger, num_guides, name, loss_type):
     if passenger:
@@ -163,7 +153,7 @@ def get_pred_logfc_occupancy_only(_utr_ka_values, _freeAGO_all, _tpm_batch, _ts7
     _weighted_features_padded = pad_vals(_weighted_features, _tpm_batch['nsites'], num_mirs, batch_size, fill_val=-100.0)
     _ka_vals_padded = pad_vals(_utr_ka_values_squeezed, _tpm_batch['nsites'], num_mirs, batch_size, fill_val=-100.0)
 
-    _merged_features_mask = tf.cast(tf.greater(_ka_vals_padded, 0), tf.float32)
+    _merged_features_mask = tf.cast(tf.greater(_ka_vals_padded, -50.0), tf.float32)
     _nbound_init = tf.sigmoid(_weighted_features_padded + tf.reshape(_freeAGO_all, [1, -1, 1]))
     _nbound = tf.sigmoid((_weighted_features_padded + _ka_vals_padded) + tf.reshape(_freeAGO_all, [1, -1, 1]))
     _nbound_net = _nbound - _nbound_init
@@ -191,45 +181,45 @@ def get_pred_logfc_occupancy_only(_utr_ka_values, _freeAGO_all, _tpm_batch, _ts7
     return _pred_logfc, _pred_logfc_normed, _repression_y_normed, (_masked_nbound)
 
 
-def get_pred_logfc_occupancy_only2(_utr_ka_values, _freeAGO_all, _tpm_batch, _ts7_weights, _ts7_bias, _decay, batch_size, passenger, num_guides, name, loss_type):
-    if passenger:
-        num_mirs = num_guides * 2
-    else:
-        num_mirs = num_guides
+# def get_pred_logfc_occupancy_only2(_utr_ka_values, _freeAGO_all, _tpm_batch, _ts7_weights, _ts7_bias, _decay, batch_size, passenger, num_guides, name, loss_type):
+#     if passenger:
+#         num_mirs = num_guides * 2
+#     else:
+#         num_mirs = num_guides
 
-    # merge with other features
-    _weighted_features = tf.squeeze(tf.matmul(_tpm_batch['features'], _ts7_weights))
-    _merged_features = tf.squeeze(_utr_ka_values) + _weighted_features # + _ts7_bias
+#     # merge with other features
+#     _weighted_features = tf.squeeze(tf.matmul(_tpm_batch['features'], _ts7_weights))
+#     _merged_features = tf.squeeze(_utr_ka_values) + _weighted_features # + _ts7_bias
 
-    # pad values
-    _weighted_features_padded, _ = pad_vals2(_weighted_features, _tpm_batch['nsites'], num_mirs, batch_size, fill_val=-100.0)
-    _merged_features_padded, _merged_features_mask = pad_vals2(_merged_features, _tpm_batch['nsites'], num_mirs, batch_size, fill_val=-100.0)
+#     # pad values
+#     _weighted_features_padded, _ = pad_vals2(_weighted_features, _tpm_batch['nsites'], num_mirs, batch_size, fill_val=-100.0)
+#     _merged_features_padded, _merged_features_mask = pad_vals2(_merged_features, _tpm_batch['nsites'], num_mirs, batch_size, fill_val=-100.0)
 
-    # _merged_features_mask = tf.cast(tf.greater(_ka_vals_padded, 0), tf.float32)
-    _nbound_init = tf.sigmoid(_weighted_features_padded + tf.reshape(_freeAGO_all, [1, -1, 1]))
-    _nbound = tf.sigmoid(_merged_features_padded + tf.reshape(_freeAGO_all, [1, -1, 1]))
-    _nbound_net = _nbound - _nbound_init
+#     # _merged_features_mask = tf.cast(tf.greater(_ka_vals_padded, 0), tf.float32)
+#     _nbound_init = tf.sigmoid(_weighted_features_padded + tf.reshape(_freeAGO_all, [1, -1, 1]))
+#     _nbound = tf.sigmoid(_merged_features_padded + tf.reshape(_freeAGO_all, [1, -1, 1]))
+#     _nbound_net = _nbound - _nbound_init
 
-    _masked_nbound = tf.multiply(_nbound_net, _merged_features_mask)
+#     _masked_nbound = tf.multiply(_nbound_net, _merged_features_mask)
 
-    # calculate occupancy
-    _occupancy = tf.exp(_decay) * tf.reduce_sum(_masked_nbound, axis=2)
+#     # calculate occupancy
+#     _occupancy = tf.exp(_decay) * tf.reduce_sum(_masked_nbound, axis=2)
 
-    # Add guide and passenger strand occupancies, if applicable
-    if passenger:
-        _occupancy = tf.reduce_sum(tf.reshape(_occupancy, [-1, num_guides, 2]), axis=2)
+#     # Add guide and passenger strand occupancies, if applicable
+#     if passenger:
+#         _occupancy = tf.reduce_sum(tf.reshape(_occupancy, [-1, num_guides, 2]), axis=2)
 
-    # get logfc
-    _pred_logfc = -1 * tf.log1p(_occupancy)
+#     # get logfc
+#     _pred_logfc = -1 * tf.log1p(_occupancy)
 
-    if loss_type == 'MEAN_CENTER':
-        _pred_logfc_normed = _pred_logfc - tf.reshape(tf.reduce_mean(_pred_logfc, axis=1), [-1, 1])
-        _repression_y_normed = _tpm_batch['labels'] - tf.reshape(tf.reduce_mean(_tpm_batch['labels'], axis=1), [-1, 1])
-    else:
-        _pred_logfc_normed = _pred_logfc
-        _repression_y_normed = _tpm_batch['labels']
+#     if loss_type == 'MEAN_CENTER':
+#         _pred_logfc_normed = _pred_logfc - tf.reshape(tf.reduce_mean(_pred_logfc, axis=1), [-1, 1])
+#         _repression_y_normed = _tpm_batch['labels'] - tf.reshape(tf.reduce_mean(_tpm_batch['labels'], axis=1), [-1, 1])
+#     else:
+#         _pred_logfc_normed = _pred_logfc
+#         _repression_y_normed = _tpm_batch['labels']
 
-    return _pred_logfc, _pred_logfc_normed, _repression_y_normed, (_masked_nbound)
+#     return _pred_logfc, _pred_logfc_normed, _repression_y_normed, (_masked_nbound)
 
 
 def get_pred_logfc_separate(_utr_ka_values, _freeAGO_all, _tpm_batch, _ts7_weights, _ts7_bias, _decay, batch_size, passenger, num_guides, name, loss_type):
@@ -295,189 +285,4 @@ def get_pred_logfc(_utr_ka_values, _freeAGO_all, _tpm_batch, _ts7_weights, batch
         _repression_y_normed = _tpm_batch['labels']
 
     return _pred_logfc, _pred_logfc_normed, _repression_y_normed
-
-
-def get_pred_logfc_old(_utr_ka_values, _freeAGO_all, _tpm_batch, _ts7_weights, batch_size, passenger, num_guides, name, loss_type):
-    if passenger:
-        nsites_mir = tf.reduce_sum(tf.reshape(_tpm_batch['nsites'], [num_guides * batch_size, 2]), axis=1)
-        num_mirs = num_guides * 2
-    else:
-        nsites_mir = tf.reshape(_tpm_batch['nsites'], [num_guides * batch_size])
-        num_mirs = num_guides
-
-    _freeAGO_tiled = tf.tile(_freeAGO_all, tf.constant([batch_size]))
-    _freeAGO_tiled = tf.concat([tf.tile(_freeAGO_tiled[ix: ix + 1], _tpm_batch['nsites'][ix: ix + 1]) for ix in range(num_mirs * batch_size)], axis=0)
-
-    _merged_features = tf.concat([_utr_ka_values, _tpm_batch['features']], axis=1)
-    _merged_features = (tf.matmul(_merged_features, _ts7_weights))
-
-    _pred_logfc_ind_sites = -1 * tf.squeeze(tf.sigmoid(_merged_features + tf.expand_dims(_freeAGO_tiled, axis=1)))
-    # _all_feats = tf.concat([_nbound, _tpm_batch['features']], axis=1)
-    # _pred_logfc_ind_sites = -1 * (tf.squeeze(tf.matmul(_all_feats, _ts7_weights)))
-    _pred_logfc_splits = tf.split(_pred_logfc_ind_sites, nsites_mir)
-    _pred_logfc = tf.reshape(tf.stack([tf.reduce_sum(x) for x in _pred_logfc_splits]), [batch_size, num_guides], name=name)
-
-    if loss_type == 'MEAN_CENTER':
-        _pred_logfc_normed = _pred_logfc - tf.reshape(tf.reduce_mean(_pred_logfc, axis=1), [-1, 1])
-        _repression_y_normed = _tpm_batch['labels'] - tf.reshape(tf.reduce_mean(_tpm_batch['labels'], axis=1), [-1, 1])
-    else:
-        _pred_logfc_normed = _pred_logfc
-        _repression_y_normed = _tpm_batch['labels']
-
-    return _pred_logfc, _pred_logfc_normed, _repression_y_normed
-    # return _pred_logfc
-
-
-# class MirModel:
-#     def __init__(self, mirlen, num_feats, seqlen, train_mirs, all_mirs, rbns_train_mirs, tpm_batch_size, kd_batch_size):
-#         self.mirlen = mirlen
-#         self.seqlen = seqlen
-#         self.num_feats = num_feats
-#         self.train_mirs = train_mirs.flatten()
-#         self.all_mirs = all_mirs.flatten()
-#         self.num_train_mirs = len(train_mirs.flatten())
-#         self.num_train_experiments = train_mirs.shape[0]
-#         self.num_experiments = all_mirs.shape[0]
-#         self.rbns_train_mirs = rbns_train_mirs
-#         self.tpm_batch_size = tpm_batch_size
-#         self.kd_batch_size = kd_batch_size
-
-#         self.vars = {}
-#         self.tensors = {}
-
-#         self.vars['freeAGO_mean'] = tf.get_variable('freeAGO_mean', shape=(), initializer=tf.constant_initializer(-4.0))
-#         self.vars['freeAGO_offset'] = tf.get_variable('freeAGO_offset', shape=[self.num_train_mirs], initializer=tf.constant_initializer(0.0))
-#         self.vars['freeAGO_all'] = self.vars['freeAGO_mean'] + self.vars['freeAGO_offset']
-
-#         # create placeholders for input data
-#         self.keep_prob = tf.placeholder(tf.float32, name='keep_prob')
-#         self.phase_train = tf.placeholder(tf.bool, name='phase_train')
-
-#         # create ts7 weight variable
-#         with tf.name_scope('ts7_layer'):
-#             with tf.name_scope('weights'):
-#                 ts7_weights = tf.get_variable("ts7_weights", shape=[self.num_feats + 1, 1],
-#                                             initializer=tf.truncated_normal_initializer(stddev=0.1))
-#                 tf.add_to_collection('weight', ts7_weights)
-
-#         self.vars['ts7_weights'] = ts7_weights
-
-
-#     def add_tpm_data(self, tpm_dataset):
-
-#         tpm_train_dataset = tpm_dataset.shuffle(buffer_size=1000)
-
-#         def _parse_fn_train(x):
-#             return parse_data_utils._parse_repression_function(x, self.train_mirs, self.all_mirs, self.mirlen, self.seqlen, self.num_feats)
-
-#         def _parse_fn_val(x):
-#             return parse_data_utils._parse_repression_function(x, self.all_mirs, self.all_mirs, self.mirlen, self.seqlen, self.num_feats)
-
-#         # preprocess data
-#         tpm_train_dataset = tpm_train_dataset.map(_parse_fn_train)
-#         tpm_val_dataset = tpm_dataset.map(_parse_fn_val)
-
-#         # make feedable iterators
-#         self.tpm_train_iterator = tpm_train_dataset.make_initializable_iterator()
-#         self.tpm_val_iterator = tpm_val_dataset.make_initializable_iterator()
-
-#         # create handle for switching between training and validation
-#         self.tpm_handle = tf.placeholder(tf.string, shape=[])
-#         tpm_iterator = tf.data.Iterator.from_string_handle(tpm_handle, tpm_train_dataset.output_types)
-#         self.next_tpm_batch = parse_data_utils._build_tpm_batch(tpm_iterator, self.tpm_batch_size)
-
-
-#     def add_kd_data(self, kd_train_dataset, kd_val_dataset):
-
-#         # shuffle, batch, and map datasets
-#         kd_train_dataset = kd_train_dataset.shuffle(buffer_size=1000, reshuffle_each_iteration=None)
-#         kd_train_dataset = kd_train_dataset.map(parse_data_utils._parse_log_kd_function)
-#         kd_train_dataset = kd_train_dataset.batch(self.kd_batch_size, drop_remainder=True)
-
-#         kd_val_dataset = kd_val_dataset.shuffle(buffer_size=1000, reshuffle_each_iteration=None)
-#         kd_val_dataset = kd_val_dataset.map(parse_data_utils._parse_log_kd_function)
-#         kd_val_dataset = kd_val_dataset.batch(1000, drop_remainder=True)
-
-#         # make feedable iterators
-#         self.kd_train_iterator = kd_train_dataset.make_initializable_iterator()
-#         self.kd_val_iterator = kd_val_dataset.make_initializable_iterator()
-
-#         # create handle for switching between training and validation
-#         self.kd_handle = tf.placeholder(tf.string, shape=[])
-#         kd_iterator = tf.data.Iterator.from_string_handle(kd_handle, kd_train_dataset.output_types)
-#         next_kd_batch_mirs, next_kd_batch_images, next_kd_batch_labels = kd_iterator.get_next()
-
-#         self.next_kd_batch = {
-#             'mirs': next_kd_batch_mirs,
-#             'images': next_kd_batch_images,
-#             'raw_labels': next_kd_batch_labels,
-#             'labels': tf.nn.relu(-1 * next_kd_batch_labels)
-#         }
-
-
-#     def _predict_ka(self, input_data):
-#         # add layer 1
-#         with tf.name_scope('layer1'):
-#             _w1, _b1 = get_conv_params(4, 4, 1, self.hidden1, 'layer1')
-#             _preactivate1 = tf.nn.conv2d(input_data, _w1, strides=[1, 4, 4, 1], padding='VALID') + _b1
-#             _preactivate1_bn = tf.layers.batch_normalization(_preactivate1, training=self.phase_train)
-#             _layer1 = tf.nn.leaky_relu(_preactivate1_bn)
-
-#         # add layer 2
-#         with tf.name_scope('layer2'):
-#             _w2, _b2 = get_conv_params(2, 2, self.hidden1, self.hidden2, 'layer2')
-#             _preactivate2 = tf.nn.conv2d(_layer1, _w2, strides=[1, 1, 1, 1], padding='VALID') + _b2
-#             _preactivate2_bn = tf.layers.batch_normalization(_preactivate2, training=self.phase_train)
-#             _layer2 = tf.nn.leaky_relu(_preactivate2_bn)
-#             _dropout2 = tf.nn.dropout(_layer2, self.keep_prob)
-
-#         # add layer 3
-#         with tf.name_scope('layer3'):
-#             _w3, _b3 = get_conv_params(self.mirlen - 1, self.seqlen - 1, self.hidden2, self.hidden3, 'layer3')
-#             _preactivate3 = tf.nn.conv2d(_dropout2, _w3, strides=[1, 1, 1, 1], padding='VALID') + _b3
-#             _preactivate3_bn = tf.layers.batch_normalization(_preactivate3, training=self.phase_train)
-#             _layer3 = tf.nn.leaky_relu(_preactivate3_bn)
-#             _dropout3 = tf.nn.dropout(_layer3, self.keep_prob)
-
-#         print('layer1: {}'.format(_layer1))
-#         print('layer2: {}'.format(_layer2))
-#         print('layer3: {}'.format(_layer3))
-
-#         # reshape to 1D tensor
-#         _layer_flat = tf.reshape(_dropout3, [-1, self.hidden3])
-
-#         # add last layer
-#         with tf.name_scope('final_layer'):
-#             with tf.name_scope('weights'):
-#                 _w4 = tf.get_variable("final_layer_weight", shape=[self.hidden3, 1],
-#                                             initializer=tf.truncated_normal_initializer(stddev=0.1))
-#                 tf.add_to_collection('weight', _w4)
-#             with tf.name_scope('biases'):
-#                 _b4 = tf.get_variable("final_layer_bias", shape=[1],
-#                                     initializer=tf.constant_initializer(0.0))
-#                 tf.add_to_collection('bias', _b4)
-
-#             # apply final layer
-#             self.pred_ka_values = tf.nn.relu(tf.add(tf.matmul(_layer_flat, _w4), _b4), name='pred_ka')
-
-#         self.vars['cnn_weights'] = {
-#             'w1': _w1,
-#             'b1': _b1,
-#             'w2': _w2,
-#             'b2': _b2,
-#             'w3': _w3,
-#             'b3': _b3,
-#             'w4': _w4,
-#             'b4': _b4,
-#         }
-
-
-    # def _predict_logfc(self):
-
-
-
-
-
-
-
 

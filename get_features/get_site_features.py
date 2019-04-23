@@ -127,12 +127,12 @@ def calculate_local_au(utr, site_start):
     """
     # find A, U and weights upstream of site
     upstream = utr[max(0, site_start - 30): max(0, site_start)]
-    upstream = [int(x in ['A', 'U']) for x in upstream]
+    upstream = [int(x in ['A', 'T']) for x in upstream]
     upweights = [1.0 / (x + 1) for x in range(len(upstream))][::-1]
 
     # find A,U and weights downstream of site
     downstream = utr[site_start + 12:min(len(utr), site_start + 42)]
-    downstream = [int(x in ['A', 'U']) for x in downstream]
+    downstream = [int(x in ['A', 'T']) for x in downstream]
     downweights = [1.0 / (x + 1) for x in range(len(downstream))]
 
     weighted = np.dot(upstream, upweights) + np.dot(downstream, downweights)
@@ -141,7 +141,7 @@ def calculate_local_au(utr, site_start):
     return weighted / total
 
 
-def get_ts7_features(mirseq, locs, stypes, utr, utr_len, orf_len, upstream_limit, rnaplfold_data, pct_df):
+def get_ts7_features(mirseq, locs, stypes, utr, utr_len, orf_len, upstream_limit, rnaplfold_data, pct_df, in_orf=False):
     # calculate TS7 features
     features = []
     for loc, stype in zip(locs, stypes):
@@ -150,8 +150,12 @@ def get_ts7_features(mirseq, locs, stypes, utr, utr_len, orf_len, upstream_limit
         local_au = calculate_local_au(utr, loc - 3)
         threep = calculate_threep_score(mirseq, utr, loc - 3, upstream_limit)
         # min_dist = min(loc, utr_len - (loc + 6))
-        min_dist = utr_len - (loc + 6)
-        assert (min_dist >= 0), (loc, utr_len)
+        if in_orf:
+            min_dist = (orf_len - (loc + 6)) + utr_len
+        else:
+            min_dist = utr_len - (loc + 6)
+
+        assert (min_dist >= 0), (loc, utr_len, orf_len, in_orf)
 
         # use the rnaplfold data to calculate the site accessibility
         if rnaplfold_data is None:
@@ -187,6 +191,6 @@ def get_ts7_features(mirseq, locs, stypes, utr, utr_len, orf_len, upstream_limit
                 print(pct_df)
                 raise ValueError('PCT locations do not match for {}'.format(transcript))
 
-        features.append([0.0, local_au, threep, sa_score, min_dist/2000.0, utr_len/2000.0, orf_len/2000.0, pct])
+        features.append([float(in_orf), min_dist/2000.0, local_au, threep, sa_score, pct, utr_len/2000.0, orf_len/2000.0])
 
     return np.array(features).astype(float)

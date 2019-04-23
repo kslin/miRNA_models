@@ -14,6 +14,23 @@ def rev_comp(seq):
     return ''.join([match_dict[x] for x in seq][::-1])
 
 
+def get_centered_stype(site8, seq):
+    if site8 == seq[2:-2]:
+        return '8mer'
+    elif site8[:-1] == seq[2:-3]:
+        return '7mer-m8'
+    elif site8[1:] == seq[3:-2]:
+        return '7mer-a1'
+    elif site8[1:-1] == seq[3:-3]:
+        return '6mer'
+    elif site8[:-2] == seq[2:-4]:
+        return '6mer-m8'
+    elif site8[2:] == seq[4:-2]:
+        return '6mer-a1'
+    else:
+        return 'no site'
+
+
 def one_hot_encode(seq):
     if len(seq) == 0:
         return []

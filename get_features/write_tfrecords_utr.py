@@ -133,7 +133,8 @@ if __name__ == '__main__':
 
                 if nsites > 0:
                     if options.CALC_TS7:
-                        orf_features = [1.0] * (len(orf_seqs) * NUM_FEATURES)
+                        orf_features = get_site_features.get_ts7_features(mirseq, orf_locs, orf_locs, orf, utr_len, orf_len,
+                                                                          options.UPSTREAM_LIMIT, None, None, in_orf=True).flatten()
 
                         utr3_stypes = [utils.get_centered_stype(site8, seq) for seq in utr3_seqs]
                         pct_df_temp = pct_df[pct_df['ID'] == transcript + mir]
@@ -141,12 +142,12 @@ if __name__ == '__main__':
                             pct_df_temp = None
                         utr3_features = get_site_features.get_ts7_features(mirseq, utr3_locs, utr3_stypes, utr3, utr_len, orf_len,
                                                                           options.UPSTREAM_LIMIT, rnaplfold_data,
-                                                                          pct_df_temp).flatten()
+                                                                          pct_df_temp, in_orf=False).flatten()
 
                         if int(len(utr3_features) / NUM_FEATURES) != len(utr3_locs):
                             raise ValueError('Number of features do not match')
 
-                        features = orf_features + list(utr3_features)
+                        features = list(orf_features) + list(utr3_features)
                     else:
                         features = ([1.0] * len(orf_seqs)) + ([0.0] * len(utr3_seqs))
                     long_seq = ''.join(all_seqs)
@@ -155,8 +156,6 @@ if __name__ == '__main__':
                         seq_writer.write('{}\t{}\t{}\t{}\n'.format(transcript, mir, mirseq, ','.join(all_seqs)))
 
                     feature_dict['{}_seqs_1hot'.format(mir)] = utils._float_feature(utils.one_hot_encode(long_seq))
-                    if 'X' in long_seq:
-                        print(utils.one_hot_encode(long_seq))
                     feature_dict['{}_ts7_features'.format(mir)] = utils._float_feature(features)
 
 
