@@ -171,6 +171,48 @@ class OccupancyOnlyModel(Model):
 
         return pred
 
+class OccupancyOnlyModel2(Model):
+    def __init__(self, num_mirs, withORF, withUTR5):
+        super().__init__()
+        self.vars['freeAgo'] = tf.get_variable('freeAgo', shape=[1, num_mirs, 1],
+            initializer=tf.constant_initializer(-5.5))
+        self.vars['log_decay'] = tf.get_variable('log_decay', shape=(), initializer=tf.constant_initializer(0.0))
+
+        self.withORF = withORF
+        if self.withORF:
+            self.vars['orf_ka_offset'] = tf.get_variable('orf_ka_offset', shape=(), initializer=tf.constant_initializer(-2.0))
+
+        self.withUTR5 = withUTR5
+        if self.withUTR5:
+            self.vars['utr5_ka_offset'] = tf.get_variable('utr5_ka_offset', shape=(), initializer=tf.constant_initializer(-2.0))
+
+    def get_nbound(self, ka_vals, offset, mask, freeAgo):
+        occ = tf.sigmoid((ka_vals + offset) + freeAgo)
+        nbound = tf.reduce_sum(tf.multiply(occ, mask), axis=2)
+        return nbound
+
+    def get_pred(self, data):
+        nbound = self.get_nbound(data['utr3_ka_vals'], 0.0, data['utr3_mask'], self.vars['freeAgo'])
+        nbound_init = self.get_nbound(0.0, 0.0, data['utr3_mask'], self.vars['freeAgo'])
+        if self.withORF:
+            nbound_orf = self.get_nbound(data['orf_ka_vals'], self.vars['orf_ka_offset'], data['orf_mask'], self.vars['freeAgo'])
+            nbound += nbound_orf
+
+            nbound_init_orf = self.get_nbound(0.0, self.vars['orf_ka_offset'], data['orf_mask'], self.vars['freeAgo'])
+            nbound_init += nbound_init_orf
+
+        if self.withUTR5:
+            nbound_utr5 = self.get_nbound(data['utr5_ka_vals'], self.vars['utr5_ka_offset'], data['utr5_mask'], self.vars['freeAgo'])
+            nbound += nbound_utr5
+
+            nbound_init_utr5 = self.get_nbound(0.0, self.vars['utr5_ka_offset'], data['utr5_mask'], self.vars['freeAgo'])
+            nbound_init += nbound_init_utr5
+
+        pred = tf.log1p(tf.exp(self.vars['log_decay']) * nbound_init) - tf.log1p(tf.exp(self.vars['log_decay']) * nbound)
+
+
+        return pred
+
 
 class OriginalModel(OccupancyOnlyModel):
     def __init__(self, num_mirs, withORF, withUTR5, with_init):

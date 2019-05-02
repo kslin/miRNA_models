@@ -44,6 +44,7 @@ def calculate_12mer_kds(mirname, mirseq, mirlen, load_model, outfile):
 
         sess.run(tf.global_variables_initializer())
         saver = tf.train.import_meta_graph(load_model + '.meta')
+        print('Restoring from {}'.format(load_model))
         saver.restore(sess, load_model)
 
         _dropout_rate = tf.get_default_graph().get_tensor_by_name('dropout_rate:0')
@@ -84,6 +85,7 @@ if __name__ == '__main__':
     parser = OptionParser()
     parser.add_option("--name", dest="MIRNAME", help="miRNA name")
     parser.add_option("--mirseq", dest="MIRSEQ", help="miRNA sequence", default=None)
+    parser.add_option("--mirdata", dest="MIRDATA", help="miRNA data in a table", default=None)
     parser.add_option("--mirlen", dest="MIRLEN", type=int)
     parser.add_option("--load_model", dest="LOAD_MODEL", help="trained model to use")
     parser.add_option("--outfile", dest="OUTFILE", help="output file")
@@ -94,10 +96,17 @@ if __name__ == '__main__':
         calculate_12mer_kds(options.MIRNAME, options.MIRSEQ, options.MIRLEN, options.LOAD_MODEL, options.OUTFILE)
 
     else:
-        mirdata = pd.read_csv(options.MIRNAME, sep='\t')
-        for row in mirdata.iterrows():
-            mirname, mirseq = row[1]['mir'], row[1]['guide_seq']
+        mirdata = pd.read_csv(options.MIRDATA, sep='\t', index_col='mir')
+        if options.MIRNAME == 'all':
+            for row in mirdata.iterrows():
+                mirname, mirseq = row[0], row[1]['guide_seq']
+                print(mirname, mirseq)
+                calculate_12mer_kds(mirname, mirseq, options.MIRLEN,
+                    options.LOAD_MODEL, options.OUTFILE.replace('MIR', mirname))
+        else:
+            mirname = options.MIRNAME
+            mirseq = mirdata.loc[mirname]['guide_seq']
             print(mirname, mirseq)
             calculate_12mer_kds(mirname, mirseq, options.MIRLEN,
-                options.LOAD_MODEL, options.OUTFILE.replace('MIR', mirname))
+                options.LOAD_MODEL, options.OUTFILE)
 

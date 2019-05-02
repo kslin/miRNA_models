@@ -154,7 +154,7 @@ def get_pred_logfc_occupancy_only(_utr_ka_values, _freeAGO_all, _tpm_batch, _ts7
     _ka_vals_padded = pad_vals(_utr_ka_values_squeezed, _tpm_batch['nsites'], num_mirs, batch_size, fill_val=-100.0)
 
     _merged_features_mask = tf.cast(tf.greater(_ka_vals_padded, -50.0), tf.float32)
-    _nbound_init = tf.sigmoid(_weighted_features_padded + tf.reshape(_freeAGO_all, [1, -1, 1]))
+    _nbound_init = tf.sigmoid(_weighted_features_padded + _ts7_bias + tf.reshape(_freeAGO_all, [1, -1, 1]))
     _nbound = tf.sigmoid((_weighted_features_padded + _ka_vals_padded) + tf.reshape(_freeAGO_all, [1, -1, 1]))
     _nbound_net = _nbound - _nbound_init
 
@@ -169,7 +169,7 @@ def get_pred_logfc_occupancy_only(_utr_ka_values, _freeAGO_all, _tpm_batch, _ts7
         _occupancy = tf.reduce_sum(tf.reshape(_occupancy, [-1, num_guides, 2]), axis=2)
 
     # get logfc
-    _pred_logfc = -1 * tf.log1p(_occupancy)
+    _pred_logfc = -1 * tf.log1p(_occupancy, name=name)
 
     if loss_type == 'MEAN_CENTER':
         _pred_logfc_normed = _pred_logfc - tf.reshape(tf.reduce_mean(_pred_logfc, axis=1), [-1, 1])
@@ -178,7 +178,8 @@ def get_pred_logfc_occupancy_only(_utr_ka_values, _freeAGO_all, _tpm_batch, _ts7
         _pred_logfc_normed = _pred_logfc
         _repression_y_normed = _tpm_batch['labels']
 
-    return _pred_logfc, _pred_logfc_normed, _repression_y_normed, (_masked_nbound)
+    return _pred_logfc, _pred_logfc_normed, _repression_y_normed, _occupancy
+
 
 
 # def get_pred_logfc_occupancy_only2(_utr_ka_values, _freeAGO_all, _tpm_batch, _ts7_weights, _ts7_bias, _decay, batch_size, passenger, num_guides, name, loss_type):
