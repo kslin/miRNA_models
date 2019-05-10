@@ -98,9 +98,6 @@ if __name__ == '__main__':
 
         _freeAGO_all_val = tf.constant(FREEAGOS, dtype=tf.float32)
 
-        print(sess.run(_ts7_weights))
-        print(sess.run(_decay))
-
         _pred_logfc_val, _pred_logfc_val_normed, _repression_y_val_normed, _debug = model.get_pred_logfc_occupancy_only(
             _utr_ka_values,
             _freeAGO_all_val,
@@ -125,8 +122,7 @@ if __name__ == '__main__':
                 transcripts.append(temp_tpm_batch['transcripts'])
                 real_vals.append(temp_tpm_batch['labels'])
                 ka_vals = sess.run(_utr_ka_values, feed_dict={_phase_train: False, _dropout_rate: 0.0, _combined_x: temp_tpm_batch['images']})
-                print(np.mean(ka_vals), np.max(ka_vals))
-                print(sess.run(_pred_logfc_val,
+                pred_vals.append(sess.run(_pred_logfc_val,
                     feed_dict={
                         _utr_ka_values: ka_vals,
                         next_tpm_batch['nsites']: temp_tpm_batch['nsites'],

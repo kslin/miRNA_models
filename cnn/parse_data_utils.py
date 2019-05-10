@@ -172,6 +172,7 @@ def _parse_log_kd_function(serialized_example):
 def _filter_kds(mir, image, kd, keep_prob, stype):
     better_than_nosites = tf.math.less(kd[0], 0.0)
     keep = tf.math.greater(keep_prob[0], tf.random.uniform(shape=(), minval=0, maxval=1))
+    # return keep
     return tf.logical_and(better_than_nosites, keep)
     # return tf.math.greater(tf.sigmoid((-1.0 * kd) - 3.0), tf.random.uniform(shape=(), minval=0, maxval=1))[0]
     # return tf.math.greater(tf.sigmoid((-1.0 * kd) - 2.0), tf.constant([0.5]))[0]
