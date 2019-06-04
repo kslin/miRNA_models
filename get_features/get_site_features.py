@@ -141,56 +141,64 @@ def calculate_local_au(utr, site_start):
     return weighted / total
 
 
-def get_ts7_features(mirseq, locs, stypes, utr, utr_len, orf_len, upstream_limit, rnaplfold_data, pct_df, in_orf=False):
+def get_ts7_features(mirseq, locs, stypes, sequence, utr_len, orf_len, upstream_limit, rnaplfold_data, pct_df):
     # calculate TS7 features
     features = []
     for loc, stype in zip(locs, stypes):
+        in_orf = loc < orf_len
 
         # get ts7 features
-        local_au = calculate_local_au(utr, loc - 3)
-        threep = calculate_threep_score(mirseq, utr, loc - 3, upstream_limit)
-        # min_dist = min(loc, utr_len - (loc + 6))
-        if in_orf:
-            min_dist = (orf_len - (loc + 6)) + utr_len
-        else:
-            min_dist = utr_len - (loc + 6)
+        local_au = calculate_local_au(sequence, loc - 3)
+        threep = calculate_threep_score(mirseq, sequence, loc - 3, upstream_limit)
+        min_dist = min(abs(loc - orf_len), abs(loc - utr_len))
+        # # min_dist = min(loc, utr_len - (loc + 6))
+        # if in_orf:
+        #     min_dist = (orf_len - (loc + 6)) + utr_len
+        # else:
+        #     min_dist = utr_len - (loc + 6)
 
-        assert (min_dist >= 0), (loc, utr_len, orf_len, in_orf)
+        # assert (min_dist >= 0), (loc, utr_len, orf_len, in_orf)
 
         # use the rnaplfold data to calculate the site accessibility
         if rnaplfold_data is None:
-            sa_score = 0
+            sa_score = None
         else:
-            site_start_for_SA = loc + 7
+            site_start_for_SA = loc + 6
             if (site_start_for_SA) not in rnaplfold_data.index:
-                sa_score = 0
+                sa_score = None
             else:
-                row_vals = rnaplfold_data.loc[site_start_for_SA].values[:14]  # pos 1-14 unpaired, Agarwal 2015
+                sa_score = np.log(rnaplfold_data.loc[site_start_for_SA]['15'])  # pos 2-16 unpaired, biochem model
+                if np.isnan(sa_score):
+                    sa_score = None
+
+                # row_vals = rnaplfold_data.loc[site_start_for_SA].values[:14]  # pos 1-14 unpaired, Agarwal 2015
                 # row_vals = rnaplfold_data.loc[site_start_for_SA].values[:10]  # pos 1-10 unpaired, Sean
 
-                for raw_sa_score in row_vals[::-1]:
-                    if not np.isnan(raw_sa_score):
-                        break
+                # for raw_sa_score in row_vals[::-1]:
+                #     if not np.isnan(raw_sa_score):
+                #         break
 
-                if np.isnan(raw_sa_score):
-                    sa_score = np.nan
-                elif raw_sa_score <= 0:
-                    sa_score = -5.0
-                    print("warning, nan sa_score")
-                else:
-                    sa_score = np.log10(raw_sa_score)
+                # if np.isnan(raw_sa_score):
+                #     sa_score = np.nan
+                # elif raw_sa_score <= 0:
+                #     sa_score = -5.0
+                #     print("warning, nan sa_score")
+                # else:
+                #     sa_score = np.log10(raw_sa_score)
 
         # get PCT
         pct = 0.0
-        if pct_df is not None:
+        if (not in_orf) & (pct_df is not None):
             try:
                 if stype in ['6mer', '7mer-a1', '7mer-m8', '8mer']:
-                    pct = pct_df.loc[loc]['PCT']
+                    pct = pct_df.loc[loc - orf_len]['PCT']
 
             except:
+                print(loc, orf_len)
                 print(pct_df)
-                raise ValueError('PCT locations do not match for {}'.format(transcript))
+                raise ValueError('PCT locations do not match')
 
-        features.append([float(in_orf), min_dist/2000.0, local_au, threep, sa_score, pct, utr_len/2000.0, orf_len/2000.0])
+        # features.append([float(in_orf), min_dist/2000.0, local_au, threep, sa_score, pct, utr_len/2000.0, orf_len/2000.0])
+        features.append([float(in_orf), sa_score, threep, pct, local_au, min_dist/2000.0, utr_len/2000.0, orf_len/2000.0])
 
     return np.array(features).astype(float)

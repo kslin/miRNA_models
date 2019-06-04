@@ -32,8 +32,9 @@ class Model():
         for name, var in self.vars.items():
             self.vars_evals[name] = sess.run(var)
 
-        self.eval_pred, self.eval_pred_normed, self.eval_label_normed = sess.run([pred, pred_normed, labels_normed], feed_dict=feed_dict)
+        self.eval_pred, self.eval_pred_normed, self.eval_label, self.eval_label_normed = sess.run([pred, pred_normed, data['labels'], labels_normed], feed_dict=feed_dict)
         self.r2 = stats.linregress(self.eval_pred_normed.flatten(), self.eval_label_normed.flatten())[2]**2
+        self.final_loss = sess.run(loss, feed_dict=feed_dict)
 
 
     def predict(self, sess, data, feed_dict):
@@ -96,24 +97,66 @@ class OccupancyOnlyModelSimple(Model):
         return pred
 
 
-class OccupancyWithFeaturesModel(Model):
+class OccupancyWithUTRlenModel(Model):
     def __init__(self, num_mirs, num_features):
         super().__init__()
         self.vars['freeAgo'] = tf.get_variable('freeAgo', shape=[1, num_mirs, 1],
             initializer=tf.constant_initializer(-5.5))
         self.vars['log_decay'] = tf.get_variable('log_decay', shape=(), initializer=tf.constant_initializer(0.0))
         self.vars['feature_coefs'] = tf.get_variable('feature_coefs', shape=[1, 1, 1, num_features], initializer=tf.constant_initializer(-0.1))
+        self.vars['utr_length_coef'] = tf.get_variable('utr_length_coef', shape=(),
+            initializer=tf.constant_initializer(-0.1))
+        # self.vars['utr_length_intercept'] = tf.get_variable('utr_length_intercept', shape=(),
+        #     initializer=tf.constant_initializer(1.0))
 
     def get_pred(self, data):
-        feature_contribution = tf.reduce_sum(tf.multiply(data['features'], self.vars['feature_coefs']), axis=3) + self.vars['freeAgo']
+        feature_contribution = tf.reduce_sum(tf.multiply(data['features'], self.vars['feature_coefs']), axis=3)
+        utrlen_penalty = self.vars['utr_length_coef'] * data['utr_length']
 
-        occ = tf.sigmoid(data['ka_vals'] + feature_contribution)
-        occ_init = tf.sigmoid(feature_contribution)
-
-        # nbound = tf.reduce_sum(tf.multiply(occ, data['mask']), axis=2)
-        nbound = tf.reduce_sum(tf.multiply(occ - occ_init, data['mask']), axis=2)
+        occ = tf.sigmoid(data['ka_vals'] + feature_contribution + self.vars['freeAgo'] + utrlen_penalty)
+        nbound = tf.reduce_sum(tf.multiply(occ, data['mask']), axis=2)
 
         pred = -1 * tf.log1p(tf.exp(self.vars['log_decay']) * nbound)
+
+        return pred
+
+
+class OccupancyWithFeaturesModel(Model):
+    def __init__(self, num_mirs, num_features, init_bound=False, fit_utr=False):
+        super().__init__()
+        self.vars['freeAgo'] = tf.get_variable('freeAgo', shape=[1, num_mirs, 1],
+            initializer=tf.constant_initializer(-5.5))
+        self.vars['log_decay'] = tf.get_variable('log_decay', shape=(), initializer=tf.constant_initializer(0.0))
+        self.vars['feature_coefs'] = tf.get_variable('feature_coefs', shape=[1, 1, 1, num_features], initializer=tf.constant_initializer(-0.1))
+
+        self.vars['nosite_conc'] = tf.get_variable('nosite_conc', shape=(),
+            initializer=tf.constant_initializer(0.0), trainable=False)
+        # self.vars['nosite_conc'] = tf.get_variable('nosite_conc', shape=(),
+        #     initializer=tf.constant_initializer(0.0))
+
+        self.init_bound = init_bound
+        self.fit_utr = fit_utr
+
+    def get_pred(self, data):
+        feature_contribution = tf.reduce_sum(tf.multiply(data['features'], self.vars['feature_coefs']), axis=3)
+
+        occ = tf.sigmoid(data['ka_vals'] + feature_contribution + self.vars['freeAgo'])
+        nbound = tf.reduce_sum(tf.multiply(occ, data['mask']), axis=2)
+
+        if not self.init_bound:
+            pred = -1 * tf.log1p(tf.exp(self.vars['log_decay']) * nbound)
+            # pred = -1 * self.vars['log_decay'] * nbound
+
+        else:
+            occ_init = tf.sigmoid(feature_contribution + self.vars['freeAgo'] + self.vars['nosite_conc'])
+            nbound_init = tf.reduce_sum(tf.multiply(occ_init, data['mask']), axis=2)
+            # pred = self.vars['log_decay'] * (nbound_init - nbound)
+        
+            pred = tf.log1p(tf.exp(self.vars['log_decay']) * nbound_init) - tf.log1p(tf.exp(self.vars['log_decay']) * nbound)
+
+        if self.fit_utr:
+            pred = pred * data['log_utr_len']
+
         return pred
 
 

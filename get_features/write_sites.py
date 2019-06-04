@@ -19,7 +19,7 @@ if __name__ == '__main__':
     parser.add_option("--tpm_file", dest="TPM_FILE", help="tpm data")
     parser.add_option("--kd_file", dest="KD_FILE", help="kd data")
     parser.add_option("--orf_file", dest="ORF_FILE", help="ORF sequences in tsv format")
-    # parser.add_option("--utr5_file", dest="UTR5_FILE", help="5'UTR sequences in tsv format")
+    parser.add_option("--utr5_file", dest="UTR5_FILE", help="5'UTR sequences in tsv format")
     parser.add_option("--mirseqs", dest="MIR_SEQS", help="tsv with miRNAs and their sequences")
     parser.add_option("--outdir", dest="OUTDIR", help="location for writing output files")
     parser.add_option("--overlap_dist", dest="OVERLAP_DIST", help="minimum distance between neighboring sites", type=int)
@@ -59,8 +59,8 @@ if __name__ == '__main__':
     # read in orf sequences
     ORF_SEQS = pd.read_csv(options.ORF_FILE, sep='\t', header=None, index_col=0)
 
-    # # read in 5`UTR sequences
-    # UTR5_SEQS = pd.read_csv(options.UTR5_FILE, sep='\t', header=None, index_col=0)
+    # read in 5`UTR sequences
+    UTR5_SEQS = pd.read_csv(options.UTR5_FILE, sep='\t', header=None, index_col=0)
 
     col_order = ['transcript', 'transcript_ix', 'mir', 'mirseq', '6mer_loc', 'seq', 'stype', 'log_KA', 'ORF_len']
 

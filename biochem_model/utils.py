@@ -141,3 +141,66 @@ def bayesian_intercept(xs, ys, mu_0, prior_strength):
             intercepts.append(np.mean(temp_y) - (b_slope * np.mean(temp_x)))
         
     return np.array(intercepts)
+
+
+def get_sites_no_overlap(name, sequence, mirs, all_kd_dict, min_dist=7):
+    if len(sequence) < 9:
+        return pd.DataFrame(None)
+    
+    all_mir_info = {}
+    for mir in mirs:
+        if mir not in all_kd_dict:
+            raise ValueError('{} not in kd_dict'.format(mir))
+        all_mir_info[mir] = {
+            'prev_loc': -100,
+            'prev_seq': '',
+            'prev_kd': 100,
+            'keep_kds': [],
+            'keep_locs': [],
+            'keep_seqs': []
+        }
+
+    pad_seq = 'XXX' + sequence + 'XXX'
+    seq = 'A' + pad_seq[:11]
+
+    # iterate through 12mers in the sequence
+    for loc, nt in enumerate(pad_seq[11:]):
+        seq = seq[1:] + nt
+        for mir in mirs:
+            kd_dict = all_kd_dict[mir]
+            mir_info = all_mir_info[mir]
+            if seq in kd_dict:
+                new_kd = kd_dict[seq]
+
+                # if new site is too close to previous site, take site with higher affinity
+                if (loc - mir_info['prev_loc']) <= min_dist:
+                    if new_kd < mir_info['prev_kd']:
+                        mir_info['keep_kds'][-1] = new_kd
+                        mir_info['keep_locs'][-1] = loc
+                        mir_info['keep_seqs'][-1] = seq
+                        mir_info['prev_loc'] = loc
+                        mir_info['prev_kd'] = new_kd
+                        # print('replace')
+                    else:
+                        # print('skipped')
+                        continue
+                else:
+                    # print('added')
+                    mir_info['keep_kds'].append(new_kd)
+                    mir_info['keep_locs'].append(loc)
+                    mir_info['keep_seqs'].append(seq)
+                    mir_info['prev_loc'] = loc
+                    mir_info['prev_kd'] = new_kd
+                
+    all_sites = []
+    for mir in mirs:
+        mir_info = all_mir_info[mir]
+        all_sites.append(pd.DataFrame({
+            'transcript': name,
+            'mir': mir,
+            '12mer': mir_info['keep_seqs'],
+            'log_kd': mir_info['keep_kds'],
+            'loc': mir_info['keep_locs']
+        }))
+
+    return pd.concat(all_sites)

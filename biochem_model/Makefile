@@ -1,3 +1,23 @@
+predictions_5mirs:
+	python predict.py \
+		--transcripts /lab/bartel4_ata/kathyl/RNA_Seq/outputs/biochem/resubmission/transcripts_orf90.txt \
+		--kds /lab/bartel4_ata/kathyl/RNA_Seq/outputs/biochem/final_fixed/kds.txt \
+		--sa_bg /lab/solexa_bartel/klin/RNAplfold/RNAplfold_bg200/SA_bg/canon_bg_vals.txt \
+		--mirs lsy6,mir1,mir124,mir155,mir7 \
+		--rnaplfold_dir /lab/bartel4_ata/kathyl/RNA_Seq/outputs/rnaplfold/RNAplfold_orf_utr3_u25/ \
+		--kd_cutoff 0 \
+		--outfile /lab/bartel4_ata/kathyl/RNA_Seq/outputs/biochem/resubmission/features.txt
+
+predictions_mir155_mouse:
+	python predict.py \
+		--transcripts /lab/bartel4_ata/kathyl/RNA_Seq/outputs/biochem/resubmission/mouse/transcripts.txt \
+		--kds /lab/bartel4_ata/kathyl/RNA_Seq/outputs/biochem/final_fixed/kds.txt \
+		--sa_bg /lab/solexa_bartel/klin/RNAplfold/RNAplfold_bg200/SA_bg/canon_bg_vals.txt \
+		--mirs mir155 \
+		--rnaplfold_dir /lab/bartel4_ata/kathyl/RNA_Seq/outputs/rnaplfold/RNAplfold_orf_utr3_u15_mouse/ \
+		--kd_cutoff 0 \
+		--outfile /lab/bartel4_ata/kathyl/RNA_Seq/outputs/biochem/resubmission/mouse/features.txt
+
 features_test:
 	python write_features.py \
 		--tpm_file /lab/bartel4_ata/kathyl/RNA_Seq/outputs/biochem/final_fixed/merged_mini.txt \
