@@ -122,9 +122,9 @@ class OccupancyWithUTRlenModel(Model):
 
 
 class OccupancyWithFeaturesModel(Model):
-    def __init__(self, num_mirs, num_features, init_bound=False, fit_utr=False):
+    def __init__(self, num_mirs, num_features, init_bound=False, fit_utr=False, passenger=False):
         super().__init__()
-        self.vars['freeAgo'] = tf.get_variable('freeAgo', shape=[1, num_mirs, 1],
+        self.vars['freeAGO'] = tf.get_variable('freeAGO', shape=[1, num_mirs, 1],
             initializer=tf.constant_initializer(-5.5))
         self.vars['log_decay'] = tf.get_variable('log_decay', shape=(), initializer=tf.constant_initializer(0.0))
         self.vars['feature_coefs'] = tf.get_variable('feature_coefs', shape=[1, 1, 1, num_features], initializer=tf.constant_initializer(-0.1))
@@ -136,20 +136,31 @@ class OccupancyWithFeaturesModel(Model):
 
         self.init_bound = init_bound
         self.fit_utr = fit_utr
+        self.passenger = passenger
 
     def get_pred(self, data):
+        if 'freeAGO' in data:
+            freeAGOs = data['freeAGO']
+        else:
+            freeAGOs = self.vars['freeAGO']
+
         feature_contribution = tf.reduce_sum(tf.multiply(data['features'], self.vars['feature_coefs']), axis=3)
 
-        occ = tf.sigmoid(data['ka_vals'] + feature_contribution + self.vars['freeAgo'])
+        occ = tf.sigmoid(data['ka_vals'] + feature_contribution + freeAGOs)
         nbound = tf.reduce_sum(tf.multiply(occ, data['mask']), axis=2)
+
+        if self.passenger:
+            nbound = tf.reduce_sum(tf.reshape(nbound, [-1, data['num_guides'], 2]), axis=2)
 
         if not self.init_bound:
             pred = -1 * tf.log1p(tf.exp(self.vars['log_decay']) * nbound)
             # pred = -1 * self.vars['log_decay'] * nbound
 
         else:
-            occ_init = tf.sigmoid(feature_contribution + self.vars['freeAgo'] + self.vars['nosite_conc'])
+            occ_init = tf.sigmoid(feature_contribution + freeAGOs + self.vars['nosite_conc'])
             nbound_init = tf.reduce_sum(tf.multiply(occ_init, data['mask']), axis=2)
+            if self.passenger:
+                nbound_init = tf.reduce_sum(tf.reshape(nbound_init, [-1, data['num_guides'], 2]), axis=2)
             # pred = self.vars['log_decay'] * (nbound_init - nbound)
         
             pred = tf.log1p(tf.exp(self.vars['log_decay']) * nbound_init) - tf.log1p(tf.exp(self.vars['log_decay']) * nbound)

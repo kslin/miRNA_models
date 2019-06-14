@@ -2,11 +2,29 @@ predictions_5mirs:
 	python predict.py \
 		--transcripts /lab/bartel4_ata/kathyl/RNA_Seq/outputs/biochem/resubmission/transcripts_orf90.txt \
 		--kds /lab/bartel4_ata/kathyl/RNA_Seq/outputs/biochem/final_fixed/kds.txt \
-		--sa_bg /lab/solexa_bartel/klin/RNAplfold/RNAplfold_bg200/SA_bg/canon_bg_vals.txt \
+		--sa_bg /lab/solexa_bartel/klin/RNAplfold/RNAplfold_bg200/SA_bg/canon_MIR_bg_vals.txt \
+		--pct_file /lab/bartel4_ata/kathyl/RNA_Seq/data/TS7_output_files/refseq_utr90_fixed/features.txt \
 		--mirs lsy6,mir1,mir124,mir155,mir7 \
-		--rnaplfold_dir /lab/bartel4_ata/kathyl/RNA_Seq/outputs/rnaplfold/RNAplfold_orf_utr3_u25/ \
-		--kd_cutoff 0 \
-		--outfile /lab/bartel4_ata/kathyl/RNA_Seq/outputs/biochem/resubmission/features.txt
+		--rnaplfold_dir /lab/solexa_bartel/klin/RNAplfold/RNAplfold_orf_utr3_u25_processed/ \
+		--kd_cutoff "10" \
+		--outfile /lab/bartel4_ata/kathyl/RNA_Seq/outputs/biochem/resubmission/features_SA_PCT.txt
+
+
+train_cnn_features:
+	for mirname in mir137 mir139 mir143 mir144 mir153 mir182 mir199a mir204 mir205 mir216b mir223 ; do \
+		mkdir -p /lab/solexa_bartel/klin/CNN/repression_predictions/occupancy_only_final_xval_batch3_withclipping_dropout0_withreg_netpred2_round2/all_feats && \
+		bsub -R "rusage[mem=4096]" \
+			-m "it-c06b03 it-c06b04 it-c06b06 it-c06b07 it-c06b08 it-c06b10 it-c06b11 it-c06b12 it-c06b14" \
+			python train.py \
+				--tpm_file /lab/bartel4_ata/kathyl/RNA_Seq/outputs/biochem/final_fixed/merged.txt \
+				--mirseqs ../data/mirseqs_cnn_new.txt \
+				--feature_dir /lab/bartel4_ata/kathyl/RNA_Seq/outputs/biochem/resubmission/features_cnn \
+				--kd_dir /lab/solexa_bartel/klin/CNN/kd_predictions/occupancy_only_final_xval_batch3_withclipping_dropout0_withreg_netpred2_round2/$${mirname} \
+				--test_mir $${mirname} \
+				--outfile /lab/solexa_bartel/klin/CNN/repression_predictions/occupancy_only_final_xval_batch3_withclipping_dropout0_withreg_netpred2_round2/all_feats/$${mirname}.txt \
+				--passenger ; \
+	done
+
 
 predictions_mir155_mouse:
 	python predict.py \

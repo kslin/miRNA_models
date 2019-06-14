@@ -46,7 +46,6 @@ if __name__ == '__main__':
     parser.add_option("--logdir", dest="LOGDIR", help="directory for writing logs", default=None)
     parser.add_option("--load_model", dest="LOAD_MODEL", help="if supplied, load latest model from this directory", default=None)
     parser.add_option("--passenger", dest="PASSENGER", help="include passenger", default=False, action='store_true')
-    parser.add_option("--fix_layers", dest="FIX_LAYERS", help="if true, fix earlier layers", default=False, action='store_true')
     parser.add_option("--dry_run", dest="DRY_RUN", help="if true, do dry run", default=False, action='store_true')
     parser.add_option("--pretrain", dest="PRETRAIN", help="if true, do pretraining step", default=False, action='store_true')
     parser.add_option("--overfit", dest="OVERFIT", help="if true, overfit on val mir", default=False, action='store_true')
@@ -56,11 +55,24 @@ if __name__ == '__main__':
 
     tf.reset_default_graph()
 
+    # weight inits
+    FREEAGO_INIT = -5.4
+    FREEAGO_GUIDE_OFFSET = 0.0
+    FREEAGO_PASS_OFFSET = -1.0
+    WEIGHTS_INIT = np.array([-1.0, 0.1, 0.1, 0.1])
+    WEIGHTS_INIT = np.array([0.0] * options.USE_FEATS).reshape([options.USE_FEATS, 1])
+    # WEIGHTS_INIT = np.array([[-1.9663382], [0.22403683]])
+    DECAY_INIT = -0.2
+
     # SEQLEN must be 12
     SEQLEN = 12
 
-    testcase_mirseq = utils.generate_random_seq(options.MIRLEN)
-    testcase_target = 'AA' + utils.rev_comp(testcase_mirseq[1:8]) + 'AAA'
+    # testcase_mirseq = 'TACAGTATAG'
+    # testcase_target = 'AATAACTGTAAA'
+    testcase_mirseq = 'TTCCCTTTGT'
+    testcase_target = 'AAAAAGGTAAAA'
+    # testcase_mirseq = utils.generate_random_seq(options.MIRLEN)
+    # testcase_target = 'AA' + utils.rev_comp(testcase_mirseq[1:8]) + 'AAA'
     test_image_8mer = np.outer(utils.one_hot_encode(testcase_mirseq), utils.one_hot_encode(testcase_target))
     test_image_8mer = np.expand_dims(test_image_8mer, 0)
 
@@ -238,7 +250,7 @@ if __name__ == '__main__':
             rbns1_mirseq = MIRNA_DATA.loc[rbns1_mir]['guide_seq'][:options.MIRLEN]
             rbns1_target = utils.get_target_no_match(rbns1_mirseq, SEQLEN)
             random_images.append(np.outer(utils.one_hot_encode(rbns1_mirseq), utils.one_hot_encode(rbns1_target)))
-            random_labels.append([0.0])
+            random_labels.append([1.0])
             random_stypes.append(b'extra')
 
             # generate random 8mer pair and assign KD of average 8mer
@@ -259,7 +271,7 @@ if __name__ == '__main__':
             rbns2_target = utils.generate_random_seq(3) + utils.rev_comp(MIRNA_DATA.loc[rbns2_mir]['guide_seq'][1:7]) + utils.generate_random_seq(3)
             rbns2_mirseq = utils.get_mir_no_match(rbns2_target, options.MIRLEN)
             random_images.append(np.outer(utils.one_hot_encode(rbns2_mirseq), utils.one_hot_encode(rbns2_target)))
-            random_labels.append([0.0])
+            random_labels.append([1.0])
             random_stypes.append(b'extra')
 
             yield np.array(random_mirs), np.stack(random_images), np.array(random_labels), np.array(random_stypes)
@@ -283,8 +295,8 @@ if __name__ == '__main__':
     # tf.summary.scalar('kd_decay', _kd_decay)
     # _kd_weights = tf.concat([tf.constant([[1.0]] * options.KD_BATCH_SIZE), _kd_decay * tf.constant([[0.2]] * NUM_EXTRA_KD_VALS)], axis=0)
 
-    _kd_weights = tf.constant(([[1.0]] * options.KD_BATCH_SIZE) + ([[0.1]] * NUM_EXTRA_KD_VALS))
-    # _kd_weights = tf.constant(([[1.0]] * options.KD_BATCH_SIZE) + ([[0.0], [0.0], [0.0]]))
+    # _kd_weights = tf.constant(([[1.0]] * options.KD_BATCH_SIZE) + ([[0.0]] * NUM_EXTRA_KD_VALS))
+    _kd_weights = tf.constant(([[1.0]] * options.KD_BATCH_SIZE) + ([[0.0], [0.2], [0.0]]))
 
     _next_kd_batch_kds = tf.concat([next_kd_batch_labels, random_seq_labels], axis=0)
 
@@ -314,21 +326,13 @@ if __name__ == '__main__':
 
     # split data into biochem and repression and get biochem loss
     _pred_biochem = _pred_ka_values[:tf.shape(next_kd_batch['images'])[0], :]
-    _ka_weighted_difference = _kd_weights * tf.square(tf.nn.relu(_pred_biochem) - tf.nn.relu(next_kd_batch['labels']))
+    # _ka_weighted_difference = _kd_weights * tf.square(tf.nn.relu(_pred_biochem) - tf.nn.relu(next_kd_batch['labels']))
+    _ka_weighted_difference = _kd_weights * tf.square(_pred_biochem - next_kd_batch['labels'])
     _ka_loss = tf.reduce_sum(_ka_weighted_difference) / (2 * options.KD_BATCH_SIZE)
     # _ka_loss = tf.nn.l2_loss(tf.nn.relu(_pred_biochem) - next_kd_batch['labels']) / options.KD_BATCH_SIZE
     _utr_ka_values = _pred_ka_values[tf.shape(next_kd_batch['images'])[0]:, :]
 
     # create freeAGO concentration variables
-    if options.FIX_LAYERS:
-        FREEAGO_INIT = -4.9
-        FREEAGO_GUIDE_OFFSET = 0.0
-        FREEAGO_PASS_OFFSET = -2.0
-    else:
-        FREEAGO_INIT = -5.0
-        FREEAGO_GUIDE_OFFSET = 0.0
-        FREEAGO_PASS_OFFSET = -1.0
-
     _freeAGO_mean = tf.get_variable('freeAGO_mean', shape=(), initializer=tf.constant_initializer(FREEAGO_INIT))
     _freeAGO_guide_offset = tf.get_variable('freeAGO_guide_offset', shape=[NUM_TRAIN_GUIDES], initializer=tf.constant_initializer(FREEAGO_GUIDE_OFFSET))
     if options.PASSENGER:
@@ -345,20 +349,11 @@ if __name__ == '__main__':
 
     tf.summary.scalar('freeAGO', _freeAGO_mean)
 
-    # make feature weights
-    if options.FIX_LAYERS:
-        WEIGHTS_INIT = np.array([-2.22] + ([-0.1] * (options.USE_FEATS - 1))).reshape([options.USE_FEATS, 1])
-        DECAY_INIT = 0.0
-    else:
-        # WEIGHTS_INIT = np.array([-2.0] * options.USE_FEATS).reshape([options.USE_FEATS, 1])
-        WEIGHTS_INIT = np.array([[-1.9663382], [0.22403683]])
-        DECAY_INIT = 0.4
-
     # create ts7 weight variable
     with tf.name_scope('ts7_layer'):
         with tf.name_scope('weights'):
             _ts7_weights = tf.get_variable("ts7_weights", shape=[options.USE_FEATS, 1],
-                                        initializer=tf.constant_initializer(WEIGHTS_INIT), trainable=False)
+                                        initializer=tf.constant_initializer(WEIGHTS_INIT[:options.USE_FEATS, :]))
             tf.add_to_collection('weight', _ts7_weights)
             _decay = tf.get_variable('decay', initializer=DECAY_INIT)
             _ts7_bias = tf.get_variable('ts7_bias', initializer=0.0, trainable=False)
@@ -444,17 +439,11 @@ if __name__ == '__main__':
     print('Update OPs:')
     print(tf.get_collection(tf.GraphKeys.UPDATE_OPS))
     with tf.control_dependencies(_update_ops):
-        optimizer = tf.train.AdamOptimizer(_learning_rate)
-        # optimizer = tf.train.AdamOptimizer(options.LEARNING_RATE)
+        # optimizer = tf.train.AdamOptimizer(_learning_rate)
+        optimizer = tf.train.AdamOptimizer(options.LEARNING_RATE)
 
         # get gradients, fix earlier layers if training more features
-        if options.FIX_LAYERS:
-            var_list = [_freeAGO_mean, _freeAGO_guide_offset, _ts7_weights, _decay]
-            if options.PASSENGER:
-                var_list.append(_freeAGO_pass_offset)
-            gradients, variables = zip(*optimizer.compute_gradients(loss=_loss, var_list=var_list))
-        else:
-            gradients, variables = zip(*optimizer.compute_gradients(loss=_loss))
+        gradients, variables = zip(*optimizer.compute_gradients(loss=_loss))
 
         # clip gradients
         gradients, _ = tf.clip_by_global_norm(gradients, 5.0)
@@ -484,15 +473,15 @@ if __name__ == '__main__':
         'val_losses': [],
         'val_r2s': [],
     }
-    USE_BATCH_NORM = (options.FIX_LAYERS is False)
+
     conf = tf.ConfigProto(inter_op_parallelism_threads=4, intra_op_parallelism_threads=24)
     with tf.Session(config=conf) as sess:
 
         def eval_test_kd(testcase_image):
             """Prints predicted KD for 8mer with train/val params"""
             val1 = sess.run(_pred_ka_values, feed_dict={_phase_train: False, _dropout_rate: 0.0, _combined_x: testcase_image})
-            val2 = sess.run(_pred_ka_values, feed_dict={_phase_train: USE_BATCH_NORM, _dropout_rate: 0.0, _combined_x: testcase_image})
-            val3 = sess.run(_pred_ka_values, feed_dict={_phase_train: USE_BATCH_NORM, _dropout_rate: options.DROPOUT_RATE, _combined_x: testcase_image})
+            val2 = sess.run(_pred_ka_values, feed_dict={_phase_train: True, _dropout_rate: 0.0, _combined_x: testcase_image})
+            val3 = sess.run(_pred_ka_values, feed_dict={_phase_train: True, _dropout_rate: options.DROPOUT_RATE, _combined_x: testcase_image})
 
             print(val1[0], val2[0], val3[0])
 
@@ -535,7 +524,7 @@ if __name__ == '__main__':
 
             # make training input dictionary
             train_feed_dict = {
-                _phase_train: USE_BATCH_NORM,
+                _phase_train: True,
                 _dropout_rate: options.DROPOUT_RATE,
                 tpm_handle: tpm_train_handle,
                 kd_handle: kd_train_handle

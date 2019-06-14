@@ -31,6 +31,23 @@ def get_centered_stype(site8, seq):
         return 'no site'
 
 
+def get_best_stype(site8, seq):
+    if site8 in seq:
+        return '8mer'
+    elif site8[:-1] in seq:
+        return '7mer-m8'
+    elif site8[1:] in seq:
+        return '7mer-a1'
+    elif site8[1:-1] in seq:
+        return '6mer'
+    elif site8[:-2] in seq:
+        return '6mer-m8'
+    elif site8[2:] in seq:
+        return '6mer-a1'
+    else:
+        return 'no site'
+
+
 def one_hot_encode(seq):
     if len(seq) == 0:
         return []

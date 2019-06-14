@@ -1,13 +1,11 @@
 from optparse import OptionParser
 import os
-import sys
-import time
 
 import numpy as np
 import pandas as pd
 
-import utils
 import get_site_features
+import utils
 
 np.set_printoptions(threshold=np.inf, linewidth=200)
 pd.options.mode.chained_assignment = None
@@ -16,108 +14,116 @@ pd.options.mode.chained_assignment = None
 if __name__ == '__main__':
 
     parser = OptionParser()
-    parser.add_option("--tpm_file", dest="TPM_FILE", help="tpm data")
-    parser.add_option("--kd_file", dest="KD_FILE", help="kd data")
-    parser.add_option("--orf_file", dest="ORF_FILE", help="ORF sequences in tsv format")
-    parser.add_option("--utr5_file", dest="UTR5_FILE", help="5'UTR sequences in tsv format")
-    parser.add_option("--mirseqs", dest="MIR_SEQS", help="tsv with miRNAs and their sequences")
-    parser.add_option("--outdir", dest="OUTDIR", help="location for writing output files")
+    parser.add_option("--transcripts", dest="TRANSCRIPTS", help="transcript sequence information")
+    parser.add_option("--mir", dest="MIR", help="miRNA to get features for")
+    parser.add_option("-m", "--mirseqs", dest="MIR_SEQS", help="tsv with miRNAs and their sequences")
+    parser.add_option("--kds", dest="KDS", help="kd data in tsv format", default=None)
+    parser.add_option("--sa_bg", dest="SA_BG", help="SA background for 12mers")
+    parser.add_option("--rnaplfold_dir", dest="RNAPLFOLD_DIR", help="folder with RNAplfold info for transcripts")
+    parser.add_option("--pct_file", dest="PCT_FILE", help="file with PCT information")
+    parser.add_option("--kd_cutoff", dest="KD_CUTOFF", type=float, default=None)
+    parser.add_option("--outfile", dest="OUTFILE", help="location to write outputs")
     parser.add_option("--overlap_dist", dest="OVERLAP_DIST", help="minimum distance between neighboring sites", type=int)
+    parser.add_option("--upstream_limit", dest="UPSTREAM_LIMIT", help="how far upstream to look for 3p pairing", type=int)
     parser.add_option("--only_canon", dest="ONLY_CANON", help="only use canonical sites", default=False, action='store_true')
-    parser.add_option("--only_rbns", dest="ONLY_RBNS", help="only use miRNAs with RBNS data", default=False, action='store_true')
 
     (options, args) = parser.parse_args()
 
-    if (not os.path.isdir(options.OUTDIR)):
-        os.makedirs(options.OUTDIR)
+    TRANSCRIPTS = pd.read_csv(options.TRANSCRIPTS, sep='\t', index_col='transcript')
+    mirseqs = pd.read_csv(options.MIR_SEQS, sep='\t', index_col='mir')
+    if '_pass' in options.MIR:
+        MIRSEQ = mirseqs.loc[options.MIR.replace('_pass', '')]['pass_seq']
+    else:
+        MIRSEQ = mirseqs.loc[options.MIR]['guide_seq']
 
-    ### READ miRNA DATA and filter for ones to keep ###
-    MIRNAS = pd.read_csv(options.MIR_SEQS, sep='\t').sort_values('mir')
-    MIRNAS = MIRNAS[MIRNAS['use_tpms']]
-    if options.ONLY_RBNS:
-        MIRNAS = MIRNAS[MIRNAS['has_rbns']]
-    ALL_GUIDES = list(MIRNAS['mir'].values)
+    SITE8 = utils.rev_comp(MIRSEQ[1:8]) + 'A'
+    print(options.MIR, SITE8)
 
-    MIR_DICT = {}
-    ALL_MIRS = []
-    for row in MIRNAS.iterrows():
-        guide_seq = row[1]['guide_seq']
-        MIR_DICT[row[1]['mir']] = {
-            'mirseq': guide_seq,
-            'site8': utils.rev_comp(guide_seq[1:8]) + 'A'
-        }
-        ALL_MIRS.append(row[1]['mir'])
+    # if KD file provided, find sites based on KD file
+    if options.KDS is not None:
+        KDS = pd.read_csv(options.KDS, sep='\t')
+        if options.ONLY_CANON:
+            KDS = KDS[KDS['aligned_stype'] != 'no site']
+        KDS = KDS[KDS['best_stype'] == KDS['aligned_stype']]
 
-    ### READ EXPRESSION DATA ###
-    TPM = pd.read_csv(options.TPM_FILE, sep='\t', index_col=0).sort_index()
-    for mir in ALL_GUIDES:
-        if mir not in TPM.columns:
-            raise ValueError('{} given in mirseqs file but not in TPM file.'.format(mir))
+        temp = KDS[KDS['mir'] == options.MIR]
+        if len(temp) == 0:
+            raise ValueError('{} not in kd files'.format(options.MIR))
+        mir_kd_dict = {x: y for (x, y) in zip(temp['12mer'], temp['log_kd']) if (y < options.KD_CUTOFF)}
 
-    print("Using mirs: {}".format(ALL_MIRS))
+        # find all the sites and KDs
+        all_features = []
+        for row in TRANSCRIPTS.iterrows():
+            all_features.append(get_site_features.get_sites_from_kd_dict(row[0], row[1]['orf_utr3'], mir_kd_dict, options.OVERLAP_DIST))
 
-    # read in orf sequences
-    ORF_SEQS = pd.read_csv(options.ORF_FILE, sep='\t', header=None, index_col=0)
+    # otherwise, go by sequence
+    else:
+        all_features = []
+        for row in TRANSCRIPTS.iterrows():
+            all_features.append(get_site_features.get_sites_from_sequence(row[0], row[1]['orf_utr3'], SITE8,
+                            overlap_dist=options.OVERLAP_DIST, only_canon=options.ONLY_CANON))
 
-    # read in 5`UTR sequences
-    UTR5_SEQS = pd.read_csv(options.UTR5_FILE, sep='\t', header=None, index_col=0)
+    all_features = pd.concat(all_features).sort_values('transcript')
+    all_features['mir'] = options.MIR.replace('_pass', '*')
 
-    col_order = ['transcript', 'transcript_ix', 'mir', 'mirseq', '6mer_loc', 'seq', 'stype', 'log_KA', 'ORF_len']
+    # add site accessibility background information
+    temp = pd.read_csv(options.SA_BG.replace('MIR', options.MIR), sep='\t', index_col='12mer').reindex(all_features['12mer'].values)
+    all_features['logSA_bg'] = temp['logp'].values
 
-    with open(os.path.join(options.OUTDIR, 'transcript_sites.txt'), 'w') as outfile:
-        outfile.write('\t'.join(col_order) + '\n')
+    # add stypes
+    all_features['stype'] = [utils.get_centered_stype(SITE8, seq) for seq in all_features['12mer'].values]
 
-    kd_df = pd.read_csv(options.KD_FILE, sep='\t')
-    kd_dict = {}
-    for mir, group in kd_df.groupby('mir'):
-        kd_dict[mir] = group.set_index('12mer')
+    # sanity check on background
+    temp = all_features[all_features['stype'] != 'no site']
+    if len(temp) != len(temp.dropna()):
+        raise ValueError('Error in site accessibility background assignment')
 
-    with open(os.path.join(options.OUTDIR, 'transcript_sites.txt'), 'a') as outfile:
-        for ix, row in enumerate(TPM.iterrows()):
+    print('Adding 3p score and SA')
 
-            # print progress
-            if ix % 100 == 0:
-                print("Processed {}/{} transcripts".format(ix, len(TPM)))
+    # add transcript-specific information
+    temp = []
+    for transcript, group in all_features.groupby('transcript'):
+        locs = group['loc'].values
+        
+        # add threep pairing score
+        sequence = TRANSCRIPTS.loc[transcript]['orf_utr3']
+        group['Threep'] = [get_site_features.calculate_threep_score(MIRSEQ, sequence, int(loc - 3), options.UPSTREAM_LIMIT) for loc in locs]
 
-            transcript = row[0]
-            utr3 = row[1]['sequence']
-            orf = ORF_SEQS.loc[transcript][2]
-            orf_length = len(orf)
-            # utr5 = UTR5_SEQS.loc[transcript][2]
+        # add site accessibility information
+        lunp_file = os.path.join(options.RNAPLFOLD_DIR, transcript) + '.txt'
+        rnaplfold_data = pd.read_csv(lunp_file, sep='\t', index_col='end')
+        group['SA'] = rnaplfold_data.reindex(locs + 7)['14'].values.astype(float)  # Agarwal 2015 parameters
+        group['logSA'] = np.log(group['SA'])
 
-            # transcript_seq = utr5 + orf + utr3
-            transcript_seq = orf + utr3
-            # breaks_outfile.write('{}\t{}\t{}\n'.format(transcript, len(utr5), len(utr5 + orf)))
+        temp.append(group)
 
-            sites_df = []
+    all_features = pd.concat(temp)
+    all_features['orf_length'] = TRANSCRIPTS.reindex(all_features['transcript'].values)['orf_length'].values
+    all_features['utr3_length'] = TRANSCRIPTS.reindex(all_features['transcript'].values)['utr3_length'].values
+    all_features['in_ORF'] = all_features['loc'] < (all_features['orf_length'] + 15)
+    all_features['logSA_diff'] = all_features['logSA'] - all_features['logSA_bg']
+    all_features['utr3_loc'] = all_features['loc'] - all_features['orf_length']
 
-            for mir in ALL_MIRS:
+    # add PCT information
+    pct_df = pd.read_csv(options.PCT_FILE, sep='\t', usecols=['Gene ID', 'miRNA family', 'Site type', 'Site start', 'PCT'])
+    pct_df.columns = ['transcript', 'mir', 'stype', 'loc', 'PCT']
+    pct_df = pct_df[pct_df['mir'] == options.MIR]
+    if len(pct_df) == 0:
+        all_features['PCT'] = 0
+    else:
+        pct_df['offset'] = [1 if x in ['8mer-1a', '7mer-m8'] else 0 for x in pct_df['stype']]
+        pct_df['loc'] = pct_df['loc'] + pct_df['offset']
+        pct_df = pct_df[pct_df['stype'] != '6mer']
+        pct_df = pct_df.set_index(['transcript', 'loc'])
 
-                site8 = MIR_DICT[mir]['site8']
-                mirseq = MIR_DICT[mir]['mirseq']
+        temp1 = all_features[all_features['in_ORF']]
+        temp1['PCT'] = 0
+        temp2 = all_features[~all_features['in_ORF']]
+        temp2['PCT'] = pct_df.reindex(temp2[['transcript', 'utr3_loc']])['PCT'].values
+        temp2['PCT'] = temp2['PCT'].fillna(0.0)
+        all_features = pd.concat([temp1, temp2])
 
-                # get sites and 12mer sequences from UTR
-                seqs, locs = get_site_features.get_sites_from_utr(transcript_seq, site8, overlap_dist=options.OVERLAP_DIST, only_canon=options.ONLY_CANON)
+    all_features = all_features.set_index('transcript').sort_index()
 
-                if len(locs) > 0:
-                    features = pd.DataFrame({
-                        'transcript': [transcript] * len(locs),
-                        'transcript_ix': [ix] * len(locs),
-                        'mir': [mir] * len(locs),
-                        'seq': seqs,
-                        '6mer_loc': locs
-                    })
-                    features['mirseq'] = mirseq
-                    features['ORF_len'] = orf_length
-                    stypes = [utils.get_centered_stype(site8, seq) for seq in seqs]
-                    features['stype'] = stypes
-                    if mir in kd_dict:
-                        features['log_KA'] = -1 * kd_dict[mir].loc[seqs]['log_kd'].values
-                    else:
-                        features['log_KA'] = np.nan
-
-                    sites_df.append(features)
-
-            if len(sites_df) > 0:
-                sites_df = pd.concat(sites_df, sort=True)[col_order]
-                sites_df.to_csv(outfile, sep='\t', header=False, index=False, float_format='%.3f')
+    # write outputs
+    all_features.to_csv(options.OUTFILE.replace('MIR', options.MIR), sep='\t')

@@ -7,6 +7,59 @@ import pandas as pd
 import utils
 
 
+def get_sites_from_kd_dict(transcript_id, sequence, kd_dict, overlap_dist):
+    if len(sequence) < 9:
+        return pd.DataFrame(None)
+
+    mir_info = {
+        'prev_loc': -100,
+        'prev_seq': '',
+        'prev_kd': 100,
+        'keep_kds': [],
+        'keep_locs': [],
+        'keep_seqs': []
+    }
+
+    pad_seq = 'XXX' + sequence + 'XXX'
+    seq = 'A' + pad_seq[:11]
+
+    # iterate through 12mers in the sequence
+    for loc, nt in enumerate(pad_seq[11:]):
+        seq = seq[1:] + nt
+
+        if seq in kd_dict:
+            new_kd = kd_dict[seq]
+
+            # if new site is too close to previous site, take site with higher affinity
+            if (loc - mir_info['prev_loc']) <= overlap_dist:
+                if new_kd < mir_info['prev_kd']:
+                    mir_info['keep_kds'][-1] = new_kd
+                    mir_info['keep_locs'][-1] = loc
+                    mir_info['keep_seqs'][-1] = seq
+                    mir_info['prev_loc'] = loc
+                    mir_info['prev_kd'] = new_kd
+                    # print('replace')
+                else:
+                    # print('skipped')
+                    continue
+            else:
+                # print('added')
+                mir_info['keep_kds'].append(new_kd)
+                mir_info['keep_locs'].append(loc)
+                mir_info['keep_seqs'].append(seq)
+                mir_info['prev_loc'] = loc
+                mir_info['prev_kd'] = new_kd
+                
+    all_sites = pd.DataFrame({
+        'transcript': transcript_id,
+        '12mer': mir_info['keep_seqs'],
+        'log_kd': mir_info['keep_kds'],
+        'loc': mir_info['keep_locs']
+    })
+
+    return all_sites
+
+
 def _priority_order(locs, overlap_dist):
     """Helper function for get_sites_from_utr"""
     
@@ -23,46 +76,51 @@ def _priority_order(locs, overlap_dist):
     return sorted(new_locs)
 
 
-def get_sites_from_utr(utr, site8, overlap_dist, only_canon):
+def get_sites_from_sequence(transcript_id, sequence, site8, overlap_dist, only_canon):
     """
-    Given a UTR sequence and the site sequence of an 8mer, return the location of all potential sites with >= 4nt of the 8mer.
+    Given a nucleotide sequence and the site sequence of an 8mer, return the location of all potential sites with >= 4nt of the 8mer.
 
     Parameters:
-        utr (string): UTR sequence
+        sequence (string): nucleotide sequence
         site (string): 8mer site sequence
         overlap_dist (int): overlap distance allowed between sites
         only_canon (bool): if true, only return location of canonical sites
 
     Returns:
-        list of ints: location of all desired sites in a UTR
+        list of ints: location of all desired sites in a sequence
     """
     # get site locations of all canonical sites
-    locs0 = [m.start() - 1 for m in re.finditer('(?={})'.format(site8[2:]), utr)]  # pos 1-6
-    locs1 = [m.start() for m in re.finditer('(?={})'.format(site8[1:-1]), utr)]  # pos 2-7 (start of 6mer site)
-    locs2 = [m.start() + 1 for m in re.finditer('(?={})'.format(site8[:-2]), utr)]  # pos 3-8
+    locs0 = [m.start() - 1 for m in re.finditer('(?={})'.format(site8[2:]), sequence)]  # pos 1-6
+    locs1 = [m.start() for m in re.finditer('(?={})'.format(site8[1:-1]), sequence)]  # pos 2-7 (start of 6mer site)
+    locs2 = [m.start() + 1 for m in re.finditer('(?={})'.format(site8[:-2]), sequence)]  # pos 3-8
     locs = (locs1 + locs2 + locs0)
 
     if not only_canon:
         # get site locations of all 4mer subsequences of the 8mer site
-        locs0 = [m.start() - 3 for m in re.finditer('(?={})'.format(site8[4:]), utr)]  # pos 1-4
-        locs1 = [m.start() - 2 for m in re.finditer('(?={})'.format(site8[3:-1]), utr)]  # pos 2-5
-        locs2 = [m.start() - 1 for m in re.finditer('(?={})'.format(site8[2:-2]), utr)]  # pos 3-6
-        locs3 = [m.start() for m in re.finditer('(?={})'.format(site8[1:-3]), utr)]  # pos 4-7 (start of 6mer site)
-        locs4 = [m.start() + 1 for m in re.finditer('(?={})'.format(site8[:-4]), utr)]  # pos 5-8
+        locs0 = [m.start() - 3 for m in re.finditer('(?={})'.format(site8[4:]), sequence)]  # pos 1-4
+        locs1 = [m.start() - 2 for m in re.finditer('(?={})'.format(site8[3:-1]), sequence)]  # pos 2-5
+        locs2 = [m.start() - 1 for m in re.finditer('(?={})'.format(site8[2:-2]), sequence)]  # pos 3-6
+        locs3 = [m.start() for m in re.finditer('(?={})'.format(site8[1:-3]), sequence)]  # pos 4-7 (start of 6mer site)
+        locs4 = [m.start() + 1 for m in re.finditer('(?={})'.format(site8[:-4]), sequence)]  # pos 5-8
         locs += (locs1 + locs2 + locs0 + locs3 + locs4)
 
-    # get rid of any that would put the 6mer site outside the bounds of the UTR
-    locs = [l for l in locs if ((l >= 0) and ((l + 6) <= len(utr)))]
+    # get rid of any that would put the 6mer site outside the bounds of the sequence
+    locs = [l for l in locs if ((l >= 0) and ((l + 6) <= len(sequence)))]
 
     # if 1 or fewer sites found, return list as is
     if len(locs) > 1:
         locs = _priority_order(locs, overlap_dist)
 
-    utr_ext = ('XXX' + utr + 'XXX')
-    seqs = [utr_ext[l:l + 12] for l in locs]
+    sequence_ext = ('XXX' + sequence + 'XXX')
+    seqs = [sequence_ext[l:l + 12] for l in locs]
 
-    # sites already listed in order of priority, except longer sites take precedent
-    return seqs, locs
+    all_sites = pd.DataFrame({
+        'transcript': transcript_id,
+        '12mer': seqs,
+        'loc': locs
+    })
+
+    return all_sites
 
 
 ### TS7 Feature functions ###

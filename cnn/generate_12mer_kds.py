@@ -15,7 +15,12 @@ def generate_12mers(site8):
         subseq = site8[i:i+4]
         mers += [x[:i+2] + subseq + x[i+2:] for x in random_8mers]
     mers = list(set(mers))
-    return sorted(mers)
+    all_mers = []
+    for ix in [1, 2, 3]:
+        all_mers += list(set(['X'*ix + mer[ix:] for mer in mers]))
+        all_mers += list(set([mer[:-1*ix] + 'X'*ix for mer in mers]))
+
+    return mers + all_mers
 
 
 def calculate_12mer_kds(mirname, mirseq, mirlen, load_model, outfile):
@@ -35,8 +40,8 @@ def calculate_12mer_kds(mirname, mirseq, mirlen, load_model, outfile):
     # generate all 12mer sequences, there should be 262,144
     kmers = generate_12mers(site8)
 
-    if len(kmers) != 262144:
-        raise(ValueError("kmers should be 262144 in length"))
+    if len(kmers) != 438784:
+        raise(ValueError("kmers should be 438784 in length"))
 
     # load trained model 
     tf.reset_default_graph()
@@ -53,12 +58,12 @@ def calculate_12mer_kds(mirname, mirseq, mirlen, load_model, outfile):
         _prediction = tf.get_default_graph().get_tensor_by_name('final_layer/pred_ka:0')
 
         num_batches = 64
-        batch_size = 4096
+        batch_size = 6856
 
         with open(outfile, 'w') as outfile_writer:
-            outfile_writer.write('12mer\tlog_kd\tmir\tmirseq\tstype\n')
+            outfile_writer.write('12mer\tlog_kd\tmir\tmirseq\taligned_stype\tbest_stype\n')
             for batch in range(num_batches):
-                print("Processing {}/{}...".format((batch+1)*batch_size, 262144))
+                print("Processing {}/{}...".format((batch+1)*batch_size, 438784))
                 seqs = kmers[batch*batch_size: (batch+1) * batch_size]
                 input_data = []
                 for ix, seq in enumerate(seqs):
@@ -74,10 +79,11 @@ def calculate_12mer_kds(mirname, mirseq, mirlen, load_model, outfile):
                             }
 
                 pred_kds = -1 * sess.run(_prediction, feed_dict=feed_dict).flatten()
-                stypes = [utils.get_centered_stype(site8, seq) for seq in seqs]
+                aligned_stypes = [utils.get_centered_stype(site8, seq) for seq in seqs]
+                best_stypes = [utils.get_best_stype(site8, seq) for seq in seqs]
 
-                for seq, kd, stype in zip(seqs, pred_kds, stypes):
-                    outfile_writer.write('{}\t{}\t{}\t{}\t{}\n'.format(seq, kd, mirname, mirseq, stype))
+                for seq, kd, aligned_stype, best_stype in zip(seqs, pred_kds, aligned_stypes, best_stypes):
+                    outfile_writer.write('{}\t{}\t{}\t{}\t{}\n'.format(seq, kd, mirname, mirseq, aligned_stype, best_stype))
 
 
 if __name__ == '__main__':
@@ -89,6 +95,7 @@ if __name__ == '__main__':
     parser.add_option("--mirlen", dest="MIRLEN", type=int)
     parser.add_option("--load_model", dest="LOAD_MODEL", help="trained model to use")
     parser.add_option("--outfile", dest="OUTFILE", help="output file")
+    parser.add_option("--passenger", dest="PASSENGER", help="include passenger", default=False, action='store_true')
 
     (options, args) = parser.parse_args()
 
@@ -103,6 +110,12 @@ if __name__ == '__main__':
                 print(mirname, mirseq)
                 calculate_12mer_kds(mirname, mirseq, options.MIRLEN,
                     options.LOAD_MODEL, options.OUTFILE.replace('MIR', mirname))
+
+                if options.PASSENGER:
+                    mirname, mirseq = row[0] + '_pass', row[1]['pass_seq']
+                    print(mirname, mirseq)
+                    calculate_12mer_kds(mirname, mirseq, options.MIRLEN,
+                        options.LOAD_MODEL, options.OUTFILE.replace('MIR', mirname))
         else:
             mirname = options.MIRNAME
             mirseq = mirdata.loc[mirname]['guide_seq']

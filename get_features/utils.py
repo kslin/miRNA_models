@@ -4,68 +4,6 @@ from scipy import stats
 import tensorflow as tf
 
 
-### functions from Namita
-import subprocess
-
-def GetdG_dotbracket(seq1, seq2):
-    # output_ = subprocess.check_output('echo \'' + seq +'\' | RNAfold -d 0', shell=True).split('\n')
-    out = subprocess.check_output('echo \'' + seq1 +'&' + seq2 + '\' | RNAcofold -d2',  shell=True)
-    dG = float(out[-8:-2])
-    dotbracket =  out.split()[1]
-    return dG, dotbracket
-
-def threepscore_NB(mirnaseq, UTR, index):
-    #index is where the seed pairing starts 
-    #5' to 3'
-
-    #window to search for 3p pairing, start 8 nucleotides away and search a total of a looplen up to 12nt + 9mer of pairing = 21nt total
-    window = 21
-    index_start = max(0, index-8-window)
-    index_end = min(index-8, len(UTR))
-    UTRsearch = UTR[index_start:index_end]
-    if len(UTRsearch) < 4:
-        return 0.0, 0, 0
-
-    dG, dotbracket = GetdG_dotbracket(mirnaseq[8:], UTRsearch)
-    dotbracket = dotbracket.decode()
-    try:
-        dotbracket_mirna = dotbracket.split('&')[0]
-        dotbracket_target = dotbracket.split('&')[1]
-
-    except:
-        print(UTRsearch, index_start, index_end, mirnaseq[8:], dotbracket)
-        raise ValueError()
-
-    #need atleast 3 predicted basepairs
-    if dotbracket_target.count(')') > 3:
-        looplen = dotbracket_target[::-1].find(')')
-        register = dotbracket_mirna.find('(') + 9
-        dGout = dG
-    else:
-        looplen = 0
-        dGout = 0
-        register = 0
-    
-
-    return dGout, looplen, register
-
-def test_threepscore_NB():
-
-    mirnaseq = 'UGAGGUAGUAGGUUGUAUAGUU'
-    index = 41
-    #A good 3p site: "UACAACC-N5-CCACCUCA" 5p to 3p
-    # UTR = 'AGCUGAGUCGUAGCUGAUCGA UACAACC AAGUU CCACCUCA AUUGUAUGUCU'
-    #5' to 3'
-    UTR = 'AGCUGAGUCGUAGCUGAUCGAUACAACCAAGUUCCACCUCAAUUGUAUGUCU'
-
-    dG, looplen, register = threepscore_NB(mirnaseq,UTR, index)
-
-    print(dG, looplen, register)
-
-# test_threepscore_NB()
-
-### end functions from Namita
-
 def site_to_ints(site):
     nt_dict = {
         'A': 0,
@@ -100,7 +38,6 @@ def mir_site_pair_to_ints(mir, site):
     return ints
 
 
-
 ### TFRecords Functions ###
 def _float_feature(value):
     """Returns a float_list from a float / double."""
@@ -117,10 +54,6 @@ def _bytes_feature(value):
 def _string_feature(value):
     """Returns a bytes_list from a list of strings."""
     return tf.train.Feature(bytes_list=tf.train.BytesList(value=value))
-
-
-# def calc_r2(xs, ys):
-#     return stats.linregress(xs.flatten(), ys.flatten())[2]**2
 
 
 # def get_nsites(features):
