@@ -169,31 +169,14 @@ def _parse_log_kd_function(serialized_example):
     return parsed['mir'], image, parsed['log_kd'], parsed['keep_prob'], parsed['stype']
 
 
-def _filter_kds_train(mir, image, kd, keep_prob, stype):
-    better_than_nosite = tf.math.less(kd[0], 0.0)
-    # return better_than_nosite
-    return tf.logical_and(better_than_nosite, tf.math.greater(keep_prob[0], tf.random.uniform(shape=(), minval=0, maxval=1)))
-    # return tf.math.greater(keep_prob[0], tf.random.uniform(shape=(), minval=0, maxval=1))
-    
-    
-    # keep_withsite = tf.math.greater(keep_prob[0], tf.random.uniform(shape=(), minval=0, maxval=1))
-    # keep_withsite = tf.logical_and(better_than_nosite, keep_withsite)
-    # keep_nosite = tf.math.greater(keep_prob[0], tf.random.uniform(shape=(), minval=0, maxval=1))
-    # keep_nosite = tf.logical_and(tf.logical_not(better_than_nosite), keep_nosite)
-    # # return keep
-    # return tf.logical_or(keep_withsite, keep_nosite)
-    # return tf.math.greater(tf.sigmoid((-1.0 * kd) - 3.0), tf.random.uniform(shape=(), minval=0, maxval=1))[0]
-    # return tf.math.greater(tf.sigmoid((-1.0 * kd) - 2.0), tf.constant([0.5]))[0]
+def _filter_kds_keepprob(mir, image, kd, keep_prob, stype):
+    return tf.logical_and(tf.math.greater(2.0, kd[0]), tf.math.greater(keep_prob[0], tf.random.uniform(shape=(), minval=0, maxval=1)))
 
 
-
-def _filter_kds_val(mir, image, kd, keep_prob, stype):
-    return tf.math.greater(keep_prob[0], tf.random.uniform(shape=(), minval=0, maxval=1))
-#     better_than_nosite = tf.math.less(kd[0], -2.0)
-    
-#     keep_withsite = tf.math.greater(keep_prob[0], tf.random.uniform(shape=(), minval=0, maxval=1))
-#     keep_withsite = tf.logical_and(better_than_nosite, keep_withsite)
-#     return keep_withsite
+def _filter_kds_deplete0(mir, image, kd, keep_prob, stype):
+    outside1 = tf.math.greater(tf.abs(kd[0]), 1.0)
+    coin_flip = tf.math.greater(1 / ((-3 * tf.math.abs(kd[0]) + 4) + 0.0001), tf.random.uniform(shape=(), minval=0, maxval=1))
+    return tf.logical_or(outside1, coin_flip)
 
 
 def _rev_comp(seq):

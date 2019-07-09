@@ -20,7 +20,7 @@ if __name__ == '__main__':
     parser.add_option("--kds", dest="KDS", help="kd data in tsv format", default=None)
     parser.add_option("--sa_bg", dest="SA_BG", help="SA background for 12mers")
     parser.add_option("--rnaplfold_dir", dest="RNAPLFOLD_DIR", help="folder with RNAplfold info for transcripts")
-    parser.add_option("--pct_file", dest="PCT_FILE", help="file with PCT information")
+    parser.add_option("--pct_file", dest="PCT_FILE", default=None, help="file with PCT information")
     parser.add_option("--kd_cutoff", dest="KD_CUTOFF", type=float, default=None)
     parser.add_option("--outfile", dest="OUTFILE", help="location to write outputs")
     parser.add_option("--overlap_dist", dest="OVERLAP_DIST", help="minimum distance between neighboring sites", type=int)
@@ -29,15 +29,22 @@ if __name__ == '__main__':
 
     (options, args) = parser.parse_args()
 
+    if options.MIR == 'let7c':
+        KD_MIR = 'let7'
+        FEATURE_MIR = 'let7c'
+    else:
+        KD_MIR = options.MIR
+        FEATURE_MIR = options.MIR
+
     TRANSCRIPTS = pd.read_csv(options.TRANSCRIPTS, sep='\t', index_col='transcript')
     mirseqs = pd.read_csv(options.MIR_SEQS, sep='\t', index_col='mir')
-    if '_pass' in options.MIR:
-        MIRSEQ = mirseqs.loc[options.MIR.replace('_pass', '')]['pass_seq']
+    if '_pass' in KD_MIR:
+        MIRSEQ = mirseqs.loc[KD_MIR.replace('_pass', '')]['pass_seq']
     else:
-        MIRSEQ = mirseqs.loc[options.MIR]['guide_seq']
+        MIRSEQ = mirseqs.loc[KD_MIR]['guide_seq']
 
     SITE8 = utils.rev_comp(MIRSEQ[1:8]) + 'A'
-    print(options.MIR, SITE8)
+    print(KD_MIR, FEATURE_MIR, SITE8)
 
     # if KD file provided, find sites based on KD file
     if options.KDS is not None:
@@ -46,9 +53,9 @@ if __name__ == '__main__':
             KDS = KDS[KDS['aligned_stype'] != 'no site']
         KDS = KDS[KDS['best_stype'] == KDS['aligned_stype']]
 
-        temp = KDS[KDS['mir'] == options.MIR]
+        temp = KDS[KDS['mir'] == KD_MIR]
         if len(temp) == 0:
-            raise ValueError('{} not in kd files'.format(options.MIR))
+            raise ValueError('{} not in kd files'.format(KD_MIR))
         mir_kd_dict = {x: y for (x, y) in zip(temp['12mer'], temp['log_kd']) if (y < options.KD_CUTOFF)}
 
         # find all the sites and KDs
@@ -64,10 +71,10 @@ if __name__ == '__main__':
                             overlap_dist=options.OVERLAP_DIST, only_canon=options.ONLY_CANON))
 
     all_features = pd.concat(all_features).sort_values('transcript')
-    all_features['mir'] = options.MIR.replace('_pass', '*')
+    all_features['mir'] = FEATURE_MIR.replace('_pass', '*')
 
     # add site accessibility background information
-    temp = pd.read_csv(options.SA_BG.replace('MIR', options.MIR), sep='\t', index_col='12mer').reindex(all_features['12mer'].values)
+    temp = pd.read_csv(options.SA_BG.replace('MIR', KD_MIR), sep='\t', index_col='12mer').reindex(all_features['12mer'].values)
     all_features['logSA_bg'] = temp['logp'].values
 
     # add stypes
@@ -104,26 +111,30 @@ if __name__ == '__main__':
     all_features['logSA_diff'] = all_features['logSA'] - all_features['logSA_bg']
     all_features['utr3_loc'] = all_features['loc'] - all_features['orf_length']
 
-    # add PCT information
-    pct_df = pd.read_csv(options.PCT_FILE, sep='\t', usecols=['Gene ID', 'miRNA family', 'Site type', 'Site start', 'PCT'])
-    pct_df.columns = ['transcript', 'mir', 'stype', 'loc', 'PCT']
-    pct_df = pct_df[pct_df['mir'] == options.MIR]
-    if len(pct_df) == 0:
-        all_features['PCT'] = 0
-    else:
-        pct_df['offset'] = [1 if x in ['8mer-1a', '7mer-m8'] else 0 for x in pct_df['stype']]
-        pct_df['loc'] = pct_df['loc'] + pct_df['offset']
-        pct_df = pct_df[pct_df['stype'] != '6mer']
-        pct_df = pct_df.set_index(['transcript', 'loc'])
+    print('Adding PCT')
 
-        temp1 = all_features[all_features['in_ORF']]
-        temp1['PCT'] = 0
-        temp2 = all_features[~all_features['in_ORF']]
-        temp2['PCT'] = pct_df.reindex(temp2[['transcript', 'utr3_loc']])['PCT'].values
-        temp2['PCT'] = temp2['PCT'].fillna(0.0)
-        all_features = pd.concat([temp1, temp2])
+    # add PCT information if indicated
+    if options.PCT_FILE is not None:
+        pct_df = pd.read_csv(options.PCT_FILE, sep='\t', usecols=['Gene ID', 'miRNA family', 'Site type', 'Site start', 'PCT'])
+        pct_df.columns = ['transcript', 'mir', 'stype', 'loc', 'PCT']
+        pct_df = pct_df[pct_df['mir'] == FEATURE_MIR]
+        if len(pct_df) == 0:
+            all_features['PCT'] = 0
+            print(f"No PCT information for {FEATURE_MIR}")
+        else:
+            pct_df['offset'] = [1 if x in ['8mer-1a', '7mer-m8'] else 0 for x in pct_df['stype']]
+            pct_df['loc'] = pct_df['loc'] + pct_df['offset']
+            pct_df = pct_df[pct_df['stype'] != '6mer']
+            pct_df = pct_df.set_index(['transcript', 'loc'])
+
+            temp1 = all_features[all_features['in_ORF']]
+            temp1['PCT'] = 0
+            temp2 = all_features[~all_features['in_ORF']]
+            temp2['PCT'] = pct_df.reindex(temp2[['transcript', 'utr3_loc']])['PCT'].values
+            temp2['PCT'] = temp2['PCT'].fillna(0.0)
+            all_features = pd.concat([temp1, temp2])
 
     all_features = all_features.set_index('transcript').sort_index()
 
     # write outputs
-    all_features.to_csv(options.OUTFILE.replace('MIR', options.MIR), sep='\t')
+    all_features.to_csv(options.OUTFILE.replace('MIR', FEATURE_MIR), sep='\t')

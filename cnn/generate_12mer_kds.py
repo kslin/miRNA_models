@@ -83,7 +83,7 @@ def calculate_12mer_kds(mirname, mirseq, mirlen, load_model, outfile):
                 best_stypes = [utils.get_best_stype(site8, seq) for seq in seqs]
 
                 for seq, kd, aligned_stype, best_stype in zip(seqs, pred_kds, aligned_stypes, best_stypes):
-                    outfile_writer.write('{}\t{}\t{}\t{}\t{}\n'.format(seq, kd, mirname, mirseq, aligned_stype, best_stype))
+                    outfile_writer.write('{}\t{}\t{}\t{}\t{}\t{}\n'.format(seq, kd, mirname, mirseq, aligned_stype, best_stype))
 
 
 if __name__ == '__main__':

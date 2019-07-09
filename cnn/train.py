@@ -55,14 +55,16 @@ if __name__ == '__main__':
 
     tf.reset_default_graph()
 
-    # weight inits
-    FREEAGO_INIT = -5.4
-    FREEAGO_GUIDE_OFFSET = 0.0
-    FREEAGO_PASS_OFFSET = -1.0
-    WEIGHTS_INIT = np.array([-1.0, 0.1, 0.1, 0.1])
-    WEIGHTS_INIT = np.array([0.0] * options.USE_FEATS).reshape([options.USE_FEATS, 1])
-    # WEIGHTS_INIT = np.array([[-1.9663382], [0.22403683]])
-    DECAY_INIT = -0.2
+    # weight initializations
+    WEIGHTS_INIT = {
+        'freeAGO_mean': -5.0,
+        # 'freeAGO_guide_offset': 0.0,
+        'freeAGO_pass_offset': -2.0,
+        'feature_coefs': np.array([-2.0, 0.2, 0.2, 1.0])[:options.USE_FEATS].reshape([options.USE_FEATS, 1]),
+        'decay': 0.2
+    }
+
+    print(WEIGHTS_INIT)
 
     # SEQLEN must be 12
     SEQLEN = 12
@@ -112,7 +114,7 @@ if __name__ == '__main__':
 
     else:
         # split repression miRNAs into training and testing
-        if options.VAL_MIR == 'none':
+        if options.VAL_MIR in ['none', 'let7']:
             TRAIN_GUIDES = [x for x in ALL_GUIDES if x != 'mir204'] + ['mir204']
             VAL_GUIDES = []
         else:
@@ -212,22 +214,21 @@ if __name__ == '__main__':
             kd_val_dataset = kd_dataset.take(1000)
             kd_train_dataset = kd_dataset.skip(1000)
 
-    kd_train_dataset = kd_train_dataset.prefetch(options.KD_BATCH_SIZE)
-    kd_val_dataset = kd_val_dataset.prefetch(1000)
-
     # shuffle, batch, and map datasets
     kd_train_dataset = kd_train_dataset.apply(tf.data.experimental.shuffle_and_repeat(buffer_size=1000))
     kd_train_dataset = kd_train_dataset.map(parse_data_utils._parse_log_kd_function, num_parallel_calls=16)
 
     # re-balance KD data towards high-affinity sites
-    kd_train_dataset = kd_train_dataset.filter(parse_data_utils._filter_kds_train)
+    kd_train_dataset = kd_train_dataset.filter(parse_data_utils._filter_kds_keepprob)
     kd_train_dataset = kd_train_dataset.batch(options.KD_BATCH_SIZE, drop_remainder=True)
+    kd_train_dataset = kd_train_dataset.prefetch(options.KD_BATCH_SIZE)
 
     kd_val_dataset = kd_val_dataset.shuffle(buffer_size=1000)
     kd_val_dataset = kd_val_dataset.repeat()
     kd_val_dataset = kd_val_dataset.map(parse_data_utils._parse_log_kd_function)
-    kd_val_dataset = kd_val_dataset.filter(parse_data_utils._filter_kds_val)
+    kd_val_dataset = kd_val_dataset.filter(parse_data_utils._filter_kds_keepprob)
     kd_val_dataset = kd_val_dataset.batch(1000, drop_remainder=False)
+    kd_val_dataset = kd_val_dataset.prefetch(1000)
 
     # make feedable iterators
     kd_train_iterator = kd_train_dataset.make_initializable_iterator()
@@ -253,6 +254,15 @@ if __name__ == '__main__':
             random_labels.append([1.0])
             random_stypes.append(b'extra')
 
+            # generate miRNA and target with no pairing and assign KD of 0
+            rbns2_mir = np.random.choice(TRAIN_MIRS_KDS)
+            random_mirs.append(rbns2_mir.encode('utf-8'))
+            rbns2_target = utils.generate_random_seq(3) + utils.rev_comp(MIRNA_DATA.loc[rbns2_mir]['guide_seq'][1:7]) + utils.generate_random_seq(3)
+            rbns2_mirseq = utils.get_mir_no_match(rbns2_target, options.MIRLEN)
+            random_images.append(np.outer(utils.one_hot_encode(rbns2_mirseq), utils.one_hot_encode(rbns2_target)))
+            random_labels.append([1.0])
+            random_stypes.append(b'extra')
+
             # generate random 8mer pair and assign KD of average 8mer
             random_mirseq = utils.generate_random_seq(options.MIRLEN)
             # random_target = utils.get_target_no_match(random_mirseq, SEQLEN)
@@ -261,17 +271,20 @@ if __name__ == '__main__':
             down_flank = utils.generate_random_seq(2)
             random_target = up_flank + utils.rev_comp(random_mirseq[1:8]) + 'A' + down_flank
             random_images.append(np.outer(utils.one_hot_encode(random_mirseq), utils.one_hot_encode(random_target)))
-            flank_ATs = np.sum([x in ['A', 'T'] for x in (up_flank + down_flank)])
-            random_labels.append([-4.5 - (0.5 * flank_ATs)])
-            random_stypes.append(b'extra')
-
-            # generate miRNA and target with no pairing and assign KD of 0
-            rbns2_mir = np.random.choice(TRAIN_MIRS_KDS)
-            random_mirs.append(rbns2_mir.encode('utf-8'))
-            rbns2_target = utils.generate_random_seq(3) + utils.rev_comp(MIRNA_DATA.loc[rbns2_mir]['guide_seq'][1:7]) + utils.generate_random_seq(3)
-            rbns2_mirseq = utils.get_mir_no_match(rbns2_target, options.MIRLEN)
-            random_images.append(np.outer(utils.one_hot_encode(rbns2_mirseq), utils.one_hot_encode(rbns2_target)))
-            random_labels.append([1.0])
+            new_label = -5.367
+            # new_label = -5
+            flank_vals = {
+                'A': -0.34923908,
+                'T': -0.24840472,
+                'C': 0.12640774,
+                'G': 0.47123606
+            }
+            all_flank = up_flank + down_flank
+            for nt, val in flank_vals.items():
+                new_label += val * all_flank.count(nt)
+            # flank_ATs = np.sum([x in ['A', 'T'] for x in (up_flank + down_flank)])
+            # random_labels.append([-4.0 - (0.5 * flank_ATs)])
+            random_labels.append([new_label])
             random_stypes.append(b'extra')
 
             yield np.array(random_mirs), np.stack(random_images), np.array(random_labels), np.array(random_stypes)
@@ -296,7 +309,7 @@ if __name__ == '__main__':
     # _kd_weights = tf.concat([tf.constant([[1.0]] * options.KD_BATCH_SIZE), _kd_decay * tf.constant([[0.2]] * NUM_EXTRA_KD_VALS)], axis=0)
 
     # _kd_weights = tf.constant(([[1.0]] * options.KD_BATCH_SIZE) + ([[0.0]] * NUM_EXTRA_KD_VALS))
-    _kd_weights = tf.constant(([[1.0]] * options.KD_BATCH_SIZE) + ([[0.0], [0.2], [0.0]]))
+    _kd_weights = tf.constant(([[1.0]] * options.KD_BATCH_SIZE) + ([[0.0], [0.0], [0.5]]))
 
     _next_kd_batch_kds = tf.concat([next_kd_batch_labels, random_seq_labels], axis=0)
 
@@ -321,31 +334,45 @@ if __name__ == '__main__':
         options.HIDDEN1, options.HIDDEN2, options.HIDDEN3, options.MIRLEN, SEQLEN, options.DROPOUT_RATE > 0
     )
 
+    # add layers to tensorboard
+    tf.summary.image("layer1", tf.transpose(_cnn_weights['w1'], perm=[3,0,1,2]), max_outputs=4)
+
     # make KD model saver
     pretrain_saver = tf.train.Saver(tf.global_variables(), max_to_keep=options.NUM_EPOCHS)
 
     # split data into biochem and repression and get biochem loss
     _pred_biochem = _pred_ka_values[:tf.shape(next_kd_batch['images'])[0], :]
-    # _ka_weighted_difference = _kd_weights * tf.square(tf.nn.relu(_pred_biochem) - tf.nn.relu(next_kd_batch['labels']))
-    _ka_weighted_difference = _kd_weights * tf.square(_pred_biochem - next_kd_batch['labels'])
+    # _ka_weights = tf.nn.relu(next_kd_batch['labels']) + 1
+    # _ka_weights /= tf.reduce_sum(_ka_weights)
+    # _ka_weighted_difference = _kd_weights * tf.square(_pred_biochem - next_kd_batch['labels'])
+    _ka_weighted_difference = _kd_weights * tf.square(tf.nn.relu(_pred_biochem) - tf.nn.relu(next_kd_batch['labels']))
     _ka_loss = tf.reduce_sum(_ka_weighted_difference) / (2 * options.KD_BATCH_SIZE)
     # _ka_loss = tf.nn.l2_loss(tf.nn.relu(_pred_biochem) - next_kd_batch['labels']) / options.KD_BATCH_SIZE
     _utr_ka_values = _pred_ka_values[tf.shape(next_kd_batch['images'])[0]:, :]
 
+    # # create freeAGO concentration variables
+    # _freeAGO_mean = tf.get_variable('freeAGO_mean', shape=(), initializer=tf.constant_initializer(WEIGHTS_INIT['freeAGO_mean']))
+    # # _assign_freeAGO_mean = _freeAGO_mean.assign(WEIGHTS_INIT['freeAGO_mean'])
+    # _freeAGO_guide_offset = tf.get_variable('freeAGO_guide_offset', shape=[NUM_TRAIN_GUIDES], initializer=tf.constant_initializer(WEIGHTS_INIT['freeAGO_guide_offset']))
+    # if options.PASSENGER:
+    #     _freeAGO_pass_offset = tf.get_variable('freeAGO_pass_offset', shape=[NUM_TRAIN_GUIDES], initializer=tf.constant_initializer(WEIGHTS_INIT['freeAGO_pass_offset']))
+    #     _freeAGO_all = tf.reshape(tf.stack([_freeAGO_guide_offset, _freeAGO_pass_offset], axis=1), [-1]) + _freeAGO_mean
+    #     _freeAGO_all_val = tf.placeholder(tf.float32, shape=[len(ALL_GUIDES) * 2], name='freeAGO_val')
+    # else:
+    #     _freeAGO_all = _freeAGO_guide_offset + _freeAGO_mean
+    #     _freeAGO_all_val = tf.placeholder(tf.float32, shape=[len(ALL_GUIDES)], name='freeAGO_val')
+
     # create freeAGO concentration variables
-    _freeAGO_mean = tf.get_variable('freeAGO_mean', shape=(), initializer=tf.constant_initializer(FREEAGO_INIT))
-    _freeAGO_guide_offset = tf.get_variable('freeAGO_guide_offset', shape=[NUM_TRAIN_GUIDES], initializer=tf.constant_initializer(FREEAGO_GUIDE_OFFSET))
+    _freeAGO_guide = tf.get_variable('freeAGO_guide_offset', shape=[NUM_TRAIN_GUIDES], initializer=tf.constant_initializer(WEIGHTS_INIT['freeAGO_mean']))
+    _freeAGO_mean = tf.reduce_mean(_freeAGO_guide)
+    _freeAGO_guide_offset = _freeAGO_guide - _freeAGO_mean
     if options.PASSENGER:
-        _freeAGO_pass_offset = tf.get_variable('freeAGO_pass_offset', shape=[NUM_TRAIN_GUIDES], initializer=tf.constant_initializer(FREEAGO_PASS_OFFSET))
-        _freeAGO_all = tf.reshape(tf.stack([_freeAGO_guide_offset, _freeAGO_pass_offset], axis=1), [-1]) + _freeAGO_mean
+        _freeAGO_pass = tf.get_variable('freeAGO_pass_offset', shape=[NUM_TRAIN_GUIDES], initializer=tf.constant_initializer(WEIGHTS_INIT['freeAGO_pass_offset'] + WEIGHTS_INIT['freeAGO_mean']))
+        _freeAGO_all = tf.reshape(tf.stack([_freeAGO_guide, _freeAGO_pass], axis=1), [-1])
         _freeAGO_all_val = tf.placeholder(tf.float32, shape=[len(ALL_GUIDES) * 2], name='freeAGO_val')
-        # _offsets = tf.get_variable('offsets', shape=[NUM_TRAIN_GUIDES * 2], initializer=tf.constant_initializer(FREEAGO_INIT))
-        # _offsets_val = tf.placeholder(tf.float32, shape=[len(ALL_GUIDES) * 2], name='offsets_val')
     else:
-        _freeAGO_all = _freeAGO_guide_offset + _freeAGO_mean
+        _freeAGO_all = _freeAGO_guide
         _freeAGO_all_val = tf.placeholder(tf.float32, shape=[len(ALL_GUIDES)], name='freeAGO_val')
-        # _offsets = tf.get_variable('offsets', shape=[NUM_TRAIN_GUIDES], initializer=tf.constant_initializer(FREEAGO_INIT))
-        # _offsets_val = tf.placeholder(tf.float32, shape=[len(ALL_GUIDES)], name='offsets_val')
 
     tf.summary.scalar('freeAGO', _freeAGO_mean)
 
@@ -353,9 +380,10 @@ if __name__ == '__main__':
     with tf.name_scope('ts7_layer'):
         with tf.name_scope('weights'):
             _ts7_weights = tf.get_variable("ts7_weights", shape=[options.USE_FEATS, 1],
-                                        initializer=tf.constant_initializer(WEIGHTS_INIT[:options.USE_FEATS, :]))
+                                        initializer=tf.constant_initializer(WEIGHTS_INIT['feature_coefs'][:options.USE_FEATS, :]))
             tf.add_to_collection('weight', _ts7_weights)
-            _decay = tf.get_variable('decay', initializer=DECAY_INIT)
+            _decay = tf.get_variable('decay', initializer=WEIGHTS_INIT['decay'])
+            # _assign_decay = _decay.assign(WEIGHTS_INIT['decay'])
             _ts7_bias = tf.get_variable('ts7_bias', initializer=0.0, trainable=False)
             model.variable_summaries(_ts7_weights)
 
@@ -399,13 +427,13 @@ if __name__ == '__main__':
     _repression_loss = options.REPRESSION_WEIGHT * tf.nn.l2_loss(tf.subtract(_pred_logfc_normed, _repression_y_normed)) / (options.REPRESSION_BATCH_SIZE)
 
     # define regularizers
-    _offset_weight = tf.nn.l2_loss(_freeAGO_guide_offset)
     _weight_regularize = (
         tf.nn.l2_loss(_cnn_weights['w1']) +
         tf.nn.l2_loss(_cnn_weights['w2']) +
         tf.nn.l2_loss(_cnn_weights['w3']) +
         tf.nn.l2_loss(_cnn_weights['w4'])
     )
+    _offset_weight = tf.nn.l2_loss(_freeAGO_guide_offset)
     _regularize_term = (options.LAMBDA1 * _weight_regularize) + (options.LAMBDA2 * _offset_weight)
 
     # add to tensorboard
@@ -446,7 +474,7 @@ if __name__ == '__main__':
         gradients, variables = zip(*optimizer.compute_gradients(loss=_loss))
 
         # clip gradients
-        gradients, _ = tf.clip_by_global_norm(gradients, 5.0)
+        gradients, _ = tf.clip_by_global_norm(gradients, 1.0)
         _train_step = optimizer.apply_gradients(zip(gradients, variables), global_step=_global_step)
 
         for gradient, variable in zip(gradients, variables):
@@ -472,6 +500,7 @@ if __name__ == '__main__':
         'learning_rates': [],
         'val_losses': [],
         'val_r2s': [],
+        'ORF_penalty': []
     }
 
     conf = tf.ConfigProto(inter_op_parallelism_threads=4, intra_op_parallelism_threads=24)
@@ -533,6 +562,9 @@ if __name__ == '__main__':
             time_start = time.time()
             while True:
                 try:
+                    # if current_epoch < 20:
+                    #     sess.run([_assign_freeAGO_mean, _assign_decay])
+
                     # every 10 steps add to tensorboard
                     if (options.LOGDIR is not None) & ((num_steps % 100) == 0):
                         evals = sess.run([
@@ -682,6 +714,7 @@ if __name__ == '__main__':
                 colors = [STYPE_COLOR_DICT[x] for x in evals_dict['ka_batch']['stypes']]
                 fig = plt.figure(figsize=(7, 7))
                 plt.scatter(evals_dict['ka_preds'].flatten(), evals_dict['ka_batch']['labels'].flatten(), color=colors)
+                plt.plot([0,6], [0,6])
                 plt.savefig(os.path.join(options.LOGDIR, 'train_ka_scatter.png'))
                 plt.close()
 
@@ -743,6 +776,7 @@ if __name__ == '__main__':
                 fig = plt.figure(figsize=(7, 7))
                 colors = [STYPE_COLOR_DICT[x] for x in temp_kd_batch['stypes']]
                 plt.scatter(ka_vals.flatten(), temp_kd_batch['labels'].flatten(), color=colors)
+                plt.plot([0,6], [0,6])
                 plt.savefig(os.path.join(options.LOGDIR, 'val_ka_scatter.png'))
                 plt.close()
 

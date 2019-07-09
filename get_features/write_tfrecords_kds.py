@@ -24,16 +24,25 @@ if __name__ == '__main__':
     KDS = KDS[KDS['best_stype'] == KDS['aligned_stype']]
     print("Length of KD data after removing sites in other registers: {}".format(len(KDS)))
 
-    # balance data
-    KDS['nearest'] = np.minimum(0, np.round(KDS['log_kd'] * 4) / 4)
+    # # balance data
+    # KDS['nearest'] = np.minimum(0, np.round(KDS['log_kd'] * 4) / 4)
+    # KDS['count'] = 1
+    # temp = KDS.groupby('nearest').agg({'count': np.sum})
+    # temp['target'] = np.exp(temp.index + 5) * 500
+    # temp['keep_prob'] = np.minimum(1.0, temp['target'] / temp['count'])
+    # temp['keep_prob'] = [1.0 if x < -3 else y for (x, y) in zip(temp.index, temp['keep_prob'])]
+    # temp_dict = {x: y for (x, y) in zip(temp.index, temp['keep_prob'])}
+    # KDS['keep_prob'] = [temp_dict[x] for x in KDS['nearest']]
+    # KDS = KDS.drop(['nearest', 'count'], 1)
+
+    # balance data, new way
+    KDS['nearest'] = np.round(KDS['log_kd'] * 4) / 4
     KDS['count'] = 1
     temp = KDS.groupby('nearest').agg({'count': np.sum})
-    temp['target'] = np.exp(temp.index + 5) * 500
-    temp['keep_prob'] = np.minimum(1.0, temp['target'] / temp['count'])
-    temp['keep_prob'] = [1.0 if x < -3 else y for (x, y) in zip(temp.index, temp['keep_prob'])]
-    temp_dict = {x: y for (x, y) in zip(temp.index, temp['keep_prob'])}
-    KDS['keep_prob'] = [temp_dict[x] for x in KDS['nearest']]
-
+    temp['ceiling'] = np.minimum(2000, temp['count'])
+    print("Ceiling: 2000")
+    temp['keep_prob'] = temp['ceiling'] / temp['count']
+    KDS['keep_prob'] = temp.reindex(KDS['nearest'].values)['keep_prob'].values
     KDS = KDS.drop(['nearest', 'count'], 1)
 
     if options.ONLY_CANON:

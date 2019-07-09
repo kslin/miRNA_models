@@ -10,19 +10,76 @@ predictions_5mirs:
 		--outfile /lab/bartel4_ata/kathyl/RNA_Seq/outputs/biochem/resubmission/features_SA_PCT.txt
 
 
-train_cnn_features:
-	for mirname in mir137 mir139 mir143 mir144 mir153 mir182 mir199a mir204 mir205 mir216b mir223 ; do \
-		mkdir -p /lab/solexa_bartel/klin/CNN/repression_predictions/occupancy_only_final_xval_batch3_withclipping_dropout0_withreg_netpred2_round2/all_feats && \
-		bsub -R "rusage[mem=4096]" \
-			-m "it-c06b03 it-c06b04 it-c06b06 it-c06b07 it-c06b08 it-c06b10 it-c06b11 it-c06b12 it-c06b14" \
-			python train.py \
-				--tpm_file /lab/bartel4_ata/kathyl/RNA_Seq/outputs/biochem/final_fixed/merged.txt \
-				--mirseqs ../data/mirseqs_cnn_new.txt \
-				--feature_dir /lab/bartel4_ata/kathyl/RNA_Seq/outputs/biochem/resubmission/features_cnn \
-				--kd_dir /lab/solexa_bartel/klin/CNN/kd_predictions/occupancy_only_final_xval_batch3_withclipping_dropout0_withreg_netpred2_round2/$${mirname} \
-				--test_mir $${mirname} \
-				--outfile /lab/solexa_bartel/klin/CNN/repression_predictions/occupancy_only_final_xval_batch3_withclipping_dropout0_withreg_netpred2_round2/all_feats/$${mirname}.txt \
-				--passenger ; \
+train_cnn_test:
+	for mirname in mir137 ; do \
+		python train.py \
+			--tpm_file /lab/bartel4_ata/kathyl/RNA_Seq/outputs/biochem/final_fixed/merged.txt \
+			--mirseqs ../data/mirseqs_no_let7.txt \
+			--feature_file /lab/solexa_bartel/klin/CNN/feature_predictions/occupancy_only_final_xval_batch3_withclipping_dropout0_withreg_netpred2_round2/$${mirname}/MIR.txt \
+			--test_mir $${mirname} \
+			--mode shuffle_noncanon \
+			--extra_feats "logSA_diff,Threep_canon,PCT" \
+			--passenger ; \
+	done
+
+
+train_cnn_modes:
+	for mode in all canon noncanon ; do \
+		mkdir -p /lab/solexa_bartel/klin/CNN/repression_predictions/occupancy_only_final_xval_batch3_withclipping_dropout0_withreg_netpred2_round2/$${mode} && \
+		for mirname in mir137 mir139 mir143 mir144 mir153 mir182 mir199a mir204 mir205 mir216b mir223 ; do \
+			bsub -R "rusage[mem=4096]" \
+				-m "it-c06b03 it-c06b04 it-c06b06 it-c06b07 it-c06b08 it-c06b10 it-c06b11 it-c06b12 it-c06b14" \
+				-o /lab/solexa_bartel/klin/CNN/repression_predictions/occupancy_only_final_xval_batch3_withclipping_dropout0_withreg_netpred2_round2/lsf_outputs/$${mode}_$${mirname}.out \
+				python train.py \
+					--tpm_file /lab/bartel4_ata/kathyl/RNA_Seq/outputs/biochem/final_fixed/merged.txt \
+					--mirseqs ../data/mirseqs_no_let7.txt \
+					--feature_file /lab/solexa_bartel/klin/CNN/feature_predictions/occupancy_only_final_xval_batch3_withclipping_dropout0_withreg_netpred2_round2/$${mirname}/MIR.txt \
+					--test_mir $${mirname} \
+					--mode $${mode} \
+					--extra_feats "logSA_diff,Threep_canon,PCT" \
+					--outfile /lab/solexa_bartel/klin/CNN/repression_predictions/occupancy_only_final_xval_batch3_withclipping_dropout0_withreg_netpred2_round2/$${mode}/$${mirname}.txt \
+					--passenger ; \
+		done ; \
+	done
+
+# none logSA_diff Threep_canon PCT
+train_cnn_step_feats:
+	for feat in none logSA_diff Threep_canon PCT ; do \
+		mkdir -p /lab/solexa_bartel/klin/CNN/repression_predictions/occupancy_only_final_xval_batch3_withclipping_dropout0_withreg_netpred2_round2/$${feat} && \
+		for mirname in mir137 mir139 mir143 mir144 mir153 mir182 mir199a mir204 mir205 mir216b mir223 ; do \
+			bsub -R "rusage[mem=4096]" \
+				-m "it-c06b03 it-c06b04 it-c06b06 it-c06b07 it-c06b08 it-c06b10 it-c06b11 it-c06b12 it-c06b14" \
+				-o /lab/solexa_bartel/klin/CNN/repression_predictions/occupancy_only_final_xval_batch3_withclipping_dropout0_withreg_netpred2_round2/lsf_outputs/$${feat}_$${mirname}.out \
+				python train.py \
+					--tpm_file /lab/bartel4_ata/kathyl/RNA_Seq/outputs/biochem/final_fixed/merged.txt \
+					--mirseqs ../data/mirseqs_no_let7.txt \
+					--feature_file /lab/solexa_bartel/klin/CNN/feature_predictions/occupancy_only_final_xval_batch3_withclipping_dropout0_withreg_netpred2_round2/$${mirname}/MIR.txt \
+					--test_mir $${mirname} \
+					--mode all \
+					--extra_feats $${feat} \
+					--outfile /lab/solexa_bartel/klin/CNN/repression_predictions/occupancy_only_final_xval_batch3_withclipping_dropout0_withreg_netpred2_round2/$${feat}/$${mirname}.txt \
+					--passenger ; \
+		done ; \
+	done
+
+
+train_cnn_shuffles:
+	for mode in shuffle_noncanon only_shuffle_noncanon ; do \
+		mkdir -p /lab/solexa_bartel/klin/CNN/repression_predictions/occupancy_only_final_xval_batch3_withclipping_dropout0_withreg_netpred2_round2/$${mode} && \
+		for mirname in mir137 mir139 mir143 mir144 mir153 mir182 mir199a mir204 mir205 mir216b mir223 ; do \
+			bsub -R "rusage[mem=4096]" \
+				-m "it-c06b02 it-c06b03 it-c06b04 it-c06b05 it-c06b06 it-c06b07 it-c06b08 it-c06b12 it-c06b14" \
+				-o /lab/solexa_bartel/klin/CNN/repression_predictions/occupancy_only_final_xval_batch3_withclipping_dropout0_withreg_netpred2_round2/lsf_outputs/$${mode}_$${mirname}.out \
+				python train.py \
+					--tpm_file /lab/bartel4_ata/kathyl/RNA_Seq/outputs/biochem/final_fixed/merged.txt \
+					--mirseqs ../data/mirseqs_no_let7.txt \
+					--feature_file /lab/solexa_bartel/klin/CNN/feature_predictions/occupancy_only_final_xval_batch3_withclipping_dropout0_withreg_netpred2_round2/$${mirname}/MIR.txt \
+					--test_mir $${mirname} \
+					--mode $${mode} \
+					--extra_feats "logSA_diff,Threep_canon,PCT" \
+					--outfile /lab/solexa_bartel/klin/CNN/repression_predictions/occupancy_only_final_xval_batch3_withclipping_dropout0_withreg_netpred2_round2/$${mode}/$${mirname}_REPLACE.txt \
+					--passenger ; \
+		done ; \
 	done
 
 

@@ -52,41 +52,41 @@ def seq2ka_predictor(input_data, dropout_rate, phase_train, hidden1, hidden2, hi
         tf.summary.histogram('activations', _layer2)
 
         if with_dropout:
-            _dropout2 = tf.nn.dropout(_layer2, rate=(dropout_rate/8))
+            _dropout2 = tf.nn.dropout(_layer2, rate=(dropout_rate/2))
 
-    # add layer 2.5
-    with tf.name_scope('layer2_5'):
-        _w2_5 = get_conv_params(4, 4, hidden2, hidden2, 'layer2_5')
-        if with_dropout:
-            _preactivate2_5 = tf.nn.conv2d(_dropout2, _w2_5, strides=[1, 1, 1, 1], padding='VALID')
-        else:
-            _preactivate2_5 = tf.nn.conv2d(_layer2, _w2_5, strides=[1, 1, 1, 1], padding='VALID')
-        # _preactivate2_5_bn = tf.keras.layers.BatchNormalization(axis=-1, scale=False)(_preactivate2_5, training=phase_train)
-        _preactivate2_5_bn = tf.layers.batch_normalization(_preactivate2_5, training=phase_train, renorm=True)
-        _layer2_5 = tf.nn.leaky_relu(_preactivate2_5_bn)
-        tf.summary.histogram('activations', _layer2_5)
-        _dropout2_5 = tf.nn.dropout(_layer2_5, rate=dropout_rate/4)
+    # # add layer 2.5
+    # with tf.name_scope('layer2_5'):
+    #     _w2_5 = get_conv_params(4, 4, hidden2, hidden2, 'layer2_5')
+    #     if with_dropout:
+    #         _preactivate2_5 = tf.nn.conv2d(_dropout2, _w2_5, strides=[1, 1, 1, 1], padding='VALID')
+    #     else:
+    #         _preactivate2_5 = tf.nn.conv2d(_layer2, _w2_5, strides=[1, 1, 1, 1], padding='VALID')
+    #     # _preactivate2_5_bn = tf.keras.layers.BatchNormalization(axis=-1, scale=False)(_preactivate2_5, training=phase_train)
+    #     _preactivate2_5_bn = tf.layers.batch_normalization(_preactivate2_5, training=phase_train, renorm=True)
+    #     _layer2_5 = tf.nn.leaky_relu(_preactivate2_5_bn)
+    #     tf.summary.histogram('activations', _layer2_5)
+    #     _dropout2_5 = tf.nn.dropout(_layer2_5, rate=dropout_rate/2)
 
-    # add layer 2.5
-    with tf.name_scope('layer2_6'):
-        _w2_6 = get_conv_params(4, 4, hidden2, hidden2, 'layer2_6')
-        if with_dropout:
-            _preactivate2_6 = tf.nn.conv2d(_dropout2_5, _w2_6, strides=[1, 1, 1, 1], padding='VALID')
-        else:
-            _preactivate2_6 = tf.nn.conv2d(_layer2_5, _w2_6, strides=[1, 1, 1, 1], padding='VALID')
-        # _preactivate2_6_bn = tf.keras.layers.BatchNormalization(axis=-1, scale=False)(_preactivate2_6, training=phase_train)
-        _preactivate2_6_bn = tf.layers.batch_normalization(_preactivate2_6, training=phase_train, renorm=True)
-        _layer2_6 = tf.nn.leaky_relu(_preactivate2_6_bn)
-        tf.summary.histogram('activations', _layer2_6)
-        _dropout2_6 = tf.nn.dropout(_layer2_6, rate=dropout_rate/2)
+    # # add layer 2.5
+    # with tf.name_scope('layer2_6'):
+    #     _w2_6 = get_conv_params(4, 4, hidden2, hidden2, 'layer2_6')
+    #     if with_dropout:
+    #         _preactivate2_6 = tf.nn.conv2d(_dropout2_5, _w2_6, strides=[1, 1, 1, 1], padding='VALID')
+    #     else:
+    #         _preactivate2_6 = tf.nn.conv2d(_layer2_5, _w2_6, strides=[1, 1, 1, 1], padding='VALID')
+    #     # _preactivate2_6_bn = tf.keras.layers.BatchNormalization(axis=-1, scale=False)(_preactivate2_6, training=phase_train)
+    #     _preactivate2_6_bn = tf.layers.batch_normalization(_preactivate2_6, training=phase_train, renorm=True)
+    #     _layer2_6 = tf.nn.leaky_relu(_preactivate2_6_bn)
+    #     tf.summary.histogram('activations', _layer2_6)
+    #     _dropout2_6 = tf.nn.dropout(_layer2_6, rate=dropout_rate/2)
 
     # add layer 3
     with tf.name_scope('layer3'):
-        _w3 = get_conv_params(mirlen - 7, seqlen - 7, hidden2, hidden3, 'layer3')
+        _w3 = get_conv_params(mirlen - 1, seqlen - 1, hidden2, hidden3, 'layer3')
         if with_dropout:
-            _preactivate3 = tf.nn.conv2d(_dropout2_6, _w3, strides=[1, 1, 1, 1], padding='VALID')
+            _preactivate3 = tf.nn.conv2d(_dropout2, _w3, strides=[1, 1, 1, 1], padding='VALID')
         else:
-            _preactivate3 = tf.nn.conv2d(_layer2_6, _w3, strides=[1, 1, 1, 1], padding='VALID')
+            _preactivate3 = tf.nn.conv2d(_layer2, _w3, strides=[1, 1, 1, 1], padding='VALID')
         # _preactivate3_bn = tf.keras.layers.BatchNormalization()(_preactivate3, training=phase_train)
         _preactivate3_bn = tf.layers.batch_normalization(_preactivate3, training=phase_train, renorm=True)
         _layer3 = tf.nn.leaky_relu(_preactivate3_bn)
@@ -96,8 +96,8 @@ def seq2ka_predictor(input_data, dropout_rate, phase_train, hidden1, hidden2, hi
 
     print('layer1: {}'.format(_layer1))
     print('layer2: {}'.format(_layer2))
-    print('layer2.5: {}'.format(_layer2_5))
-    print('layer2.6: {}'.format(_layer2_6))
+    # print('layer2.5: {}'.format(_layer2_5))
+    # print('layer2.6: {}'.format(_layer2_6))
     print('layer3: {}'.format(_layer3))
 
     # reshape to 1D tensor
@@ -114,21 +114,24 @@ def seq2ka_predictor(input_data, dropout_rate, phase_train, hidden1, hidden2, hi
                                         # initializer=tf.truncated_normal_initializer(stddev=0.1))
             tf.add_to_collection('weight', _w4)
             variable_summaries(_w4)
-        with tf.name_scope('biases'):
-            _b4 = tf.get_variable("final_layer_bias", shape=[1],
-                                initializer=tf.constant_initializer(0.5))
-            tf.add_to_collection('bias', _b4)
-            variable_summaries(_b4)
+        # with tf.name_scope('biases'):
+        #     _b4 = tf.get_variable("final_layer_bias", shape=[1],
+        #                         initializer=tf.constant_initializer(0.0))
+        #     tf.add_to_collection('bias', _b4)
+        #     variable_summaries(_b4)
 
         # apply final layer
-        _pred_ka_values = tf.add(tf.matmul(_layer_flat, _w4), _b4, name='pred_ka')
+        # _pred_ka_values = tf.add(tf.matmul(_layer_flat, _w4), _b4, name='pred_ka')
+        _pred_ka_values = tf.matmul(_layer_flat, _w4, name='pred_ka')
 
     _cnn_weights = {
         'w1': _w1,
         'w2': _w2,
+        # 'w2.5': _w2_5,
+        # 'w2.6': _w2_6,
         'w3': _w3,
         'w4': _w4,
-        'b4': _b4,
+        # 'b4': _b4,
     }
     return _pred_ka_values, _cnn_weights
 

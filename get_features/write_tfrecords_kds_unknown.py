@@ -38,7 +38,7 @@ def write_12mers(mirname, mirseq, outfile):
                 'mir': utils._bytes_feature(mirname.encode('utf-8')),
                 'mir_1hot': utils._float_feature(utils.one_hot_encode(mirseq)),
                 'seq_1hot': utils._float_feature(utils.one_hot_encode(siteseq)),
-                'log_kd': utils._float_feature([-1.0]),
+                'log_kd': utils._float_feature([-0.0]),
                 'keep_prob': utils._float_feature([keep_prob]),
                 'stype': utils._bytes_feature(aligned_stype.encode('utf-8')),
             }
@@ -65,9 +65,11 @@ if __name__ == '__main__':
 
         # if no rbns data, get 12mers for guide strand
         if not row[1]['has_rbns']:
+            print(MIRNAME)
             MIRSEQ = row[1]['guide_seq'][:options.MIRLEN]
             write_12mers(MIRNAME, MIRSEQ, options.OUTFILE + '_{}.tfrecord'.format(MIRNAME))
 
         # for all miRNAs, get 12mers for passenger strand
+        print(MIRNAME + '_pass')
         MIRSEQ = row[1]['pass_seq'][:options.MIRLEN]
         write_12mers(MIRNAME + '_pass', MIRSEQ, options.OUTFILE + '_{}_pass.tfrecord'.format(MIRNAME))
