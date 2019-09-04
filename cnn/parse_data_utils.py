@@ -170,6 +170,7 @@ def _parse_log_kd_function(serialized_example):
 
 
 def _filter_kds_keepprob(mir, image, kd, keep_prob, stype):
+    # return tf.math.greater(keep_prob[0], tf.random.uniform(shape=(), minval=0, maxval=1))
     return tf.logical_and(tf.math.greater(2.0, kd[0]), tf.math.greater(keep_prob[0], tf.random.uniform(shape=(), minval=0, maxval=1)))
 
 

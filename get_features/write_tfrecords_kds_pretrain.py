@@ -5,6 +5,7 @@ import pandas as pd
 import tensorflow as tf
 
 import utils
+import tf_utils
 
 
 if __name__ == '__main__':
@@ -52,12 +53,12 @@ if __name__ == '__main__':
                 log_kd += (siteseq[2:-3]).count('G') * (-0.05)
 
                 feature_dict = {
-                    'mir': utils._bytes_feature(mir),
-                    'mir_1hot': utils._float_feature(utils.one_hot_encode(mirseq)),
-                    'seq_1hot': utils._float_feature(utils.one_hot_encode(siteseq)),
-                    'log_kd': utils._float_feature([log_kd]),
-                    'keep_prob': utils._float_feature([1.0]),
-                    'stype': utils._bytes_feature(stype.encode('utf-8')),
+                    'mir': tf_utils._bytes_feature(mir),
+                    'mir_1hot': tf_utils._float_feature(utils.one_hot_encode(mirseq)),
+                    'seq_1hot': tf_utils._float_feature(utils.one_hot_encode(siteseq)),
+                    'log_kd': tf_utils._float_feature([log_kd]),
+                    'keep_prob': tf_utils._float_feature([1.0]),
+                    'stype': tf_utils._bytes_feature(stype.encode('utf-8')),
                 }
 
                 example_proto = tf.train.Example(features=tf.train.Features(feature=feature_dict))

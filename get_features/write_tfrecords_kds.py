@@ -5,6 +5,7 @@ import pandas as pd
 import tensorflow as tf
 
 import utils
+import tf_utils
 
 
 if __name__ == '__main__':
@@ -68,12 +69,12 @@ if __name__ == '__main__':
                 stype = row[1]['aligned_stype']
 
                 feature_dict = {
-                    'mir': utils._bytes_feature(mir.encode('utf-8')),
-                    'mir_1hot': utils._float_feature(utils.one_hot_encode(mirseq[:options.MIRLEN])),
-                    'seq_1hot': utils._float_feature(utils.one_hot_encode(siteseq)),
-                    'log_kd': utils._float_feature([log_kd]),
-                    'keep_prob': utils._float_feature([keep_prob]),
-                    'stype': utils._bytes_feature(stype.encode('utf-8')),
+                    'mir': tf_utils._bytes_feature(mir.encode('utf-8')),
+                    'mir_1hot': tf_utils._float_feature(utils.one_hot_encode(mirseq[:options.MIRLEN])),
+                    'seq_1hot': tf_utils._float_feature(utils.one_hot_encode(siteseq)),
+                    'log_kd': tf_utils._float_feature([log_kd]),
+                    'keep_prob': tf_utils._float_feature([keep_prob]),
+                    'stype': tf_utils._bytes_feature(stype.encode('utf-8')),
                 }
 
                 example_proto = tf.train.Example(features=tf.train.Features(feature=feature_dict))

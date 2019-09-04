@@ -9,6 +9,7 @@ import tensorflow as tf
 
 import utils
 import get_site_features
+import tf_utils
 
 np.set_printoptions(threshold=np.inf, linewidth=200)
 pd.options.mode.chained_assignment = None
@@ -79,8 +80,8 @@ if __name__ == '__main__':
             orf_length = len(orf)
 
             context_dict = tf.train.Features(feature={
-                'transcript': utils._bytes_feature(transcript.encode('utf-8')),
-                'batch': utils._int64_feature([row[1]['batch']])
+                'transcript': tf_utils._bytes_feature(transcript.encode('utf-8')),
+                'batch': tf_utils._int64_feature([row[1]['batch']])
             })
 
             total_transcript_sites = 0
@@ -94,16 +95,16 @@ if __name__ == '__main__':
                 site8_star = MIR_DICT[mir + '*']['site8']
                 mirseq_star = MIR_DICT[mir + '*']['mirseq']
 
-                features[0].append(utils._bytes_feature(mir.encode('utf-8')))  # mir
-                features[1].append(utils._float_feature([row[1][mir]]))  # tpm
+                features[0].append(tf_utils._bytes_feature(mir.encode('utf-8')))  # mir
+                features[1].append(tf_utils._float_feature([row[1][mir]]))  # tpm
 
                 # get sites for guide strand
                 seqs, locs = get_site_features.get_sites_from_utr(transcript_sequence, site8, overlap_dist=options.OVERLAP_DIST, only_canon=options.ONLY_CANON)
                 num_orf_sites = len([l for l in locs if l < orf_length])
                 orf_sites = utils.mir_site_pair_to_ints(mirseq[:options.MIRLEN], ''.join(seqs[:num_orf_sites]))
                 utr3_sites = utils.mir_site_pair_to_ints(mirseq[:options.MIRLEN], ''.join(seqs[num_orf_sites:]))
-                features[2].append(utils._int64_feature(orf_sites))
-                features[3].append(utils._int64_feature(utr3_sites))
+                features[2].append(tf_utils._int64_feature(orf_sites))
+                features[3].append(tf_utils._int64_feature(utr3_sites))
                 total_transcript_sites += len(locs)
 
                 # get sites for guide strand
@@ -111,13 +112,13 @@ if __name__ == '__main__':
                 num_orf_sites = len([l for l in locs if l < orf_length])
                 orf_sites = utils.mir_site_pair_to_ints(mirseq_star[:options.MIRLEN], ''.join(seqs[:num_orf_sites]))
                 utr3_sites = utils.mir_site_pair_to_ints(mirseq_star[:options.MIRLEN], ''.join(seqs[num_orf_sites:]))
-                features[4].append(utils._int64_feature(orf_sites))
-                features[5].append(utils._int64_feature(utr3_sites))
+                features[4].append(tf_utils._int64_feature(orf_sites))
+                features[5].append(tf_utils._int64_feature(utr3_sites))
                 total_transcript_sites += len(locs)
 
-                # features[0].append(utils._bytes_feature(mir.encode('utf-8')))  # mir
-                # features[1].append(utils._float_feature([row[1][mir]]))  # tpm
-                # features[2].append(utils._int64_feature(utils.one_hot_encode(mirseq[:options.MIRLEN])))  # mirseq
+                # features[0].append(tf_utils._bytes_feature(mir.encode('utf-8')))  # mir
+                # features[1].append(tf_utils._float_feature([row[1][mir]]))  # tpm
+                # features[2].append(tf_utils._int64_feature(utils.one_hot_encode(mirseq[:options.MIRLEN])))  # mirseq
                 # assert len(utils.one_hot_encode(mirseq[:options.MIRLEN])) == 40
 
                 # # get sites for guide strand
@@ -125,11 +126,11 @@ if __name__ == '__main__':
                 # num_orf_sites = len([l for l in locs if l < orf_length])
                 # orf_sites = ''.join(seqs[:num_orf_sites])
                 # utr3_sites = ''.join(seqs[num_orf_sites:])
-                # features[3].append(utils._int64_feature(utils.one_hot_encode(orf_sites)))
-                # features[4].append(utils._int64_feature(utils.one_hot_encode(orf_sites)))
+                # features[3].append(tf_utils._int64_feature(utils.one_hot_encode(orf_sites)))
+                # features[4].append(tf_utils._int64_feature(utils.one_hot_encode(orf_sites)))
                 # total_transcript_sites += len(locs)
 
-                # features[5].append(utils._int64_feature(utils.one_hot_encode(mirseq_star[:options.MIRLEN])))  # mirseq*
+                # features[5].append(tf_utils._int64_feature(utils.one_hot_encode(mirseq_star[:options.MIRLEN])))  # mirseq*
                 # assert len(utils.one_hot_encode(mirseq_star[:options.MIRLEN])) == 40
 
                 # # get sites for guide strand
@@ -137,8 +138,8 @@ if __name__ == '__main__':
                 # num_orf_sites = len([l for l in locs if l < orf_length])
                 # orf_sites = ''.join(seqs[:num_orf_sites])
                 # utr3_sites = ''.join(seqs[num_orf_sites:])
-                # features[6].append(utils._int64_feature(utils.one_hot_encode(orf_sites)))
-                # features[7].append(utils._int64_feature(utils.one_hot_encode(orf_sites)))
+                # features[6].append(tf_utils._int64_feature(utils.one_hot_encode(orf_sites)))
+                # features[7].append(tf_utils._int64_feature(utils.one_hot_encode(orf_sites)))
                 # total_transcript_sites += len(locs)
 
             print(total_transcript_sites)

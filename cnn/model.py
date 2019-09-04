@@ -51,8 +51,22 @@ def seq2ka_predictor(input_data, dropout_rate, phase_train, hidden1, hidden2, hi
         _layer2 = tf.nn.leaky_relu(_preactivate2_bn)
         tf.summary.histogram('activations', _layer2)
 
+        mask = np.zeros([1, mirlen - 1, seqlen - 1, hidden2])
+        for ix in range(mirlen - 1):
+            for iy in range(seqlen - 1):
+                if 5 <= (ix + iy) <= 11:
+                    mask[:, ix, iy, :] = 1
+
+        mask = tf.constant(mask, dtype=tf.float32)
+
         if with_dropout:
-            _dropout2 = tf.nn.dropout(_layer2, rate=(dropout_rate/2))
+            _dropout2 = tf.nn.dropout(_layer2, rate=dropout_rate)
+            _dropout2_masked = tf.multiply(_dropout2, mask)
+        else:
+            
+
+            _layer2_masked = tf.multiply(_layer2, mask)
+
 
     # # add layer 2.5
     # with tf.name_scope('layer2_5'):
@@ -84,9 +98,9 @@ def seq2ka_predictor(input_data, dropout_rate, phase_train, hidden1, hidden2, hi
     with tf.name_scope('layer3'):
         _w3 = get_conv_params(mirlen - 1, seqlen - 1, hidden2, hidden3, 'layer3')
         if with_dropout:
-            _preactivate3 = tf.nn.conv2d(_dropout2, _w3, strides=[1, 1, 1, 1], padding='VALID')
+            _preactivate3 = tf.nn.conv2d(_dropout2_masked, _w3, strides=[1, 1, 1, 1], padding='VALID')
         else:
-            _preactivate3 = tf.nn.conv2d(_layer2, _w3, strides=[1, 1, 1, 1], padding='VALID')
+            _preactivate3 = tf.nn.conv2d(_layer2_masked, _w3, strides=[1, 1, 1, 1], padding='VALID')
         # _preactivate3_bn = tf.keras.layers.BatchNormalization()(_preactivate3, training=phase_train)
         _preactivate3_bn = tf.layers.batch_normalization(_preactivate3, training=phase_train, renorm=True)
         _layer3 = tf.nn.leaky_relu(_preactivate3_bn)
@@ -166,47 +180,43 @@ def pad_vals(vals, split_sizes, num_mirs, batch_size, fill_val):
 #     padded = tf.sparse.to_dense(tf.sparse.SparseTensor(dense_indices, vals, dense_shape), default_value=fill_val)
 #     return padded, tf.cast(mask, tf.float32)
 
-# def get_pred_logfc_occupancy_only(_utr_ka_values, _freeAGO_all, _tpm_batch, _ts7_weights, _ts7_bias, _decay, batch_size, passenger, num_guides, name, loss_type):
-#     if passenger:
-#         num_mirs = num_guides * 2
-#     else:
-#         num_mirs = num_guides
+def get_pred_logfc_occupancy_only(_utr_ka_values, _freeAGO_all, _tpm_batch, _ts7_weights, _ts7_bias, _decay, batch_size, passenger, num_guides, name, loss_type):
+    if passenger:
+        num_mirs = num_guides * 2
+    else:
+        num_mirs = num_guides
 
-#     # merge with other features
-#     _weighted_features = tf.squeeze(tf.matmul(_tpm_batch['features'], _ts7_weights))
-#     _utr_ka_values_squeezed = tf.squeeze(_utr_ka_values)
-#     # _merged_features = tf.squeeze(_utr_ka_values) + _weighted_features # + _ts7_bias
+    # merge with other features
+    _weighted_features = tf.squeeze(tf.matmul(_tpm_batch['features'], _ts7_weights))
+    _merged_features = tf.squeeze(_utr_ka_values) + _weighted_features # + _ts7_bias
 
-#     # pad values
-#     _weighted_features_padded = pad_vals(_weighted_features, _tpm_batch['nsites'], num_mirs, batch_size, fill_val=-100.0)
-#     _ka_vals_padded = pad_vals(_utr_ka_values_squeezed, _tpm_batch['nsites'], num_mirs, batch_size, fill_val=-100.0)
+    # pad values
+    _merged_features_padded = pad_vals(_merged_features, _tpm_batch['nsites'], num_mirs, batch_size, fill_val=-100.0)
 
-#     _merged_features_mask = tf.cast(tf.greater(_ka_vals_padded, -50.0), tf.float32)
-#     _nbound_init = tf.sigmoid(_weighted_features_padded + _ts7_bias + tf.reshape(_freeAGO_all, [1, -1, 1]))
-#     _nbound = tf.sigmoid((_weighted_features_padded + _ka_vals_padded) + tf.reshape(_freeAGO_all, [1, -1, 1]))
-#     _nbound_net = _nbound - _nbound_init
+    _merged_features_mask = tf.cast(tf.greater(_merged_features_padded, 0.0), tf.float32)
+    _nbound = tf.sigmoid(_merged_features_padded + tf.reshape(_freeAGO_all, [1, -1, 1]))
 
-#     _masked_nbound = tf.multiply(_nbound_net, _merged_features_mask)
+    _masked_nbound = tf.multiply(_nbound, _merged_features_mask)
 #     # _masked_nbound = tf.sigmoid(_merged_features_padded + tf.reshape(_freeAGO_all, [1, -1, 1]))
 
-#     # calculate occupancy
-#     _occupancy = tf.nn.relu(tf.exp(_decay) * tf.reduce_sum(_masked_nbound, axis=2))
-#     # _occupancy = tf.reduce_sum(_masked_nbound, axis=2)
-#     # Add guide and passenger strand occupancies, if applicable
-#     if passenger:
-#         _occupancy = tf.reduce_sum(tf.reshape(_occupancy, [-1, num_guides, 2]), axis=2)
+    # calculate occupancy
+    _occupancy = tf.reduce_sum(_masked_nbound, axis=2)
 
-#     # get logfc
-#     _pred_logfc = -1 * tf.log1p(_occupancy, name=name)
+    # Add guide and passenger strand occupancies, if applicable
+    if passenger:
+        _occupancy = tf.reduce_sum(tf.reshape(_occupancy, [-1, num_guides, 2]), axis=2)
 
-#     if loss_type == 'MEAN_CENTER':
-#         _pred_logfc_normed = _pred_logfc - tf.reshape(tf.reduce_mean(_pred_logfc, axis=1), [-1, 1])
-#         _repression_y_normed = _tpm_batch['labels'] - tf.reshape(tf.reduce_mean(_tpm_batch['labels'], axis=1), [-1, 1])
-#     else:
-#         _pred_logfc_normed = _pred_logfc
-#         _repression_y_normed = _tpm_batch['labels']
+    # get logfc
+    _pred_logfc = -1 * tf.log1p(tf.exp(_decay) * _occupancy, name=name)
 
-#     return _pred_logfc, _pred_logfc_normed, _repression_y_normed, _occupancy
+    if loss_type == 'MEAN_CENTER':
+        _pred_logfc_normed = _pred_logfc - tf.reshape(tf.reduce_mean(_pred_logfc, axis=1), [-1, 1])
+        _repression_y_normed = _tpm_batch['labels'] - tf.reshape(tf.reduce_mean(_tpm_batch['labels'], axis=1), [-1, 1])
+    else:
+        _pred_logfc_normed = _pred_logfc
+        _repression_y_normed = _tpm_batch['labels']
+
+    return _pred_logfc, _pred_logfc_normed, _repression_y_normed, _occupancy
 
 
 def get_pred_logfc_occupancy_only_netpred(_utr_ka_values, _freeAGO_all, _tpm_batch, _ts7_weights, _ts7_bias, _decay, batch_size, passenger, num_guides, name, loss_type):
@@ -229,7 +239,7 @@ def get_pred_logfc_occupancy_only_netpred(_utr_ka_values, _freeAGO_all, _tpm_bat
     _weighted_features_padded = pad_vals(_weighted_features, _tpm_batch['nsites'], num_mirs, batch_size, fill_val=-100.0) + _freeAGO_mean_tiled
     _ka_vals_padded = pad_vals(_utr_ka_values_squeezed, _tpm_batch['nsites'], num_mirs, batch_size, fill_val=-100.0)
 
-    _merged_features_mask = tf.cast(tf.greater(_ka_vals_padded, -50.0), tf.float32)
+    _merged_features_mask = tf.cast(tf.greater(_ka_vals_padded, 0.0), tf.float32)
     _nbound_init = tf.sigmoid(_weighted_features_padded + _ts7_bias)
     _nbound = tf.sigmoid(_weighted_features_padded + _ka_vals_padded)
 

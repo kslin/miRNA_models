@@ -5,6 +5,7 @@ import pandas as pd
 import tensorflow as tf
 
 import utils
+import tf_utils
 
 np.set_printoptions(threshold=np.inf, linewidth=200)
 pd.options.mode.chained_assignment = None
@@ -87,19 +88,19 @@ if __name__ == '__main__':
             feat_temp = ALL_FEATS[ALL_FEATS['transcript'] == transcript]
 
             feature_dict = {
-                'transcript': utils._bytes_feature(transcript.encode('utf-8')),
-                'batch': utils._int64_feature([row[1]['batch']]),
+                'transcript': tf_utils._bytes_feature(transcript.encode('utf-8')),
+                'batch': tf_utils._int64_feature([row[1]['batch']]),
             }
 
             for guide in ALL_GUIDES:
-                feature_dict['{}_tpm'.format(guide)] = utils._float_feature([row[1][guide]])
+                feature_dict['{}_tpm'.format(guide)] = tf_utils._float_feature([row[1][guide]])
 
             for mir in ALL_MIRS:
 
                 site8 = MIR_DICT[mir]['site8']
                 mirseq = MIR_DICT[mir]['mirseq']
 
-                feature_dict['{}_mir_1hot'.format(mir)] = utils._float_feature(utils.one_hot_encode(mirseq[:options.MIRLEN]))
+                feature_dict['{}_mir_1hot'.format(mir)] = tf_utils._float_feature(utils.one_hot_encode(mirseq[:options.MIRLEN]))
 
                 feat_mir_temp = feat_temp[feat_temp['mir'] == mir].sort_values('loc')
 
@@ -108,15 +109,15 @@ if __name__ == '__main__':
                     keep_seqs = feat_mir_temp['12mer'].values
                     long_seq = ''.join(keep_seqs)
 
-                    feature_dict['{}_seqs_1hot'.format(mir)] = utils._float_feature(utils.one_hot_encode(long_seq))
-                    feature_dict['{}_ts7_features'.format(mir)] = utils._float_feature(list(feat_mir_temp[keep_cols].values.flatten()))
+                    feature_dict['{}_seqs_1hot'.format(mir)] = tf_utils._float_feature(utils.one_hot_encode(long_seq))
+                    feature_dict['{}_ts7_features'.format(mir)] = tf_utils._float_feature(list(feat_mir_temp[keep_cols].values.flatten()))
 
                 else:
-                    feature_dict['{}_seqs_1hot'.format(mir)] = utils._float_feature([])
-                    feature_dict['{}_ts7_features'.format(mir)] = utils._float_feature([])
+                    feature_dict['{}_seqs_1hot'.format(mir)] = tf_utils._float_feature([])
+                    feature_dict['{}_ts7_features'.format(mir)] = tf_utils._float_feature([])
                     nsites = 0
 
-                feature_dict['{}_nsites'.format(mir)] = utils._int64_feature([nsites])
+                feature_dict['{}_nsites'.format(mir)] = tf_utils._int64_feature([nsites])
 
             # Create a Features message using tf.train.Example.
             example_proto = tf.train.Example(features=tf.train.Features(feature=feature_dict))

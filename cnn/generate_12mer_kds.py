@@ -121,5 +121,5 @@ if __name__ == '__main__':
             mirseq = mirdata.loc[mirname]['guide_seq']
             print(mirname, mirseq)
             calculate_12mer_kds(mirname, mirseq, options.MIRLEN,
-                options.LOAD_MODEL, options.OUTFILE)
+                options.LOAD_MODEL, options.OUTFILE.replace('MIR', mirname))
 

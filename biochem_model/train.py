@@ -10,6 +10,8 @@ import tensorflow as tf
 import utils
 import models
 
+pd.options.display.max_columns = 100
+
 
 def split_vals(vals_4D, zero_indices):
     """
@@ -25,7 +27,7 @@ def split_vals(vals_4D, zero_indices):
     return ka_vals_3D, features_4D, nosite_features_4D
 
 
-def train_on_data(train_vals, test_vals_dict, test_guide, num_feats, mirna_data, passenger, outfile):
+def train_on_data(train_vals, test_vals_dict, test_guide, num_feats, mirna_data, passenger, outfile, set_vars={}):
     """
     Trains occupancy + context features model on data. Writes predictions to outfile
     """
@@ -61,18 +63,38 @@ def train_on_data(train_vals, test_vals_dict, test_guide, num_feats, mirna_data,
     }
 
     # make and train model
-    mod = models.OccupancyWithFeaturesModel(len(train_vals['guides']), num_feats, init_bound=True, passenger=passenger)
+    mod = models.OccupancyWithFeaturesModel(len(train_vals['guides']), num_feats, init_bound=True, passenger=passenger, set_vars=set_vars)
 
     with tf.Session() as sess:
         sess.run(tf.global_variables_initializer())
         mod.fit(sess, train_data, train_feed_dict, maxiter=200)
         print(mod.vars_evals)
+        print(mod.r2)
+        print(mod.final_loss)
+        transcript_list = np.repeat(train_vals['transcripts'], len(train_vals['guides']))
+        pred_df = pd.DataFrame({
+            'transcript': transcript_list,
+            'mir': list(train_vals['guides']) * len(train_vals['transcripts']),
+            'pred': mod.eval_pred.flatten(),
+            'label': mod.eval_label.flatten(),
+            'pred_normed': mod.eval_pred_normed.flatten(),
+            'label_normed': mod.eval_label_normed.flatten(),
+        })
+
+        # if outfile is given, write results to outfile
+        if outfile is not None:
+            pred_df.to_csv(outfile, sep='\t', index=False)
 
         # get freeAGO for test miRNA
         if passenger:
             current_freeAGO_all = mod.vars_evals['freeAGO'].reshape([-1, 2])
         else:
             current_freeAGO_all = mod.vars_evals['freeAGO'].reshape([-1, 1])
+
+        print(current_freeAGO_all)
+
+        if len(test_vals_dict) == 0:
+            return
 
         # infer freeAGO of test miRNA from its target abundance
         train_guide_tas = mirna_data.loc[train_vals['guides']]['guide_TA'].values
@@ -134,7 +156,7 @@ if __name__ == '__main__':
     parser.add_option("--tpm_file", dest="TPM_FILE", help="tpm data")
     parser.add_option("--feature_file", dest="FEATURE_FILE", help="file with features")
     parser.add_option("--mirseqs", dest="MIR_SEQS", help="tsv with miRNAs and their sequences")
-    parser.add_option("--test_mir", dest="TEST_MIR", help="test miRNA")
+    parser.add_option("--test_mir", dest="TEST_MIR", help="test miRNA", default=None)
     parser.add_option("--mode", dest="MODE", help="training_mode")
     parser.add_option("--extra_feats", dest="EXTRA_FEATS", help="comma-separated list of extra features", default=None)
     parser.add_option("--passenger", dest="PASSENGER", help="include passenger", default=False, action='store_true')
@@ -142,7 +164,7 @@ if __name__ == '__main__':
 
     (options, args) = parser.parse_args()
 
-    if options.MODE not in ['all', 'canon', 'noncanon', 'shuffle_noncanon', 'only_shuffle_noncanon']:
+    if options.MODE not in ['all', 'canon', 'noncanon', 'shuffle_noncanon', 'only_shuffle_noncanon', 'train_only', 'test_only']:
         raise ValueError('Invalid mode.')
 
     # read miRNA DATA and get names of all guide miRNAs
@@ -151,8 +173,12 @@ if __name__ == '__main__':
     print(ALL_GUIDES)
 
     # split into training and testing
-    TRAIN_GUIDES = [x for x in ALL_GUIDES if x != options.TEST_MIR]
-    TEST_GUIDES = TRAIN_GUIDES + [options.TEST_MIR]
+    if options.TEST_MIR is None:
+        TRAIN_GUIDES = ALL_GUIDES
+        TEST_GUIDES = ALL_GUIDES
+    else:
+        TRAIN_GUIDES = [x for x in ALL_GUIDES if x != options.TEST_MIR]
+        TEST_GUIDES = TRAIN_GUIDES + [options.TEST_MIR]
 
     print(len(TRAIN_GUIDES), len(TEST_GUIDES))
 
@@ -185,33 +211,44 @@ if __name__ == '__main__':
         ALL_FEATS.append(temp)
 
     ALL_FEATS = pd.concat(ALL_FEATS, sort=False)
+    print(len(ALL_FEATS['mir'].unique()), len(ALL_FEATS['transcript'].unique()))
 
     print(ALL_FEATS['mir'].unique())
     print(TRAIN_MIRS, TEST_MIRS)
 
     # fill in SA_bg for noncanon sites
-    mean_SA_diff = np.nanmean(ALL_FEATS['logSA_diff'])
+    if options.MODE == 'test_only':
+        mean_SA_diff = 0.92177
+    else:
+        mean_SA_diff = np.nanmean(ALL_FEATS['logSA_diff'])
     print(f'Mean SA_diff: {mean_SA_diff}')
     ALL_FEATS['logSA_diff'] = ALL_FEATS['logSA_diff'].fillna(mean_SA_diff)
     ALL_FEATS['Threep_canon'] = ALL_FEATS['Threep'] * (ALL_FEATS['stype'] != 'no site')
     ALL_FEATS = ALL_FEATS.set_index(keys=['transcript', 'mir']).sort_index()
 
-    if options.MODE in ['all', 'shuffle_noncanon']:
-        ALL_FEATS = ALL_FEATS[(ALL_FEATS['stype'] != 'no site') | (~ALL_FEATS['in_ORF'])]  # get rid of noncanonical sites in ORF
-    elif options.MODE in ['canon']:
+    if options.MODE in ['canon']:
         ALL_FEATS = ALL_FEATS[ALL_FEATS['stype'] != 'no site']  # only take canonical sites
+    elif options.MODE in ['all', 'shuffle_noncanon', 'train_only', 'test_only']:
+        ALL_FEATS = ALL_FEATS
+        # ALL_FEATS = ALL_FEATS[(ALL_FEATS['stype'] != 'no site') | (~ALL_FEATS['in_ORF'])]  # get rid of noncanonical sites in ORF
+    elif options.MODE in ['noncanon', 'only_shuffle_noncanon']:
+        ALL_FEATS = ALL_FEATS[ALL_FEATS['stype'] == 'no site']
+        # ALL_FEATS = ALL_FEATS[(ALL_FEATS['stype'] == 'no site') & (~ALL_FEATS['in_ORF'])] # only take noncanonical sites
     else:
-        ALL_FEATS = ALL_FEATS[ALL_FEATS['stype'] == 'no site']  # only take noncanonical sites
+        raise ValueError('invalid mode')
 
     NUM_SITES = ALL_FEATS.copy()
     NUM_SITES['nsites'] = 1
     NUM_SITES = NUM_SITES.groupby(['transcript', 'mir']).agg({'nsites': np.sum})
 
     # split transcripts into training and testing
-    TRAIN_TRANSCRIPTS = list(ALL_TPMS[ALL_TPMS['batch'] != 3].index)
-    TEST_TRANSCRIPTS = list(ALL_TPMS[ALL_TPMS['batch'] == 3].index)
+    TRAIN_TRANSCRIPTS = list(ALL_TPMS.index)
+    # TRAIN_TRANSCRIPTS = list(ALL_TPMS[ALL_TPMS['batch'] != 3].index)
+    # TEST_TRANSCRIPTS = list(ALL_TPMS[ALL_TPMS['batch'] == 3].index)
+    TEST_TRANSCRIPTS = list(ALL_TPMS.index)
     MAX_NSITES = np.max(NUM_SITES['nsites'])
     print(f'Max nsites: {MAX_NSITES}')
+    print(len(TEST_TRANSCRIPTS))
 
     FEATURE_LIST = ['log_KA', 'in_ORF']
     if options.EXTRA_FEATS != 'none':
@@ -222,6 +259,10 @@ if __name__ == '__main__':
 
     print(FEATURE_LIST)
     NUM_FEATS = len(FEATURE_LIST) - 1
+
+    # ALL_FEATS = ALL_FEATS.query('transcript in @TRAIN_TRANSCRIPTS')
+
+    print(np.sum(ALL_FEATS[FEATURE_LIST].values, axis=0))
 
     # get indices of features that do not affect background binding
     ZERO_INDICES = []
@@ -239,6 +280,12 @@ if __name__ == '__main__':
 
     print(train_ka_vals_3D.shape, train_features_4D.shape, train_nosite_features_4D.shape, train_mask_3D.shape)
     print(np.sum(np.sum(train_mask_3D, axis=0), axis=1))
+    print(np.sum(np.sum(np.sum(train_features_4D, axis=0), axis=0), axis=0))
+    print(np.sum(np.sum(np.sum(train_nosite_features_4D, axis=0), axis=0), axis=0))
+
+    print(np.sum(np.sum(train_features_4D, axis=0), axis=1).tolist())
+    print(np.sum(np.sum(train_nosite_features_4D, axis=0), axis=1).tolist())
+
 
     train_vals = {
         'transcripts': TRAIN_TRANSCRIPTS,
@@ -250,7 +297,24 @@ if __name__ == '__main__':
         'labels': ALL_TPMS.loc[TRAIN_TRANSCRIPTS][TRAIN_GUIDES].values
     }
 
-    if options.MODE in ['all', 'canon', 'noncanon']:  # this mode tests on a single test set
+    if options.MODE == 'train_only':
+        train_on_data(train_vals, {}, options.TEST_MIR, NUM_FEATS, MIRNA_DATA, options.PASSENGER, options.OUTFILE)
+
+    if options.MODE == 'test_only':
+        if options.PASSENGER:
+            set_vars = {
+                'log_decay': 0.5520938,
+                'feature_coefs': np.array([[[[-1.7124393 ,  0.11626805,  0.12685744,  0.9295629 ]]]])
+            }
+        else:
+            set_vars = {
+                 'log_decay': 0.46782777,
+                 'feature_coefs': np.array([[[[-1.6699566 ,  0.12071671,  0.07624636,  0.965269  ]]]])
+            }
+
+        train_on_data(train_vals, {}, options.TEST_MIR, NUM_FEATS, MIRNA_DATA, options.PASSENGER, options.OUTFILE, set_vars=set_vars)
+
+    elif options.MODE in ['all', 'canon', 'noncanon']:  # this mode tests on a single test set
         test_vals_4D, test_mask_3D = utils.expand_features_4D(TEST_TRANSCRIPTS, TEST_MIRS, MAX_NSITES,
                                                         FEATURE_LIST, ALL_FEATS)
 

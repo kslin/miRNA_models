@@ -10,6 +10,27 @@ predictions_5mirs:
 		--outfile /lab/bartel4_ata/kathyl/RNA_Seq/outputs/biochem/resubmission/features_SA_PCT.txt
 
 
+train_only:
+	python train.py \
+		--tpm_file /lab/bartel4_ata/kathyl/RNA_Seq/outputs/biochem/final_fixed/merged.txt \
+		--mirseqs ../data/mirseqs_no_let7.txt \
+		--feature_file /lab/solexa_bartel/klin/miRNA_models_data/model_inputs/biochem/predicted_kds/MIR.txt \
+		--mode train_only \
+		--extra_feats "logSA_diff,Threep_canon,PCT" \
+		--passenger
+
+
+test_only:
+	mkdir -p /lab/solexa_bartel/klin/miRNA_models_data/model_outputs/biochem/hek293ft_transfection
+	python train.py \
+		--tpm_file /lab/solexa_bartel/klin/miRNA_models_data/transfections/hek293ft_ensembl/processed/merged.txt \
+		--mirseqs /lab/solexa_bartel/klin/miRNA_models_data/miRNA_info/HEK293FT_mirs/mirseqs.txt \
+		--feature_file /lab/solexa_bartel/klin/miRNA_models_data/model_inputs/biochem/predicted_kds/MIR.txt \
+		--mode test_only \
+		--extra_feats "logSA_diff,Threep_canon,PCT" \
+		--outfile /lab/solexa_bartel/klin/miRNA_models_data/model_outputs/biochem/hek293ft_transfection/fit_freeago_no_passenger.txt
+
+
 train_cnn_test:
 	for mirname in mir137 ; do \
 		python train.py \
@@ -20,6 +41,24 @@ train_cnn_test:
 			--mode shuffle_noncanon \
 			--extra_feats "logSA_diff,Threep_canon,PCT" \
 			--passenger ; \
+	done
+
+
+train_cnn_test_all:
+	mkdir -p /lab/solexa_bartel/klin/CNN/repression_predictions/occupancy_only_final_xval_batch3_withclipping_dropout0_withreg_netpred2_round2/all_test_all && \
+	for mirname in mir137 mir139 mir143 mir144 mir153 mir182 mir199a mir204 mir205 mir216b mir223 ; do \
+		bsub -R "rusage[mem=4096]" \
+		-m "it-c06b03 it-c06b04 it-c06b06 it-c06b07 it-c06b08" \
+		-o /lab/solexa_bartel/klin/CNN/repression_predictions/occupancy_only_final_xval_batch3_withclipping_dropout0_withreg_netpred2_round2/lsf_outputs/all_test_all_$${mirname}.out \
+			python train.py \
+				--tpm_file /lab/bartel4_ata/kathyl/RNA_Seq/outputs/biochem/final_fixed/merged.txt \
+				--mirseqs ../data/mirseqs_no_let7.txt \
+				--feature_file /lab/solexa_bartel/klin/CNN/feature_predictions/occupancy_only_final_xval_batch3_withclipping_dropout0_withreg_netpred2_round2/$${mirname}/MIR.txt \
+				--test_mir $${mirname} \
+				--mode all \
+				--extra_feats "logSA_diff,Threep_canon,PCT" \
+				--outfile /lab/solexa_bartel/klin/CNN/repression_predictions/occupancy_only_final_xval_batch3_withclipping_dropout0_withreg_netpred2_round2/all_test_all/$${mirname}.txt \
+				--passenger ; \
 	done
 
 

@@ -6,6 +6,7 @@ import pandas as pd
 import tensorflow as tf
 
 import utils
+import tf_utils
 
 def generate_12mers(site8):
     all_8mers = ["".join(kmer) for kmer in list(it.product(["A","C","G","T"],repeat=8))]
@@ -35,12 +36,12 @@ def write_12mers(mirname, mirseq, outfile):
                 keep_prob = 1.0
 
             feature_dict = {
-                'mir': utils._bytes_feature(mirname.encode('utf-8')),
-                'mir_1hot': utils._float_feature(utils.one_hot_encode(mirseq)),
-                'seq_1hot': utils._float_feature(utils.one_hot_encode(siteseq)),
-                'log_kd': utils._float_feature([-0.0]),
-                'keep_prob': utils._float_feature([keep_prob]),
-                'stype': utils._bytes_feature(aligned_stype.encode('utf-8')),
+                'mir': tf_utils._bytes_feature(mirname.encode('utf-8')),
+                'mir_1hot': tf_utils._float_feature(utils.one_hot_encode(mirseq)),
+                'seq_1hot': tf_utils._float_feature(utils.one_hot_encode(siteseq)),
+                'log_kd': tf_utils._float_feature([-0.0]),
+                'keep_prob': tf_utils._float_feature([keep_prob]),
+                'stype': tf_utils._bytes_feature(aligned_stype.encode('utf-8')),
             }
 
             example_proto = tf.train.Example(features=tf.train.Features(feature=feature_dict))
