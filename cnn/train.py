@@ -455,39 +455,37 @@ if __name__ == '__main__':
             }
 
             while True:
-                temp = sess.run(next_tpm_batch, feed_dict=train_feed_dict)
-                print(temp['images'].shape)
-                # try:
+                try:
 
-                #     # every 10 steps add to tensorboard
-                #     if (options.LOGDIR is not None) & ((num_steps % 100) == 0):
-                #         evals = sess.run([
-                #             _pred_ka_values,
-                #             next_kd_batch,
-                #             _pred_logfc_normed,
-                #             _repression_y_normed,
-                #             _train_step,
-                #             _merged
-                #         ], feed_dict=train_feed_dict)
+                    # every 10 steps add to tensorboard
+                    if (options.LOGDIR is not None) & ((num_steps % 100) == 0):
+                        evals = sess.run([
+                            _pred_ka_values,
+                            next_kd_batch,
+                            _pred_logfc_normed,
+                            _repression_y_normed,
+                            _train_step,
+                            _merged
+                        ], feed_dict=train_feed_dict)
 
-                #         train_writer.add_summary(evals[-1], num_steps)
+                        train_writer.add_summary(evals[-1], num_steps)
 
-                #     else:
-                #         evals = sess.run([
-                #             _pred_ka_values,
-                #             next_kd_batch,
-                #             _pred_logfc_normed,
-                #             _repression_y_normed,
-                #             _train_step,
-                #         ], feed_dict=train_feed_dict)
+                    else:
+                        evals = sess.run([
+                            _pred_ka_values,
+                            next_kd_batch,
+                            _pred_logfc_normed,
+                            _repression_y_normed,
+                            _train_step,
+                        ], feed_dict=train_feed_dict)
 
-                #     if options.DRY_RUN:
-                #         break
+                    if options.DRY_RUN:
+                        break
 
-                #     num_steps += 1
+                    num_steps += 1
 
-                # except tf.errors.OutOfRangeError:
-                #     break
+                except tf.errors.OutOfRangeError:
+                    break
 
             sess.run(_increment_epoch_op)
 
