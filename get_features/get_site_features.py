@@ -60,6 +60,42 @@ def get_sites_from_kd_dict(transcript_id, sequence, kd_dict, overlap_dist):
     return all_sites
 
 
+def get_sites_from_kd_dict_improved(transcript_id, sequence, kd_dict, overlap_dist):
+    if len(sequence) < 9:
+        return pd.DataFrame(None)
+
+    pad_seq = 'XXX' + sequence + 'XXX'
+    seq = 'A' + pad_seq[:11]
+
+    all_sites = []
+
+    # iterate through 12mers in the sequence
+    for loc, nt in enumerate(pad_seq[11:]):
+        seq = seq[1:] + nt
+
+        if seq in kd_dict:
+            new_kd = kd_dict[seq]
+            all_sites.append([seq, new_kd, loc])
+
+    if len(all_sites) == 0:
+        return pd.DataFrame(None)
+                
+    all_sites = pd.DataFrame(all_sites, columns=['12mer','log_kd','loc']).sort_values('log_kd')
+
+    all_locs = all_sites['loc'].values
+    keep_locs = [all_locs[0]]
+
+
+    for loc in all_locs[1:]:
+        if np.min([np.abs(x - loc) for x in keep_locs]) > overlap_dist:
+            keep_locs.append(loc)
+
+    all_sites = all_sites[all_sites['loc'].isin(keep_locs)]
+    all_sites['transcript'] = transcript_id
+
+    return all_sites.sort_values('loc')
+
+
 def _priority_order(locs, overlap_dist):
     """Helper function for get_sites_from_utr"""
     

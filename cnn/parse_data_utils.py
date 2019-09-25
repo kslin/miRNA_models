@@ -13,34 +13,36 @@ def outer_product_fn(mir_vector, seq_vector):
     return tf.contrib.layers.dense_to_sparse(image)
 
 
-def parse_sites_function(serialized_example, num_mirs, mirlen, seqlen):
-    # construct feature descriptions
-    transcript_features = {
-        'transcript': tf.FixedLenFeature([], tf.string, default_value=''),
-        'batch': tf.FixedLenFeature([], tf.int64, default_value=0),
-    }
+# def parse_sites_function(serialized_example, num_mirs, mirlen, seqlen):
+#     # construct feature descriptions
+#     transcript_features = {
+#         'transcript': tf.FixedLenFeature([], tf.string, default_value=''),
+#         'batch': tf.FixedLenFeature([], tf.int64, default_value=0),
+#         'utr3_length': tf.FixedLenFeature([], tf.float32, default_value=0),
+#         'orf_length': tf.FixedLenFeature([], tf.float32, default_value=0),
+#     }
 
-    site_features = {
-        'mir': tf.FixedLenSequenceFeature([], dtype=tf.string),
-        'tpm': tf.FixedLenSequenceFeature([], dtype=tf.float32),
-        # 'mirseq_1hot': tf.FixedLenSequenceFeature([mirlen], dtype=tf.int64),
-        'orf_guide_1hot': tf.VarLenFeature(dtype=tf.int64),
-        'utr3_guide_1hot': tf.VarLenFeature(dtype=tf.int64),
-        # 'mirseq*_1hot': tf.FixedLenSequenceFeature([mirlen], dtype=tf.int64),
-        'orf_pass_1hot': tf.VarLenFeature(dtype=tf.int64),
-        'utr3_pass_1hot': tf.VarLenFeature(dtype=tf.int64),
-    }
+#     site_features = {
+#         'mir': tf.FixedLenSequenceFeature([], dtype=tf.string),
+#         'tpm': tf.FixedLenSequenceFeature([], dtype=tf.float32),
+#         # 'mirseq_1hot': tf.FixedLenSequenceFeature([mirlen], dtype=tf.int64),
+#         'orf_guide_1hot': tf.VarLenFeature(dtype=tf.int64),
+#         'utr3_guide_1hot': tf.VarLenFeature(dtype=tf.int64),
+#         # 'mirseq*_1hot': tf.FixedLenSequenceFeature([mirlen], dtype=tf.int64),
+#         'orf_pass_1hot': tf.VarLenFeature(dtype=tf.int64),
+#         'utr3_pass_1hot': tf.VarLenFeature(dtype=tf.int64),
+#     }
 
-    # Extract features from serialized data
-    transcript_data, site_data = tf.parse_single_sequence_example(
-        serialized=serialized_example,
-        context_features=transcript_features,
-        sequence_features=site_features)
+#     # Extract features from serialized data
+#     transcript_data, site_data = tf.parse_single_sequence_example(
+#         serialized=serialized_example,
+#         context_features=transcript_features,
+#         sequence_features=site_features)
 
-    # elems = (site_data['mirseq_1hot'], site_data['orf_siteseq_1hot'])
-    guide_orf_image = site_data['orf_guide_1hot']
+#     # elems = (site_data['mirseq_1hot'], site_data['orf_siteseq_1hot'])
+#     guide_orf_image = site_data['orf_guide_1hot']
 
-    return transcript_data['batch'], guide_orf_image
+#     return transcript_data['batch'], guide_orf_image
 
 
 def _parse_repression_function(serialized_example, parse_guides, mirlen, seqlen, num_feats, use_feats, passenger):
@@ -71,6 +73,8 @@ def _parse_repression_function(serialized_example, parse_guides, mirlen, seqlen,
     feature_description = {
         'transcript': tf.FixedLenFeature([], tf.string, default_value=''),
         'batch': tf.FixedLenFeature([], tf.int64, default_value=0),
+        'utr3_length': tf.FixedLenFeature([], tf.float32, default_value=0),
+        'orf_length': tf.FixedLenFeature([], tf.float32, default_value=0),
         # 'tpms': tf.FixedLenSequenceFeature([], tf.float32, default_value=0.0, allow_missing=True),
         # 'guides': tf.FixedLenSequenceFeature([], tf.string, default_value='', allow_missing=True),
         # 'mirs': tf.FixedLenSequenceFeature([], tf.string, default_value='', allow_missing=True),
@@ -109,11 +113,11 @@ def _parse_repression_function(serialized_example, parse_guides, mirlen, seqlen,
     ts7_features = tf.concat(ts7_features, axis=0)
 
     # return parsed
-    return images, ts7_features, tpms, tf.cast(nsites, tf.int32), parsed['transcript'], parsed['batch']
+    return images, ts7_features, tpms, tf.cast(nsites, tf.int32), parsed['transcript'], parsed['batch'], parsed['utr3_length'], parsed['orf_length']
 
 
 def _build_tpm_batch(iterator, batch_size):
-    images, features, labels, nsites, transcripts, batches = [], [], [], [], [], []
+    images, features, labels, nsites, transcripts, batches, utr3_lengths, orf_lengths = [], [], [], [], [], [], [], []
     for ix in range(batch_size):
         results = iterator.get_next()
 
@@ -123,6 +127,8 @@ def _build_tpm_batch(iterator, batch_size):
         nsites.append(results[3])
         transcripts.append(results[4])
         batches.append(results[5])
+        utr3_lengths.append(results[6])
+        orf_lengths.append(results[7])
 
     results = {
         'images': tf.concat(images, axis=0),
@@ -131,6 +137,8 @@ def _build_tpm_batch(iterator, batch_size):
         'nsites': tf.concat(nsites, axis=0),
         'transcripts': tf.stack(transcripts),
         'batches': tf.stack(batches),
+        'utr3_length': tf.stack(utr3_lengths) / 5000,
+        'orf_length': tf.stack(orf_lengths) / 5000,
     }
 
     return results

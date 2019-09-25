@@ -52,6 +52,7 @@ if __name__ == '__main__':
     print(KDS.head())
 
     for mir, group in KDS.groupby('mir'):
+
         shuffle_ixs = np.random.permutation(len(group))
         group = group.iloc[shuffle_ixs]
         print("Processing {}".format(mir))

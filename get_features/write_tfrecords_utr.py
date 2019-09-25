@@ -54,7 +54,14 @@ if __name__ == '__main__':
     ALL_FEATS = []
     for mir in ALL_MIRS:
         mir = mir.replace('*', '_pass')
-        ALL_FEATS.append(pd.read_csv(options.FEATURE_FILE.replace('MIR', mir), sep='\t'))
+        temp = pd.read_csv(options.FEATURE_FILE.replace('MIR', mir), sep='\t')
+
+        # fill in SA_bg for noncanon sites
+        mean_SA_diff = np.nanmean(temp['logSA_diff'])
+        temp['logSA_diff'] = temp['logSA_diff'].fillna(mean_SA_diff)
+
+        ALL_FEATS.append(temp)
+
     ALL_FEATS = pd.concat(ALL_FEATS, sort=False)
     print(len(ALL_FEATS))
 
@@ -62,9 +69,7 @@ if __name__ == '__main__':
     ALL_FEATS = ALL_FEATS[(ALL_FEATS['stype'] != 'no site') | (~ALL_FEATS['in_ORF'])]
     print(len(ALL_FEATS))
 
-    # fill in SA_bg for noncanon sites
-    mean_SA_diff = np.nanmean(ALL_FEATS['logSA_diff'])
-    ALL_FEATS['logSA_diff'] = ALL_FEATS['logSA_diff'].fillna(mean_SA_diff)
+    # only take 3p-pairing scores for canonical sites
     ALL_FEATS['Threep_canon'] = ALL_FEATS['Threep'] * (ALL_FEATS['stype'] != 'no site')
 
     # read in expression data
@@ -90,6 +95,8 @@ if __name__ == '__main__':
             feature_dict = {
                 'transcript': tf_utils._bytes_feature(transcript.encode('utf-8')),
                 'batch': tf_utils._int64_feature([row[1]['batch']]),
+                'utr3_length': tf_utils._float_feature([row[1]['utr3_length']]),
+                'orf_length': tf_utils._float_feature([row[1]['orf_length']]),
             }
 
             for guide in ALL_GUIDES:

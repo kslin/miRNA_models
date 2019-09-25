@@ -57,7 +57,7 @@ if __name__ == '__main__':
 
     # weight initializations
     WEIGHTS_INIT = {
-        'freeAGO_mean': -5.0,
+        'freeAGO_mean': -5.3,
         'freeAGO_pass_offset': -1.0,
         # 'feature_coefs': np.array([-2.0, 0.2, 0.2, 1.0])[:options.USE_FEATS].reshape([options.USE_FEATS, 1]),
         'feature_coefs': np.array([[-1.0]]),
@@ -65,7 +65,7 @@ if __name__ == '__main__':
         # 'decay': 0.021921674  # full model, canonsites orf
         # 'decay': 0.26764196  # allsites utr, canonsites orf, background model
         # 'decay': 0.37  # allsites utr, canonsites orf, occupancy only
-        'decay': 0.4
+        'decay': 0.0
     }
 
     print(WEIGHTS_INIT)
@@ -303,7 +303,7 @@ if __name__ == '__main__':
 
 
     # weight KD values
-    _kd_weights = tf.constant(([[1.0]] * options.KD_BATCH_SIZE) + ([[0.0], [0.0], [0.5]]))
+    _kd_weights = tf.constant(([[1.0]] * options.KD_BATCH_SIZE) + ([[0.0], [0.0], [0.0]]))
     # _kd_weights = tf.placeholder(tf.float32, shape=[options.KD_BATCH_SIZE + 3, 1], name='kd_weights')
 
     _next_kd_batch_kds = tf.concat([next_kd_batch_labels, random_seq_labels], axis=0)
@@ -370,11 +370,15 @@ if __name__ == '__main__':
             _decay = tf.get_variable('decay', initializer=WEIGHTS_INIT['decay'])
             # _assign_decay = tf.assign(_decay, WEIGHTS_INIT['decay'])
             _ts7_bias = tf.get_variable('ts7_bias', initializer=0.0, trainable=False)
+            _utr3_length_coef = tf.get_variable('utr3_length_coef', initializer=0.1, trainable=False)
+            _orf_length_coef = tf.get_variable('orf_length_coef', initializer=0.1, trainable=False)
             model.variable_summaries(_ts7_weights)
 
     # add variables to tensorboard
     tf.summary.scalar('decay', _decay)
-    tf.summary.scalar('ts7_bias', _ts7_bias)
+    # tf.summary.scalar('ts7_bias', _ts7_bias)
+    tf.summary.scalar('utr3_length_coef', _utr3_length_coef)
+    tf.summary.scalar('orf_length_coef', _orf_length_coef)
     for ix in range(options.USE_FEATS):
         tf.summary.scalar(f'ts7_weight_{ix}', _ts7_weights[ix, 0])
 
@@ -385,6 +389,8 @@ if __name__ == '__main__':
         next_tpm_batch,
         _ts7_weights,
         _ts7_bias,
+        # _utr3_length_coef,
+        # _orf_length_coef,
         _decay,
         options.REPRESSION_BATCH_SIZE,
         options.PASSENGER,
@@ -399,6 +405,8 @@ if __name__ == '__main__':
         next_tpm_batch,
         _ts7_weights,
         _ts7_bias,
+        # _utr3_length_coef,
+        # _orf_length_coef,
         _decay,
         1,
         options.PASSENGER,
@@ -476,7 +484,9 @@ if __name__ == '__main__':
         'learning_rates': [],
         'val_losses': [],
         'val_r2s': [],
-        'ORF_penalty': []
+        'ORF_penalty': [],
+        'utr3_length_coefs': [],
+        'orf_length_coefs': []
     }
 
     conf = tf.ConfigProto(inter_op_parallelism_threads=4, intra_op_parallelism_threads=24)
@@ -513,6 +523,8 @@ if __name__ == '__main__':
         vars_to_plot['train_freeAGO_means'].append(sess.run(_freeAGO_mean))
         vars_to_plot['decays'].append(sess.run(_decay))
         vars_to_plot['learning_rates'].append(sess.run(_learning_rate))
+        vars_to_plot['utr3_length_coefs'].append(sess.run(_utr3_length_coef))
+        vars_to_plot['orf_length_coefs'].append(sess.run(_orf_length_coef))
 
         # plot variables and parameters
         eval_test_kd(test_image_8mer)
@@ -633,6 +645,8 @@ if __name__ == '__main__':
                             next_tpm_batch['nsites']: temp_tpm_batch['nsites'],
                             next_tpm_batch['features']: temp_tpm_batch['features'],
                             next_tpm_batch['labels']: temp_tpm_batch['labels'],
+                            next_tpm_batch['utr3_length']: temp_tpm_batch['utr3_length'],
+                            next_tpm_batch['orf_length']: temp_tpm_batch['orf_length'],
                             _freeAGO_all_val: current_freeAGO_all_val,
                         }))
                 except tf.errors.OutOfRangeError:
@@ -649,6 +663,8 @@ if __name__ == '__main__':
             vars_to_plot['train_freeAGO_means'].append(sess.run(_freeAGO_mean))
             vars_to_plot['decays'].append(sess.run(_decay))
             vars_to_plot['learning_rates'].append(sess.run(_learning_rate))
+            vars_to_plot['utr3_length_coefs'].append(sess.run(_utr3_length_coef))
+            vars_to_plot['orf_length_coefs'].append(sess.run(_orf_length_coef))
             vars_to_plot['val_losses'].append(np.sum(np.square(pred_vals_normed[:, -1] - real_vals_normed[:, -1])))
             vars_to_plot['val_r2s'].append(stats.linregress(pred_vals_normed[:, -1], real_vals_normed[:, -1])[2]**2)
 
@@ -682,7 +698,7 @@ if __name__ == '__main__':
                 log_helpers.plot_scalars(vars_to_plot, options.LOGDIR)
 
                 print(sess.run(_ts7_weights))
-                print(sess.run(_ts7_bias))
+                # print(sess.run(_ts7_bias))
                 print(current_freeAGO_all_val)
 
                 len_kd_batch = len(evals_dict['ka_batch']['labels'].flatten())

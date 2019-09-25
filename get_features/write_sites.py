@@ -21,6 +21,7 @@ if __name__ == '__main__':
     parser.add_option("--sa_bg", dest="SA_BG", help="SA background for 12mers")
     parser.add_option("--rnaplfold_dir", dest="RNAPLFOLD_DIR", help="folder with RNAplfold info for transcripts")
     parser.add_option("--pct_file", dest="PCT_FILE", default=None, help="file with PCT information")
+    parser.add_option("--ta_sps_file", dest="TA_SPS_FILE", default=None, help="file with target abundance information")
     parser.add_option("--kd_cutoff", dest="KD_CUTOFF", type=float, default=None)
     parser.add_option("--outfile", dest="OUTFILE", help="location to write outputs")
     parser.add_option("--overlap_dist", dest="OVERLAP_DIST", help="minimum distance between neighboring sites", type=int)
@@ -70,7 +71,7 @@ if __name__ == '__main__':
         # find all the sites and KDs
         all_features = []
         for row in TRANSCRIPTS.iterrows():
-            all_features.append(get_site_features.get_sites_from_kd_dict(row[0], row[1]['orf_utr3'], mir_kd_dict, options.OVERLAP_DIST))
+            all_features.append(get_site_features.get_sites_from_kd_dict_improved(row[0], row[1]['orf_utr3'], mir_kd_dict, options.OVERLAP_DIST))
 
     # otherwise, go by sequence
     else:
@@ -119,6 +120,15 @@ if __name__ == '__main__':
     all_features['in_ORF'] = all_features['loc'] < (all_features['orf_length'] + 15)
     all_features['logSA_diff'] = all_features['logSA'] - all_features['logSA_bg']
     all_features['utr3_loc'] = all_features['loc'] - all_features['orf_length']
+    all_features['passenger'] = ('_pass' in options.MIR) or ('*' in options.MIR)
+    
+    if options.TA_SPS_FILE is not None:
+        print('Adding target abundance')
+        TAs = pd.read_csv(options.TA_SPS_FILE, sep='\t', index_col='Seed region')
+        SEED_SEQ = MIRSEQ[1:8].replace('T','U')
+        all_features['TA'] = TAs.loc[SEED_SEQ]['TA']
+    else:
+        print('Skipping target abundance')
 
     print('Adding PCT')
 

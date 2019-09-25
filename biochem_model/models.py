@@ -42,6 +42,125 @@ class Model():
         return sess.run(pred, feed_dict=feed_dict)
 
 
+# FINAL MODEL
+class OccupancyWithFeaturesModel(Model):
+    def __init__(self, num_guides, num_features, init_bound=False, fit_background=False, passenger=False, set_vars={}):
+        super().__init__()
+
+        if 'set_freeAGO' in set_vars:
+            FA_initializer = set_vars['set_freeAGO']
+            fitFA = False
+        else:
+            FA_initializer = -5.5
+            fitFA = True
+
+        if passenger:
+            self.vars['freeAGO'] = tf.get_variable('freeAGO', shape=[1, num_guides * 2, 1],
+                initializer=tf.constant_initializer(FA_initializer), trainable=fitFA)
+        else:
+            self.vars['freeAGO'] = tf.get_variable('freeAGO', shape=[1, num_guides, 1],
+                initializer=tf.constant_initializer(FA_initializer), trainable=fitFA)
+
+        if 'log_decay' in set_vars:
+            self.vars['log_decay'] = tf.get_variable('log_decay', shape=(), initializer=tf.constant_initializer(set_vars['log_decay']), trainable=False)
+        else:
+            self.vars['log_decay'] = tf.get_variable('log_decay', shape=(), initializer=tf.constant_initializer(0.0))
+
+        if 'feature_coefs' in set_vars:
+            self.vars['feature_coefs'] = tf.get_variable('feature_coefs', shape=[1, 1, 1, num_features],
+                initializer=tf.constant_initializer(set_vars['feature_coefs']), trainable=False)
+        else:
+            self.vars['feature_coefs'] = tf.get_variable('feature_coefs', shape=[1, 1, 1, num_features], initializer=tf.constant_initializer(-0.1))
+
+        if init_bound:
+            self.vars['nosite_conc'] = tf.get_variable('nosite_conc', shape=(),
+                initializer=tf.constant_initializer(0.0), trainable=fit_background)
+
+        self.init_bound = init_bound
+        self.passenger = passenger
+
+    def get_pred(self, data):
+
+        # if freeAGOs supplied, use those
+        if 'freeAGO' in data:
+            freeAGOs = data['freeAGO']
+        else:
+            freeAGOs = self.vars['freeAGO']
+
+        feature_contribution = tf.reduce_sum(tf.multiply(data['features'], self.vars['feature_coefs']), axis=3)
+        nosite_feature_contribution = tf.reduce_sum(tf.multiply(data['nosite_features'], self.vars['feature_coefs']), axis=3)
+
+        occ = tf.sigmoid(data['ka_vals'] + feature_contribution + freeAGOs)
+        nbound = tf.reduce_sum(tf.multiply(occ, data['mask']), axis=2)
+
+        if self.passenger:
+            nbound = tf.reduce_sum(tf.reshape(nbound, [-1, data['num_guides'], 2]), axis=2)
+
+        if not self.init_bound:
+            pred = -1 * tf.log1p(tf.exp(self.vars['log_decay']) * nbound)
+
+        else:
+            occ_init = tf.sigmoid(nosite_feature_contribution + freeAGOs + self.vars['nosite_conc'])
+            nbound_init = tf.reduce_sum(tf.multiply(occ_init, data['mask']), axis=2)
+            if self.passenger:
+                nbound_init = tf.reduce_sum(tf.reshape(nbound_init, [-1, data['num_guides'], 2]), axis=2)
+        
+            pred = tf.log1p(tf.exp(self.vars['log_decay']) * nbound_init) - tf.log1p(tf.exp(self.vars['log_decay']) * nbound)
+
+        return pred
+
+
+class OccupancyWithFeaturesWithLensModel(OccupancyWithFeaturesModel):
+    def __init__(self, num_guides, num_features, passenger=False, set_vars={}):
+        super().__init__(num_guides, num_features, init_bound=False, fit_background=False, passenger=passenger, set_vars=set_vars)
+
+        if 'utr3_coef' in set_vars:
+            self.vars['utr3_coef'] = tf.get_variable('utr3_coef', shape=(),
+                initializer=tf.constant_initializer(set_vars['utr3_coef']), trainable=False)
+        else:
+            self.vars['utr3_coef'] = tf.get_variable('utr3_coef', shape=(),
+                initializer=tf.constant_initializer(0.0))
+        if 'orf_coef' in set_vars:
+            self.vars['orf_coef'] = tf.get_variable('orf_coef', shape=(),
+                initializer=tf.constant_initializer(set_vars['orf_coef']), trainable=False)
+        else:
+            self.vars['orf_coef'] = tf.get_variable('orf_coef', shape=(),
+                initializer=tf.constant_initializer(-0.5))
+
+    def get_pred(self, data):
+        if 'freeAGO' in data:
+            freeAGOs = data['freeAGO']
+        else:
+            freeAGOs = self.vars['freeAGO']
+
+        feature_contribution = tf.reduce_sum(tf.multiply(data['features'], self.vars['feature_coefs']), axis=3)
+        nosite_feature_contribution = tf.reduce_sum(tf.multiply(data['nosite_features'], self.vars['feature_coefs']), axis=3)
+
+        occ = tf.sigmoid(data['ka_vals'] + feature_contribution + freeAGOs)
+        nbound = tf.reduce_sum(tf.multiply(occ, data['mask']), axis=2)
+
+        if self.passenger:
+            nbound = tf.reduce_sum(tf.reshape(nbound, [-1, data['num_guides'], 2]), axis=2)
+
+        length_effect = (tf.exp(self.vars['utr3_coef']) * data['utr3_length']) + (tf.exp(self.vars['orf_coef']) * data['orf_length'])
+
+        nbound = nbound + length_effect
+
+        if not self.init_bound:
+            pred = -1 * tf.log1p(tf.exp(self.vars['log_decay']) * nbound)
+
+        else:
+            occ_init = tf.sigmoid(nosite_feature_contribution + freeAGOs + self.vars['nosite_conc'])
+            nbound_init = tf.reduce_sum(tf.multiply(occ_init, data['mask']), axis=2)
+            if self.passenger:
+                nbound_init = tf.reduce_sum(tf.reshape(nbound_init, [-1, data['num_guides'], 2]), axis=2)
+            nbound_init += length_effect
+        
+            pred = tf.log1p(tf.exp(self.vars['log_decay']) * nbound_init) - tf.log1p(tf.exp(self.vars['log_decay']) * nbound)
+
+        return pred
+
+
 class OccupancyOnlyModelSimple(Model):
     def __init__(self, num_mirs, withORF, withUTR5, with_init):
         super().__init__()
@@ -121,126 +240,67 @@ class OccupancyWithUTRlenModel(Model):
         return pred
 
 
-class OccupancyWithFeaturesModel(Model):
-    def __init__(self, num_guides, num_features, init_bound=False, fit_background=False, passenger=False, set_vars={}):
-        super().__init__()
-        if passenger:
-            self.vars['freeAGO'] = tf.get_variable('freeAGO', shape=[1, num_guides * 2, 1],
-                initializer=tf.constant_initializer(-5.5))
-        else:
-            self.vars['freeAGO'] = tf.get_variable('freeAGO', shape=[1, num_guides, 1],
-                initializer=tf.constant_initializer(-5.5))
-        if 'log_decay' in set_vars:
-            self.vars['log_decay'] = tf.get_variable('log_decay', shape=(), initializer=tf.constant_initializer(set_vars['log_decay']), trainable=False)
-        else:
-            self.vars['log_decay'] = tf.get_variable('log_decay', shape=(), initializer=tf.constant_initializer(0.0))
+# class OccupancyWithFeaturesWithLensModel(Model):
+#     def __init__(self, num_guides, num_features, init_bound=False, fit_lens=False, passenger=False, set_vars={}):
+#         super().__init__()
+#         if passenger:
+#             self.vars['freeAGO'] = tf.get_variable('freeAGO', shape=[1, num_guides * 2, 1],
+#                 initializer=tf.constant_initializer(-5.5))
+#         else:
+#             self.vars['freeAGO'] = tf.get_variable('freeAGO', shape=[1, num_guides, 1],
+#                 initializer=tf.constant_initializer(-5.5))
 
-        if 'feature_coefs' in set_vars:
-            self.vars['feature_coefs'] = tf.get_variable('feature_coefs', shape=[1, 1, 1, num_features],
-                initializer=tf.constant_initializer(set_vars['feature_coefs']), trainable=False)
-        else:
-            self.vars['feature_coefs'] = tf.get_variable('feature_coefs', shape=[1, 1, 1, num_features], initializer=tf.constant_initializer(-0.1))
+#         self.vars['log_decay'] = tf.get_variable('log_decay', shape=(), initializer=tf.constant_initializer(0.0))
+#         self.vars['feature_coefs'] = tf.get_variable('feature_coefs', shape=[1, 1, 1, num_features], initializer=tf.constant_initializer(-0.1))
+
+#         self.vars['nosite_conc'] = tf.get_variable('nosite_conc', shape=(),
+#             initializer=tf.constant_initializer(0.0), trainable=True)
 
 
-        self.vars['nosite_conc'] = tf.get_variable('nosite_conc', shape=(),
-            initializer=tf.constant_initializer(0.0), trainable=fit_background)
+#         self.vars['utr3_coef'] = tf.get_variable('utr3_coef', shape=(),
+#             initializer=tf.constant_initializer(0.0), trainable=fit_lens)
+#         self.vars['orf_coef'] = tf.get_variable('orf_coef', shape=(),
+#             initializer=tf.constant_initializer(0.0), trainable=fit_lens)
 
-        self.init_bound = init_bound
-        self.passenger = passenger
+#         self.init_bound = init_bound
+#         self.passenger = passenger
 
-    def get_pred(self, data):
-        if 'freeAGO' in data:
-            freeAGOs = data['freeAGO']
-        else:
-            freeAGOs = self.vars['freeAGO']
+#     def get_pred(self, data):
+#         if 'freeAGO' in data:
+#             freeAGOs = data['freeAGO']
+#         else:
+#             freeAGOs = self.vars['freeAGO']
 
-        feature_contribution = tf.reduce_sum(tf.multiply(data['features'], self.vars['feature_coefs']), axis=3)
-        nosite_feature_contribution = tf.reduce_sum(tf.multiply(data['nosite_features'], self.vars['feature_coefs']), axis=3)
+#         feature_contribution = tf.reduce_sum(tf.multiply(data['features'], self.vars['feature_coefs']), axis=3)
+#         nosite_feature_contribution = tf.reduce_sum(tf.multiply(data['nosite_features'], self.vars['feature_coefs']), axis=3)
 
-        occ = tf.sigmoid(data['ka_vals'] + feature_contribution + freeAGOs)
-        nbound = tf.reduce_sum(tf.multiply(occ, data['mask']), axis=2)
+#         occ = tf.sigmoid(data['ka_vals'] + feature_contribution + freeAGOs)
+#         nbound = tf.reduce_sum(tf.multiply(occ, data['mask']), axis=2)
 
-        if self.passenger:
-            nbound = tf.reduce_sum(tf.reshape(nbound, [-1, data['num_guides'], 2]), axis=2)
+#         if self.passenger:
+#             nbound = tf.reduce_sum(tf.reshape(nbound, [-1, data['num_guides'], 2]), axis=2)
 
-        if not self.init_bound:
-            pred = -1 * tf.log1p(tf.exp(self.vars['log_decay']) * nbound)
-            # pred = -1 * self.vars['log_decay'] * nbound
+#         length_effect = (self.vars['utr3_coef'] * data['utr3_length']) + (self.vars['orf_coef'] * data['orf_length'])
 
-        else:
-            occ_init = tf.sigmoid(nosite_feature_contribution + freeAGOs + self.vars['nosite_conc'])
-            nbound_init = tf.reduce_sum(tf.multiply(occ_init, data['mask']), axis=2)
-            if self.passenger:
-                nbound_init = tf.reduce_sum(tf.reshape(nbound_init, [-1, data['num_guides'], 2]), axis=2)
-            # pred = self.vars['log_decay'] * (nbound_init - nbound)
-            # nbound_init /= 0.82579
-            # print('hi')
+#         nbound = nbound + length_effect
+
+#         if not self.init_bound:
+#             pred = -1 * tf.log1p(tf.exp(self.vars['log_decay']) * nbound)
+#         #     # pred = -1 * self.vars['log_decay'] * nbound
+
+#         else:
+#             occ_init = tf.sigmoid(nosite_feature_contribution + freeAGOs + self.vars['nosite_conc'])
+#             nbound_init = tf.reduce_sum(tf.multiply(occ_init, data['mask']), axis=2)
+#             if self.passenger:
+#                 nbound_init = tf.reduce_sum(tf.reshape(nbound_init, [-1, data['num_guides'], 2]), axis=2)
+#             nbound_init += length_effect
+#         #     # pred = self.vars['log_decay'] * (nbound_init - nbound)
+#         #     # nbound_init /= 0.82579
+#         #     # print('hi')
         
-            pred = tf.log1p(tf.exp(self.vars['log_decay']) * nbound_init) - tf.log1p(tf.exp(self.vars['log_decay']) * nbound)
+#             pred = tf.log1p(tf.exp(self.vars['log_decay']) * nbound_init) - tf.log1p(tf.exp(self.vars['log_decay']) * nbound)
 
-        return pred
-
-
-class OccupancyWithFeaturesWithLensModel(Model):
-    def __init__(self, num_guides, num_features, init_bound=False, fit_lens=False, passenger=False):
-        super().__init__()
-        if passenger:
-            self.vars['freeAGO'] = tf.get_variable('freeAGO', shape=[1, num_guides * 2, 1],
-                initializer=tf.constant_initializer(-5.5))
-        else:
-            self.vars['freeAGO'] = tf.get_variable('freeAGO', shape=[1, num_guides, 1],
-                initializer=tf.constant_initializer(-5.5))
-        self.vars['log_decay'] = tf.get_variable('log_decay', shape=(), initializer=tf.constant_initializer(0.0))
-        self.vars['feature_coefs'] = tf.get_variable('feature_coefs', shape=[1, 1, 1, num_features], initializer=tf.constant_initializer(-0.1))
-
-        self.vars['nosite_conc'] = tf.get_variable('nosite_conc', shape=(),
-            initializer=tf.constant_initializer(0.0), trainable=True)
-
-
-        self.vars['utr3_coef'] = tf.get_variable('utr3_coef', shape=(),
-            initializer=tf.constant_initializer(0.0), trainable=fit_lens)
-        self.vars['orf_coef'] = tf.get_variable('orf_coef', shape=(),
-            initializer=tf.constant_initializer(0.0), trainable=fit_lens)
-
-        self.init_bound = init_bound
-        self.passenger = passenger
-
-    def get_pred(self, data):
-        if 'freeAGO' in data:
-            freeAGOs = data['freeAGO']
-        else:
-            freeAGOs = self.vars['freeAGO']
-
-        feature_contribution = tf.reduce_sum(tf.multiply(data['features'], self.vars['feature_coefs']), axis=3)
-        nosite_feature_contribution = tf.reduce_sum(tf.multiply(data['nosite_features'], self.vars['feature_coefs']), axis=3)
-
-        occ = tf.sigmoid(data['ka_vals'] + feature_contribution + freeAGOs)
-        nbound = tf.reduce_sum(tf.multiply(occ, data['mask']), axis=2)
-
-        if self.passenger:
-            nbound = tf.reduce_sum(tf.reshape(nbound, [-1, data['num_guides'], 2]), axis=2)
-
-        length_effect = (self.vars['utr3_coef'] * data['utr3_length']) + (self.vars['orf_coef'] * data['orf_length'])
-
-        nbound = nbound + length_effect
-
-        if not self.init_bound:
-            pred = -1 * tf.log1p(tf.exp(self.vars['log_decay']) * nbound)
-        #     # pred = -1 * self.vars['log_decay'] * nbound
-
-        else:
-            occ_init = tf.sigmoid(nosite_feature_contribution + freeAGOs + self.vars['nosite_conc'])
-            nbound_init = tf.reduce_sum(tf.multiply(occ_init, data['mask']), axis=2)
-            if self.passenger:
-                nbound_init = tf.reduce_sum(tf.reshape(nbound_init, [-1, data['num_guides'], 2]), axis=2)
-            nbound_init += length_effect
-        #     # pred = self.vars['log_decay'] * (nbound_init - nbound)
-        #     # nbound_init /= 0.82579
-        #     # print('hi')
-        
-            pred = tf.log1p(tf.exp(self.vars['log_decay']) * nbound_init) - tf.log1p(tf.exp(self.vars['log_decay']) * nbound)
-
-        return pred
+#         return pred
 
 
 class OccupancyOnlyModel(Model):

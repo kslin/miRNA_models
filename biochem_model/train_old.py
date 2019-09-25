@@ -1,425 +1,416 @@
+import copy
 from optparse import OptionParser
-import os
 import sys
 
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from scipy import stats
-import seaborn as sns
 import tensorflow as tf
 
+import utils
 import models
 
-np.set_printoptions(threshold=np.inf, linewidth=200)
-pd.options.mode.chained_assignment = None
 pd.options.display.max_columns = 100
-tf.logging.set_verbosity(tf.logging.DEBUG)
 
 
-def expand_feats_stypes(features, stypes, expand_vars, single_vars):
-    expanded_features = []
-    for stype in stypes:
-        temp = features[expand_vars]
-        stype_filter = features[[stype]].values
-        temp.columns = [x + ':' + stype for x in temp.columns]
-        temp *= stype_filter
-        expanded_features.append(temp)
+def split_vals(vals_4D, zero_indices):
+    """
+    Given a 4D matrix with ka values and features, split into ka_vals (3D), features (4D), and nosite_features (4D)
+    """
 
-    expanded_features.append(features[single_vars])
-    expanded_features = pd.concat(expanded_features, axis=1, join='inner')
+    ka_vals_3D = vals_4D[:, :, :, 0]
+    features_4D = vals_4D[:, :, :, 1:]
+    nosite_features_4D = copy.copy(features_4D)
+    for ix in zero_indices:
+        nosite_features_4D[:, :, :, ix - 1] = 0
 
-    # get rid of columns of all zeros, for example 6mer PCT
-    for col in expanded_features.columns:
-        if np.std(expanded_features[col].values) < 0.00001:
-            expanded_features = expanded_features.drop(columns=[col])
-
-    return expanded_features
+    return ka_vals_3D, features_4D, nosite_features_4D
 
 
-def one_hot_features(features, stypes):
+def train_on_data(train_vals, test_vals_dict, test_guide, num_feats, mirna_data, passenger, outfile, set_vars={}):
+    """
+    Trains occupancy + context features model on data. Writes predictions to outfile
+    """
 
-    # one-hot categorical variables
-    for stype in stypes:
-        features[stype] = [float(s == stype) for s in features['stype']]
+    tf.reset_default_graph()
 
-    cat_vars = []
-    for feat in ['siRNA_1', 'siRNA_8', 'site_8']:
-        for nt in ['A', 'C', 'G']:
-            features['{}{}'.format(feat, nt)] = (features[feat] == nt).astype(float)
-            cat_vars.append(feat + nt)
+    # make placeholders for model
+    ka_tensor = tf.placeholder(tf.float32, shape=[None, None, None], name='ka_vals')
+    feature_tensor = tf.placeholder(tf.float32, shape=[None, None, None, num_feats], name='orf_ka')
+    nosite_feature_tensor = tf.placeholder(tf.float32, shape=[None, None, None, NUM_FEATS], name='nosite_feats')
+    mask_tensor = tf.placeholder(tf.float32, shape=[None, None, None], name='mask')
+    labels_tensor = tf.placeholder(tf.float32, shape=[None, None], name='labels')
+    freeAGO_val = tf.placeholder(tf.float32, shape=[None, None, None], name='freeAGO_val')
 
-    return features, cat_vars
+    # make data dictionary
+    train_data = {
+        'ka_vals': ka_tensor,
+        'mask': mask_tensor,
+        'features': feature_tensor,
+        'nosite_features': nosite_feature_tensor,
+        'labels': labels_tensor,
+        'passenger': passenger,
+        'num_guides': len(train_vals['guides'])
+    }
+
+    # make feed dictionary
+    train_feed_dict = {
+        ka_tensor: train_vals['ka_vals_3D'],
+        mask_tensor: train_vals['mask_3D'],
+        feature_tensor: train_vals['features_4D'],
+        nosite_feature_tensor: train_vals['nosite_features_4D'],
+        labels_tensor: train_vals['labels']
+    }
+
+    # make and train model
+    mod = models.OccupancyWithFeaturesModel(len(train_vals['guides']), num_feats, init_bound=True, passenger=passenger, set_vars=set_vars)
+
+    with tf.Session() as sess:
+        sess.run(tf.global_variables_initializer())
+        mod.fit(sess, train_data, train_feed_dict, maxiter=200)
+        print(mod.vars_evals)
+        print(mod.r2)
+        print(mod.final_loss)
+        transcript_list = np.repeat(train_vals['transcripts'], len(train_vals['guides']))
+        pred_df = pd.DataFrame({
+            'transcript': transcript_list,
+            'mir': list(train_vals['guides']) * len(train_vals['transcripts']),
+            'pred': mod.eval_pred.flatten(),
+            'label': mod.eval_label.flatten(),
+            'pred_normed': mod.eval_pred_normed.flatten(),
+            'label_normed': mod.eval_label_normed.flatten(),
+        })
+
+        # if outfile is given, write results to outfile
+        if outfile is not None:
+            pred_df.to_csv(outfile, sep='\t', index=False)
+
+        # get freeAGO for test miRNA
+        if passenger:
+            current_freeAGO_all = mod.vars_evals['freeAGO'].reshape([-1, 2])
+        else:
+            current_freeAGO_all = mod.vars_evals['freeAGO'].reshape([-1, 1])
+
+        print(current_freeAGO_all)
+
+        if len(test_vals_dict) == 0:
+            return
+
+        # infer freeAGO of test miRNA from its target abundance
+        train_guide_tas = mirna_data.loc[train_vals['guides']]['guide_TA'].values
+        slope, inter = stats.linregress(train_guide_tas, current_freeAGO_all[:, 0])[:2]
+        test_guide_ta = mirna_data.loc[test_guide]['guide_TA']
+        new_freeago = [slope * test_guide_ta + inter]
+
+        # infer freeAGO of test miRNA passenger strand from the median value from other miRNAs
+        if passenger:
+            new_freeago.append(np.median(current_freeAGO_all[:, 1]))
+
+        current_freeAGO_all_val = np.concatenate([current_freeAGO_all, np.array([new_freeago])], axis=0).flatten().reshape([1, -1, 1])
+        print(current_freeAGO_all)
+
+        for key, test_vals in test_vals_dict.items():
+            test_data = {
+                'ka_vals': ka_tensor,
+                'mask': mask_tensor,
+                'features': feature_tensor,
+                'nosite_features': nosite_feature_tensor,
+                'labels': labels_tensor,
+                'freeAGO': freeAGO_val,
+                'passenger': passenger,
+                'num_guides': len(test_vals['guides']),
+            }
+
+            test_feed_dict = {
+                ka_tensor: test_vals['ka_vals_3D'],
+                mask_tensor: test_vals['mask_3D'],
+                feature_tensor: test_vals['features_4D'],
+                nosite_feature_tensor: test_vals['nosite_features_4D'],
+                freeAGO_val: current_freeAGO_all_val
+            }
+
+            test_preds = mod.predict(sess, test_data, test_feed_dict)
+            test_labels = test_vals['labels']
+
+            test_preds_normed = test_preds - np.mean(test_preds, axis=1).reshape([-1, 1])
+            test_labels_normed = test_labels - np.mean(test_labels, axis=1).reshape([-1, 1])
+
+            transcript_list = np.repeat(test_vals['transcripts'], len(test_vals['guides']))
+            pred_df = pd.DataFrame({
+                'transcript': transcript_list,
+                'mir': list(test_vals['guides']) * len(test_vals['transcripts']),
+                'pred': test_preds.flatten(),
+                'label': test_labels.flatten(),
+                'pred_normed': test_preds_normed.flatten(),
+                'label_normed': test_labels_normed.flatten(),
+            })
+
+            # if outfile is given, write results to outfile
+            if outfile is not None:
+                pred_df.to_csv(outfile.replace('REPLACE', key), sep='\t', index=False)
 
 
 if __name__ == '__main__':
 
     parser = OptionParser()
     parser.add_option("--tpm_file", dest="TPM_FILE", help="tpm data")
-    parser.add_option("--feature_file", dest="FEATURE_FILE", help="feature data")
-    parser.add_option("--orf_feature_file", dest="ORF_FEATURE_FILE", help="ORF feature data", default=None)
-    parser.add_option("--model_type", dest="MODEL_TYPE", help="which model to run")
-    parser.add_option("--out_folder", dest="OUT_FOLDER", help="folder for outputs", default=None)
+    parser.add_option("--feature_file", dest="FEATURE_FILE", help="file with features")
+    parser.add_option("--kd_cutoff", dest="KD_CUTOFF", help="cutoff value for KDs", default=None, type=float)
+    parser.add_option("--mirseqs", dest="MIR_SEQS", help="tsv with miRNAs and their sequences")
+    parser.add_option("--test_mir", dest="TEST_MIR", help="test miRNA", default=None)
+    parser.add_option("--mode", dest="MODE", help="training_mode")
+    parser.add_option("--extra_feats", dest="EXTRA_FEATS", help="comma-separated list of extra features", default=None)
+    parser.add_option("--passenger", dest="PASSENGER", help="include passenger", default=False, action='store_true')
+    parser.add_option("--outfile", dest="OUTFILE", help="output file", default=None)
 
     (options, args) = parser.parse_args()
 
-    tpms = pd.read_csv(options.TPM_FILE, sep='\t', index_col=0)
-    tpms.index.name = 'transcript'
+    if options.MODE not in ['all', 'canon', 'noncanon', 'shuffle_noncanon', 'only_shuffle_noncanon', 'train_only', 'test_only']:
+        raise ValueError('Invalid mode.')
 
-    # shuffle transcripts and subset into 10 batches
-    num_batches = 10
-    np.random.seed(0)
-    tpms = tpms.iloc[np.random.permutation(len(tpms))]
-    tpms['batch'] = [ix % num_batches for ix in range(len(tpms))]
-    test_tpms = tpms[tpms['batch'] == 0]
-    tpms = tpms[tpms['batch'] != 0]
+    # read miRNA DATA and get names of all guide miRNAs
+    MIRNA_DATA = pd.read_csv(options.MIR_SEQS, sep='\t', index_col='mir')
+    ALL_GUIDES = sorted(list(MIRNA_DATA.index))
+    print(ALL_GUIDES)
 
-    features = pd.read_csv(options.FEATURE_FILE, sep='\t')
-    features = features.set_index(keys=['transcript', 'mir'])
+    # split into training and testing
+    if options.TEST_MIR is None:
+        TRAIN_GUIDES = ALL_GUIDES
+        TEST_GUIDES = ALL_GUIDES
+    else:
+        TRAIN_GUIDES = [x for x in ALL_GUIDES if x != options.TEST_MIR]
+        TEST_GUIDES = TRAIN_GUIDES + [options.TEST_MIR]
 
-    upper_bound_dict = {
-        '8mer': -0.03,
-        '7mer-m8': -0.02,
-        '7mer-a1': -0.01,
-        '6mer': 0.0,
-        '6mer-m8': 0.0,
-        '6mer-a1': 0.0,
-        'no site': 0.0
+    print(len(TRAIN_GUIDES), len(TEST_GUIDES))
+
+    # if using passenger strand, add them
+    if options.PASSENGER:
+        TRAIN_MIRS = list(np.array([[x, x + '_pass'] for x in TRAIN_GUIDES]).flatten())
+        TEST_MIRS = list(np.array([[x, x + '_pass'] for x in TEST_GUIDES]).flatten())
+    else:
+        TRAIN_MIRS = TRAIN_GUIDES
+        TEST_MIRS = TEST_GUIDES
+
+    # read in TPM data
+    ALL_TPMS = pd.read_csv(options.TPM_FILE, sep='\t', index_col=0)
+    ALL_TPMS.index.name = 'transcript'
+
+    # subset into 10 batches
+    NUM_BATCHES = 11
+    ALL_TPMS['batch'] = [ix % NUM_BATCHES for ix in ALL_TPMS['ix']]
+
+    # read in features for all miRNAs
+    ALL_FEATS = []
+    for mir in TEST_MIRS:
+        mir = mir.replace('*', '_pass')  # sanitize miRNA name
+        temp = pd.read_csv(options.FEATURE_FILE.replace('MIR', mir), sep='\t')
+        temp['mir'] = mir
+        ALL_FEATS.append(temp)
+
+    ALL_FEATS = pd.concat(ALL_FEATS, sort=False)
+
+    # convert KD to KA
+    ALL_FEATS['log_KA'] = -1 * ALL_FEATS['log_kd']
+
+    # fill in SA_bg for noncanon sites
+    if options.MODE == 'test_only':
+        mean_SA_diff = 0.92177
+    else:
+        mean_SA_diff = np.nanmean(ALL_FEATS['logSA_diff'])
+    print(f'Mean SA_diff: {mean_SA_diff}')
+    ALL_FEATS['logSA_diff'] = ALL_FEATS['logSA_diff'].fillna(mean_SA_diff)
+
+    # only use 3p-pairing score for canonical sites
+    ALL_FEATS['Threep_canon'] = ALL_FEATS['Threep'] * (ALL_FEATS['stype'] != 'no site')
+
+    # apply KD cutoff if given
+    if options.KD_CUTOFF is not None:
+        ALL_FEATS = ALL_FEATS[ALL_FEATS['log_kd'] < options.KD_CUTOFF]  # filter for positive KAs
+
+    print('Total number of transcripts: {}'.format(len(ALL_FEATS['transcript'].unique())))
+    print('Total number of miRNAs: {}'.format(len(ALL_FEATS['mir'].unique())))
+    ALL_FEATS = ALL_FEATS.set_index(keys=['transcript', 'mir']).sort_index()
+
+    print(ALL_FEATS['mir'].unique())
+    print(TRAIN_MIRS, TEST_MIRS)
+
+    if options.MODE in ['canon']:
+        ALL_FEATS = ALL_FEATS[ALL_FEATS['stype'] != 'no site']  # only take canonical sites
+    elif options.MODE in ['all', 'shuffle_noncanon', 'train_only', 'test_only']:
+        ALL_FEATS = ALL_FEATS
+    elif options.MODE in ['noncanon', 'only_shuffle_noncanon']:
+        ALL_FEATS = ALL_FEATS[ALL_FEATS['stype'] == 'no site']
+    else:
+        raise ValueError('invalid mode')
+
+    NUM_SITES = ALL_FEATS.copy()
+    NUM_SITES['nsites'] = 1
+    NUM_SITES = NUM_SITES.groupby(['transcript', 'mir']).agg({'nsites': np.sum})
+    MAX_NSITES = np.max(NUM_SITES['nsites'])
+    print(f'Max nsites: {MAX_NSITES}')
+
+    # split transcripts into training and testing
+    TRAIN_TRANSCRIPTS = list(ALL_TPMS.index)
+    # TRAIN_TRANSCRIPTS = list(ALL_TPMS[ALL_TPMS['batch'] != 3].index)
+    # TEST_TRANSCRIPTS = list(ALL_TPMS[ALL_TPMS['batch'] == 3].index)
+    TEST_TRANSCRIPTS = list(ALL_TPMS.index)
+    
+    print(len(TEST_TRANSCRIPTS))
+
+    FEATURE_LIST = ['log_KA', 'in_ORF']
+    if options.EXTRA_FEATS != 'none':
+        FEATURE_LIST += options.EXTRA_FEATS.split(',')
+    for feat in FEATURE_LIST:
+        if feat not in ALL_FEATS.columns:
+            raise ValueError(f'{feat} not a valid feature.')
+
+    print(FEATURE_LIST)
+    NUM_FEATS = len(FEATURE_LIST) - 1
+
+    # ALL_FEATS = ALL_FEATS.query('transcript in @TRAIN_TRANSCRIPTS')
+
+    print(np.sum(ALL_FEATS[FEATURE_LIST].values, axis=0))
+
+    # get indices of features that do not affect background binding
+    ZERO_INDICES = []
+    for ix, feat in enumerate(FEATURE_LIST):
+        if feat in ['Threep_canon', 'PCT']:
+            ZERO_INDICES.append(ix)
+
+    print(ZERO_INDICES)
+
+    # expand features
+    train_vals_4D, train_mask_3D = utils.expand_features_4D(TRAIN_TRANSCRIPTS, TRAIN_MIRS, MAX_NSITES,
+                                                        FEATURE_LIST, ALL_FEATS)
+
+    train_ka_vals_3D, train_features_4D, train_nosite_features_4D = split_vals(train_vals_4D, ZERO_INDICES)
+
+    print(train_ka_vals_3D.shape, train_features_4D.shape, train_nosite_features_4D.shape, train_mask_3D.shape)
+    print(np.sum(np.sum(train_mask_3D, axis=0), axis=1))
+    print(np.sum(np.sum(np.sum(train_features_4D, axis=0), axis=0), axis=0))
+    print(np.sum(np.sum(np.sum(train_nosite_features_4D, axis=0), axis=0), axis=0))
+
+    print(np.sum(np.sum(train_features_4D, axis=0), axis=1).tolist())
+    print(np.sum(np.sum(train_nosite_features_4D, axis=0), axis=1).tolist())
+
+
+    train_vals = {
+        'transcripts': TRAIN_TRANSCRIPTS,
+        'guides': TRAIN_GUIDES,
+        'ka_vals_3D': train_ka_vals_3D,
+        'mask_3D': train_mask_3D,
+        'features_4D': train_features_4D,
+        'nosite_features_4D': train_nosite_features_4D,
+        'labels': ALL_TPMS.loc[TRAIN_TRANSCRIPTS][TRAIN_GUIDES].values
     }
 
-    mirs16 = sorted(['mir1','mir124','mir155','mir7','lsy6','mir153','mir139','mir144','mir223','mir137',
-                    'mir205','mir143','mir182','mir199a','mir204','mir216b'])
-    mirs5 = sorted(['mir1','mir124','mir155','mir7','lsy6'])
-    mirs6 = ['mir1','mir124','mir155','mir7','lsy6', 'let7']
-
-    canon4_stypes = ['8mer', '7mer-m8', '7mer-a1', '6mer']
-    canon6_stypes = ['8mer', '7mer-m8', '7mer-a1', '6mer', '6mer-m8', '6mer-a1']
-
-    if options.MODEL_TYPE == 'TS7':
-        # get data
-        features = features[features['stype'].isin(canon4_stypes)]
-        nsites = models.get_nsites(features)
-        features['upper_bound'] = [upper_bound_dict[x] for x in features['stype']]
-        features, cat_vars = one_hot_features(features, canon4_stypes)
-
-        # define vars
-        single_vars = canon4_stypes + ['upper_bound']
-        norm_vars = ['TA', 'SPS', 'Local_AU', 'Threep', 'Min_dist', 'SA', 'UTR_len', 'ORF_len', 'PCT', 'Off6m', 'ORF_8m']
-        features = expand_feats_stypes(features, canon4_stypes, norm_vars + cat_vars, single_vars)
-        all_vars = list(features.columns)
-        norm_vars = [x for x in all_vars if x.split(':')[0] in norm_vars]
-
-        # train model
-        model = models.BoundedLinearModel(len(all_vars) - 1)
-        one_site, train_mirs, val_mirs = True, mirs16, mirs5
-
-    elif options.MODEL_TYPE == 'TS7_multisite':
-        # get data
-        features = features[features['stype'].isin(canon4_stypes)]
-        nsites = models.get_nsites(features)
-        features['upper_bound'] = [upper_bound_dict[x] for x in features['stype']]
-        features, cat_vars = one_hot_features(features, canon4_stypes)
-
-        # define vars
-        single_vars = canon4_stypes + ['upper_bound']
-        norm_vars = ['TA', 'SPS', 'Local_AU', 'Threep', 'Min_dist', 'SA', 'UTR_len', 'ORF_len', 'PCT', 'Off6m', 'ORF_8m']
-        features = expand_feats_stypes(features, canon4_stypes, norm_vars + cat_vars, single_vars)
-        all_vars = list(features.columns)
-        norm_vars = [x for x in all_vars if x.split(':')[0] in norm_vars]
-
-        # train model
-        model = models.BoundedLinearModel(len(all_vars) - 1)
-        one_site, train_mirs, val_mirs = False, mirs16, mirs5
-
-    elif options.MODEL_TYPE == 'TS7_multisite_5mirs':
-        # get data
-        features = features[features['stype'].isin(canon4_stypes)]
-        features = features.query('mir in @mirs5')
-        nsites = models.get_nsites(features)
-        features['upper_bound'] = [upper_bound_dict[x] for x in features['stype']]
-        features, cat_vars = one_hot_features(features, canon4_stypes)
-
-        # define vars
-        single_vars = canon4_stypes + ['upper_bound']
-        norm_vars = ['TA', 'SPS', 'Local_AU', 'Threep', 'Min_dist', 'SA', 'UTR_len', 'ORF_len', 'PCT', 'Off6m', 'ORF_8m']
-        features = expand_feats_stypes(features, canon4_stypes, norm_vars + cat_vars, single_vars)
-        all_vars = list(features.columns)
-        norm_vars = [x for x in all_vars if x.split(':')[0] in norm_vars]
-
-        # train model
-        model = models.BoundedLinearModel(len(all_vars) - 1)
-        one_site, train_mirs, val_mirs = False, mirs5, mirs5
-
-    elif options.MODEL_TYPE == 'TS7_multisite_5mirs_logKA':
-        # get data
-        features = features[features['stype'].isin(canon4_stypes)]
-        features = features.query('mir in @mirs5')
-        nsites = models.get_nsites(features)
-        features['upper_bound'] = [upper_bound_dict[x] for x in features['stype']]
-        features, cat_vars = one_hot_features(features, canon4_stypes)
-
-        # define vars
-        single_vars = canon4_stypes + ['upper_bound']
-        norm_vars = ['log_KA', 'TA', 'SPS', 'Local_AU', 'Threep', 'Min_dist', 'SA', 'UTR_len', 'ORF_len', 'PCT', 'Off6m', 'ORF_8m']
-        features = expand_feats_stypes(features, canon4_stypes, norm_vars + cat_vars, single_vars)
-        all_vars = list(features.columns)
-        norm_vars = [x for x in all_vars if x.split(':')[0] in norm_vars]
-
-        # train model
-        model = models.BoundedLinearModel(len(all_vars) - 1)
-        one_site, train_mirs, val_mirs = False, mirs5, mirs5
-
-    elif options.MODEL_TYPE == 'TS7_multisite_5mirs_logKA_noredundant':
-        # get data
-        features = features[features['stype'].isin(canon4_stypes)]
-        features = features.query('mir in @mirs5')
-        nsites = models.get_nsites(features)
-        features['upper_bound'] = [upper_bound_dict[x] for x in features['stype']]
-        features, cat_vars = one_hot_features(features, canon4_stypes)
-        cat_vars = canon4_stypes
-
-        # define vars
-        single_vars = canon4_stypes + ['upper_bound']
-        norm_vars = ['log_KA', 'TA', 'Local_AU', 'Threep', 'Min_dist', 'SA', 'UTR_len', 'ORF_len', 'PCT', 'Off6m', 'ORF_8m']
-        features = expand_feats_stypes(features, canon4_stypes, norm_vars + cat_vars, single_vars)
-        all_vars = list(features.columns)
-        norm_vars = [x for x in all_vars if x.split(':')[0] in norm_vars]
-
-        # train model
-        model = models.BoundedLinearModel(len(all_vars) - 1)
-        one_site, train_mirs, val_mirs = False, mirs5, mirs5
-
-    elif options.MODEL_TYPE == 'TS7_multisite_5mirs_logKA_noredundant_6canon':
-        # get data
-        features = features[features['stype'].isin(canon6_stypes)]
-        features = features.query('mir in @mirs5')
-        nsites = models.get_nsites(features)
-        features['upper_bound'] = [upper_bound_dict[x] for x in features['stype']]
-        features, cat_vars = one_hot_features(features, canon6_stypes)
-        cat_vars = canon6_stypes
-
-        # define vars
-        single_vars = canon6_stypes + ['upper_bound']
-        norm_vars = ['log_KA', 'TA', 'Local_AU', 'Threep', 'Min_dist', 'SA', 'UTR_len', 'ORF_len', 'PCT', 'ORF_8m']
-        features = expand_feats_stypes(features, canon6_stypes, norm_vars + cat_vars, single_vars)
-        all_vars = list(features.columns)
-        norm_vars = [x for x in all_vars if x.split(':')[0] in norm_vars]
-
-        # train model
-        model = models.BoundedLinearModel(len(all_vars) - 1)
-        one_site, train_mirs, val_mirs = False, mirs5, mirs5
-
-    elif options.MODEL_TYPE == 'TS7_multisite_5mirs_logKA_noredundant_6canon_sigmoid':
-        # get data
-        features = features[features['stype'].isin(canon6_stypes)]
-        features = features.query('mir in @mirs5')
-        nsites = models.get_nsites(features)
-
-        # define vars
-        norm_vars = ['TA', 'Threep', 'SA', 'Local_AU', 'Min_dist', 'UTR_len', 'ORF_len', 'PCT', 'ORF_8m']
-        all_vars = ['log_KA'] + norm_vars
-
-        # train model
-        model = models.SigmoidModel(2, len(all_vars) - 2, len(mirs5))
-        one_site, train_mirs, val_mirs = False, mirs5, mirs5
-
-    elif options.MODEL_TYPE == 'TS7_multisite_5mirs_logKA_noredundant_6canon_doublesigmoid':
-        # get data
-        features = features[features['stype'].isin(canon6_stypes)]
-        features = features.query('mir in @mirs5')
-        nsites = models.get_nsites(features)
-
-        # define vars
-        norm_vars = ['TA', 'Threep', 'SA', 'Local_AU', 'Min_dist', 'UTR_len', 'ORF_len', 'PCT', 'ORF_8m']
-        all_vars = ['log_KA'] + norm_vars
-
-        # train model
-        model = models.DoubleSigmoidModel(2, len(all_vars) - 2, len(mirs5))
-        one_site, train_mirs, val_mirs = False, mirs5, mirs5
-
-    elif options.MODEL_TYPE == 'TS7_multisite_5mirs_logKA_noredundant_6canon_doublesigmoid_energy':
-        # get data
-        features = features[features['stype'].isin(canon6_stypes)]
-        features = features.query('mir in @mirs5')
-        nsites = models.get_nsites(features)
-
-        # define vars
-        norm_vars = ['TA', 'Threep', 'SA', 'Local_AU', 'Min_dist', 'UTR_len', 'ORF_len', 'PCT', 'ORF_8m']
-        all_vars = ['log_KA'] + norm_vars
-
-        # train model
-        model = models.DoubleSigmoidModel(3, len(all_vars) - 3, len(mirs5))
-        one_site, train_mirs, val_mirs = False, mirs5, mirs5
-
-    elif options.MODEL_TYPE == 'TS7_multisite_5mirs_logKA_noredundant_6canon_doublesigmoid_allsites':
-        # get data
-        features = features.query('mir in @mirs5')
-        features = features[features['log_KA'] > 0]
-        nsites = models.get_nsites(features)
-
-        # define vars
-        norm_vars = ['TA', 'Threep', 'SA', 'Local_AU', 'Min_dist', 'UTR_len', 'ORF_len', 'PCT', 'ORF_8m']
-        all_vars = ['log_KA'] + norm_vars
-
-        # train model
-        model = models.DoubleSigmoidModel(3, len(all_vars) - 3, len(mirs5))
-        one_site, train_mirs, val_mirs = False, mirs5, mirs5
-
-    elif options.MODEL_TYPE == 'TS7_multisite_5mirs_logKA_noredundant_6canon_doublesigmoid_allsites_noPCT':
-        # get data
-        features = features.query('mir in @mirs5')
-        features = features[features['log_KA'] > 0]
-        nsites = models.get_nsites(features)
-
-        # define vars
-        norm_vars = ['TA', 'Local_AU', 'Threep', 'Min_dist', 'SA', 'UTR_len', 'ORF_len', 'ORF_8m']
-        all_vars = ['log_KA'] + norm_vars
-
-        # train model
-        model = models.DoubleSigmoidModel(2, len(all_vars) - 2, len(mirs5))
-        one_site, train_mirs, val_mirs = False, mirs5, mirs5
-
-    elif options.MODEL_TYPE == 'TS7_multisite_5mirs_logKA_noredundant_6canon_doublesigmoid_freeago_allsites':
-        # get data
-        features = features.query('mir in @mirs5')
-        features = features[features['log_KA'] > 0]
-        nsites = models.get_nsites(features)
-
-        # define vars
-        norm_vars = ['TA', 'SA', 'Threep', 'Local_AU', 'Min_dist', 'UTR_len', 'ORF_len', 'PCT', 'ORF_8m']
-        all_vars = ['log_KA'] + norm_vars
-
-        # train model
-        model = models.DoubleSigmoidFreeAGOModel(2, len(all_vars) - 2, len(mirs5))
-        one_site, train_mirs, val_mirs = False, mirs5, mirs5
-
-    elif options.MODEL_TYPE == 'TS7_multisite_5mirs_logKA_noredundant_6canon_doublesigmoid_freeago_allsites_withORF':
-        # get data
-        features = features.query('mir in @mirs5')
-        features = features[features['log_KA'] > 0]
-        nsites = models.get_nsites(features)
-
-        orf_features = pd.read_csv(options.ORF_FEATURE_FILE, sep='\t')
-        orf_features = orf_features.set_index(keys=['transcript', 'mir'])
-        orf_nsites = models.get_nsites(orf_features)
-
-        # define vars
-        norm_vars = ['TA', 'SA', 'Threep', 'Local_AU', 'Min_dist', 'UTR_len', 'ORF_len', 'PCT']
-        all_vars = ['log_KA'] + norm_vars
-
-        # train model
-        model = models.DoubleSigmoidFreeAGOModel(2, len(all_vars) - 2, len(mirs5))
-        one_site, train_mirs, val_mirs = False, mirs5, mirs5
-
-        sys.exit()
-
-    elif options.MODEL_TYPE == 'TS7_multisite_5mirs_logKA_noredundant_6canon_doublesigmoid_freeago_allsites_noORF8m':
-        # get data
-        features = features.query('mir in @mirs5')
-        features = features[features['log_KA'] > 0]
-        nsites = models.get_nsites(features)
-
-        # define vars
-        norm_vars = ['TA', 'Threep', 'SA', 'Local_AU', 'Min_dist', 'UTR_len', 'ORF_len', 'PCT']
-        all_vars = ['log_KA'] + norm_vars
-
-        # train model
-        model = models.DoubleSigmoidFreeAGOModel(2, len(all_vars) - 2, len(mirs5))
-        one_site, train_mirs, val_mirs = False, mirs5, mirs5
-
-    elif options.MODEL_TYPE == 'TS7_multisite_5mirs_logKA_noredundant_6canon_doublesigmoid_freeago_allsites_3PNB':
-        # get data
-        features = features.query('mir in @mirs5')
-        features = features[features['log_KA'] > 0]
-        nsites = models.get_nsites(features)
-
-        # define vars
-        norm_vars = ['TA', 'Threep_NB', 'SA', 'Local_AU', 'Min_dist', 'UTR_len', 'ORF_len', 'PCT', 'ORF_8m']
-        all_vars = ['log_KA'] + norm_vars
-
-        # train model
-        model = models.DoubleSigmoidFreeAGOModel(2, len(all_vars) - 2, len(mirs5))
-        one_site, train_mirs, val_mirs = False, mirs5, mirs5
-
-    elif options.MODEL_TYPE == 'logKA_sigmoid_freeago_allsites':
-        # get data
-        features = features.query('mir in @mirs5')
-        features = features[features['log_KA'] > 0]
-        nsites = models.get_nsites(features)
-
-        # define vars
-        norm_vars = []
-        all_vars = ['log_KA'] + norm_vars
-
-        # train model
-        model = models.SigmoidFreeAGOModel(1, 0, len(mirs5))
-        one_site, train_mirs, val_mirs = False, mirs5, mirs5
-
-    elif options.MODEL_TYPE == 'logKA_UTRlen_doublesigmoid_freeago_allsites':
-        # get data
-        features = features.query('mir in @mirs5')
-        features = features[features['log_KA'] > 0]
-        nsites = models.get_nsites(features)
-
-        # define vars
-        norm_vars = []
-        all_vars = ['log_KA', 'UTR_len']
-
-        # train model
-        model = models.DoubleSigmoidFreeAGOModel(1, len(all_vars) - 1, len(mirs5))
-        one_site, train_mirs, val_mirs = False, mirs5, mirs5
-        print(mirs5)
-
-    elif options.MODEL_TYPE == 'custom':
-
-        # get data
-        features = features.query('mir in @mirs6')
-        features = features[features['log_KA'] > 0]
-        # features['log_UTR_len'] = np.log(features['UTR_len'])
-        nsites = models.get_nsites(features)
-
-        # define vars
-        norm_vars = ['UTR_len']
-        all_vars = ['log_KA'] + norm_vars
-
-        print(np.median(features['UTR_len']))
-
-        # train model
-        model = models.DoubleSigmoidFreeAGOLet7Model(1, len(all_vars) - 1, len(mirs6))
-        one_site, train_mirs, val_mirs = False, mirs6, mirs6
-
-        train_r2s, val_r2s, pred_df = models.cross_val(tpms, features, nsites, train_mirs, val_mirs, all_vars,
-                                                    norm_vars, model, 2000, one_site=one_site)
-        print('Train r2 mean, std: {}, {}'.format(np.mean(train_r2s), np.std(train_r2s)))
-        print('Val r2 mean, std:')
-        print('{}, {}, {}'.format(options.MODEL_TYPE, np.mean(val_r2s), np.std(val_r2s)))
-        print(all_vars)
-        print(model.vars_evals)
-
-        sys.exit()
-
-
-    else:
-        raise ValueError('Invalid model type {}'.format(options.MODEL_TYPE))
-
-
-    train_r2s, val_r2s, pred_df = models.cross_val(tpms, features, nsites, train_mirs, val_mirs, all_vars,
-                                                    norm_vars, model, 2000, one_site=one_site)
-    print('Train r2 mean, std: {}, {}'.format(np.mean(train_r2s), np.std(train_r2s)))
-    print('Val r2 mean, std:')
-    print('{}, {}, {}'.format(options.MODEL_TYPE, np.mean(val_r2s), np.std(val_r2s)))
-    print(all_vars)
-    print(model.vars_evals)
-
-    if options.OUT_FOLDER is not None:
-        if (not os.path.isdir(options.OUT_FOLDER)):
-            os.makedirs(options.OUT_FOLDER)
-
-        fig = plt.figure(figsize=(7,7))
-        plt.scatter(pred_df['pred_normed'].values, pred_df['label_normed'].values, s=20)
-        plt.savefig(os.path.join(options.OUT_FOLDER, options.MODEL_TYPE + '.png'))
-        plt.close()
-
-        pred_df.to_csv(os.path.join(options.OUT_FOLDER, options.MODEL_TYPE + '.tsv'), sep='\t', index=False)
-
-
+    if options.MODE == 'train_only':
+        train_on_data(train_vals, {}, options.TEST_MIR, NUM_FEATS, MIRNA_DATA, options.PASSENGER, options.OUTFILE)
+
+    if options.MODE == 'test_only':
+        if options.PASSENGER:
+            set_vars = {
+                'log_decay': 0.5520938,
+                'feature_coefs': np.array([[[[-1.7124393 ,  0.11626805,  0.12685744,  0.9295629 ]]]])
+            }
+        else:
+            set_vars = {
+                 'log_decay': 0.46782777,
+                 'feature_coefs': np.array([[[[-1.6699566 ,  0.12071671,  0.07624636,  0.965269  ]]]])
+            }
+
+        train_on_data(train_vals, {}, options.TEST_MIR, NUM_FEATS, MIRNA_DATA, options.PASSENGER, options.OUTFILE, set_vars=set_vars)
+
+    elif options.MODE in ['all', 'canon', 'noncanon']:  # this mode tests on a single test set
+        test_vals_4D, test_mask_3D = utils.expand_features_4D(TEST_TRANSCRIPTS, TEST_MIRS, MAX_NSITES,
+                                                        FEATURE_LIST, ALL_FEATS)
+
+        test_ka_vals_3D, test_features_4D, test_nosite_features_4D = split_vals(test_vals_4D, ZERO_INDICES)
+
+        test_vals = {
+            'transcripts': TEST_TRANSCRIPTS,
+            'guides': TEST_GUIDES,
+            'ka_vals_3D': test_ka_vals_3D,
+            'mask_3D': test_mask_3D,
+            'features_4D': test_features_4D,
+            'nosite_features_4D': test_nosite_features_4D,
+            'labels': ALL_TPMS.loc[TEST_TRANSCRIPTS][TEST_GUIDES].values
+        }
+
+        train_on_data(train_vals, {'0': test_vals}, options.TEST_MIR, NUM_FEATS, MIRNA_DATA, options.PASSENGER, options.OUTFILE)
+
+    elif options.MODE == 'shuffle_noncanon':  # this mode tests on many shuffled test sets
+        canon_feats = ALL_FEATS[ALL_FEATS['stype'] != 'no site']
+        NUM_CANON_SITES = canon_feats.copy()
+        NUM_CANON_SITES['nsites'] = 1
+        NUM_CANON_SITES = NUM_CANON_SITES.groupby(['transcript', 'mir']).agg({'nsites': np.sum})
+        max_canon_nsites = np.max(NUM_CANON_SITES['nsites'])
+
+        noncanon_feats = ALL_FEATS[ALL_FEATS['stype'] == 'no site']
+        NUM_NONCANON_SITES = noncanon_feats.copy()
+        NUM_NONCANON_SITES['nsites'] = 1
+        NUM_NONCANON_SITES = NUM_NONCANON_SITES.groupby(['transcript', 'mir']).agg({'nsites': np.sum})
+        max_noncanon_nsites = np.max(NUM_NONCANON_SITES['nsites'])
+
+        canon_test_vals_4D, canon_test_mask_3D = utils.expand_features_4D(TEST_TRANSCRIPTS, TEST_MIRS, max_canon_nsites,
+                                                        FEATURE_LIST, canon_feats)
+
+        canon_test_ka_vals_3D, canon_test_features_4D, canon_test_nosite_features_4D = split_vals(canon_test_vals_4D, ZERO_INDICES)
+
+        noncanon_test_vals_4D, noncanon_test_mask_3D = utils.expand_features_4D(TEST_TRANSCRIPTS, TEST_MIRS, max_noncanon_nsites,
+                                                        FEATURE_LIST, noncanon_feats)
+
+        test_vals_dict = {}
+        for ix, shuffle_guide in enumerate(TRAIN_GUIDES):
+            if options.PASSENGER:
+                new_order = list(np.arange(len(TRAIN_GUIDES) * 2)) + [ix * 2, (ix * 2) + 1]
+            else:
+                new_order = list(np.arange(len(TRAIN_GUIDES))) + [ix]
+
+            noncanon_test_vals_4D_shuffled = copy.copy(noncanon_test_vals_4D)[:, new_order, :, :]
+            noncanon_test_ka_vals_3D_shuffled, noncanon_test_features_4D_shuffled, noncanon_test_nosite_features_4D_shuffled = split_vals(noncanon_test_vals_4D_shuffled, ZERO_INDICES)
+            noncanon_test_mask_3D_shuffled = copy.copy(noncanon_test_mask_3D[:, new_order, :])
+
+            test_ka_vals_3D = np.concatenate([canon_test_ka_vals_3D, noncanon_test_ka_vals_3D_shuffled], axis=2)
+            test_features_4D = np.concatenate([canon_test_features_4D, noncanon_test_features_4D_shuffled], axis=2)
+            test_nosite_features_4D = np.concatenate([canon_test_nosite_features_4D, noncanon_test_nosite_features_4D_shuffled], axis=2)
+            test_mask_3D = np.concatenate([canon_test_mask_3D, noncanon_test_mask_3D_shuffled], axis=2)
+
+            test_vals_dict[shuffle_guide] = {
+                'transcripts': TEST_TRANSCRIPTS,
+                'guides': TEST_GUIDES,
+                'ka_vals_3D': test_ka_vals_3D,
+                'mask_3D': test_mask_3D,
+                'features_4D': test_features_4D,
+                'nosite_features_4D': test_nosite_features_4D,
+                'labels': ALL_TPMS.loc[TEST_TRANSCRIPTS][TEST_GUIDES].values
+            }
+
+            train_on_data(train_vals, test_vals_dict, options.TEST_MIR, NUM_FEATS, MIRNA_DATA, options.PASSENGER, options.OUTFILE)
+
+    else:  # this mode tests on many shuffled test sets
+        test_vals_4D, test_mask_3D = utils.expand_features_4D(TEST_TRANSCRIPTS, TEST_MIRS, MAX_NSITES,
+                                                        FEATURE_LIST, ALL_FEATS)
+
+        test_vals_dict = {}
+        for ix, shuffle_guide in enumerate(TRAIN_GUIDES):
+            if options.PASSENGER:
+                new_order = list(np.arange(len(TRAIN_GUIDES) * 2)) + [ix * 2, (ix * 2) + 1]
+            else:
+                new_order = list(np.arange(len(TRAIN_GUIDES))) + [ix]
+
+            test_vals_4D_shuffled = copy.copy(test_vals_4D)[:, new_order, :, :]
+            test_ka_vals_3D_shuffled, test_features_4D_shuffled, test_nosite_features_4D_shuffled = split_vals(test_vals_4D_shuffled, ZERO_INDICES)
+            test_mask_3D_shuffled = copy.copy(test_mask_3D[:, new_order, :])
+
+            test_vals_dict[shuffle_guide] = {
+                'transcripts': TEST_TRANSCRIPTS,
+                'guides': TEST_GUIDES,
+                'ka_vals_3D': test_ka_vals_3D_shuffled,
+                'mask_3D': test_mask_3D_shuffled,
+                'features_4D': test_features_4D_shuffled,
+                'nosite_features_4D': test_nosite_features_4D_shuffled,
+                'labels': ALL_TPMS.loc[TEST_TRANSCRIPTS][TEST_GUIDES].values
+            }
+
+            train_on_data(train_vals, test_vals_dict, options.TEST_MIR, NUM_FEATS, MIRNA_DATA, options.PASSENGER, options.OUTFILE)
