@@ -7,24 +7,6 @@ import pandas as pd
 import utils
 
 
-# Fitted parameters from biochemical model
-# FITTED_PARAMS = {
-#     'log_decay': 0.0479742,
-#     'in_ORF_coef': -1.936273,
-#     'logSA_diff_coef': 0.1883839,
-#     'Threep_canon_coef': 0.27043834,
-#     'PCT_coef': 1.684825,
-# }
-
-# FITTED_PARAMS = {
-#     'log_decay': 0.5520938,
-#     'in_ORF_coef': -1.7124393,
-#     'logSA_diff_coef': 0.11626805, 
-#     'Threep_canon_coef': 0.12685744,
-#     'PCT_coef': 0.9295629
-# }
-
-# mean_logSA_diff = 0.9217754700556159
 def get_params(param_file, passenger):
     # read in parameters
     with open(param_file, 'r') as infile:

@@ -1,7 +1,5 @@
 from optparse import OptionParser
 import os
-import sys
-import time
 
 import matplotlib
 matplotlib.use('Agg')
@@ -47,9 +45,6 @@ if __name__ == '__main__':
     parser.add_option("--load_model", dest="LOAD_MODEL", help="if supplied, load latest model from this directory", default=None)
     parser.add_option("--passenger", dest="PASSENGER", help="include passenger", default=False, action='store_true')
     parser.add_option("--dry_run", dest="DRY_RUN", help="if true, do dry run", default=False, action='store_true')
-    parser.add_option("--pretrain", dest="PRETRAIN", help="if true, do pretraining step", default=False, action='store_true')
-    parser.add_option("--overfit", dest="OVERFIT", help="if true, overfit on val mir", default=False, action='store_true')
-
 
     (options, args) = parser.parse_args()
 
@@ -59,12 +54,7 @@ if __name__ == '__main__':
     WEIGHTS_INIT = {
         'freeAGO_mean': -5.3,
         'freeAGO_pass_offset': -1.0,
-        # 'feature_coefs': np.array([-2.0, 0.2, 0.2, 1.0])[:options.USE_FEATS].reshape([options.USE_FEATS, 1]),
         'feature_coefs': np.array([[-1.0]]),
-        # 'decay': 0.0479742  # full model, all sites
-        # 'decay': 0.021921674  # full model, canonsites orf
-        # 'decay': 0.26764196  # allsites utr, canonsites orf, background model
-        # 'decay': 0.37  # allsites utr, canonsites orf, occupancy only
         'decay': 0.0
     }
 
@@ -73,34 +63,13 @@ if __name__ == '__main__':
     # SEQLEN must be 12
     SEQLEN = 12
 
-    if options.VAL_MIR == 'mir144':
-        testcase_mirseq = 'TACAGTATAG'  # mir144
-        testcase_target = 'AATAACTGTAAA'
-    elif options.VAL_MIR == 'mir204':
-        testcase_mirseq = 'TTCCCTTTGT'  # mir204
-        testcase_target = 'AAAAAGGTAAAA'
-    else:
-        testcase_mirseq = utils.generate_random_seq(options.MIRLEN)
-        testcase_target = 'AA' + utils.rev_comp(testcase_mirseq[1:8]) + 'AAA'
-
-    test_image_8mer = np.outer(utils.one_hot_encode(testcase_mirseq), utils.one_hot_encode(testcase_target))
-    test_image_8mer = np.expand_dims(test_image_8mer, 0)
-
-    # testcase_mirseq = utils.generate_random_seq(options.MIRLEN)
-    # testcase_target = utils.get_target_no_match(testcase_mirseq, SEQLEN)
-    testcase_mirseq = 'GGGGGGGGGG'
-    testcase_target = 'GGGGGGGGGGGG'
-    test_image_nosite = np.outer(utils.one_hot_encode(testcase_mirseq), utils.one_hot_encode(testcase_target))
-    test_image_nosite = np.expand_dims(test_image_nosite, 0)
-
     if options.LOGDIR is not None:
-        
+
         # make log directory if it doesn't exist
         if (not os.path.isdir(options.LOGDIR)):
             raise ValueError('{} does not exist'.format(options.LOGDIR))
 
-        # paths for saved models
-        PRETRAIN_SAVE_PATH = os.path.join(options.LOGDIR, 'pretrain_saved')
+        # path for saved models
         SAVE_PATH = os.path.join(options.LOGDIR, 'saved')
 
     ### READ miRNA DATA ###
@@ -109,37 +78,27 @@ if __name__ == '__main__':
     MIRNA_DATA_USE_TPMS = MIRNA_DATA[MIRNA_DATA['use_tpms']]
 
     ALL_GUIDES = sorted(list(MIRNA_DATA_USE_TPMS.index))
-    
-    if options.OVERFIT:
-        print("WARNING: OVERFITTING")
-        ALL_GUIDES = [x for x in ALL_GUIDES if x != options.VAL_MIR] + [options.VAL_MIR]
-        TRAIN_GUIDES = ALL_GUIDES
-        VAL_GUIDES = []
 
+    # split repression miRNAs into training and testing
+    if options.VAL_MIR in ['none', 'let7']:
+        TRAIN_GUIDES = [x for x in ALL_GUIDES if x != 'mir204'] + ['mir204']
+        VAL_GUIDES = []
+    else:
+        if options.VAL_MIR not in ALL_GUIDES:
+            raise ValueError('Test miRNA not in mirseqs file.')
+        TRAIN_GUIDES = [m for m in ALL_GUIDES if m != options.VAL_MIR]
+        VAL_GUIDES = [options.VAL_MIR]
+
+    # split RBNS miRNAs into training and testing
+    if options.VAL_MIR in list(MIRNA_DATA_WITH_RBNS.index):
+        TRAIN_MIRS_KDS = [x for x in list(MIRNA_DATA_WITH_RBNS.index) if x != options.VAL_MIR]
+        VAL_MIRS_KDS = [options.VAL_MIR]
+    elif options.VAL_MIR == 'none':
+        TRAIN_MIRS_KDS = list(MIRNA_DATA_WITH_RBNS.index)
+        VAL_MIRS_KDS = ['mir204']
+    else:
         TRAIN_MIRS_KDS = list(MIRNA_DATA_WITH_RBNS.index)
         VAL_MIRS_KDS = [options.VAL_MIR]
-
-    else:
-        # split repression miRNAs into training and testing
-        if options.VAL_MIR in ['none', 'let7']:
-            TRAIN_GUIDES = [x for x in ALL_GUIDES if x != 'mir204'] + ['mir204']
-            VAL_GUIDES = []
-        else:
-            if options.VAL_MIR not in ALL_GUIDES:
-                raise ValueError('Test miRNA not in mirseqs file.')
-            TRAIN_GUIDES = [m for m in ALL_GUIDES if m != options.VAL_MIR]
-            VAL_GUIDES = [options.VAL_MIR]
-
-        # split RBNS miRNAs into training and testing
-        if options.VAL_MIR in list(MIRNA_DATA_WITH_RBNS.index):
-            TRAIN_MIRS_KDS = [x for x in list(MIRNA_DATA_WITH_RBNS.index) if x != options.VAL_MIR]
-            VAL_MIRS_KDS = [options.VAL_MIR]
-        elif options.VAL_MIR == 'none':
-            TRAIN_MIRS_KDS = list(MIRNA_DATA_WITH_RBNS.index)
-            VAL_MIRS_KDS = ['mir204']
-        else:
-            TRAIN_MIRS_KDS = list(MIRNA_DATA_WITH_RBNS.index)
-            VAL_MIRS_KDS = [options.VAL_MIR]
 
     NUM_TRAIN_GUIDES = len(TRAIN_GUIDES)
 
@@ -191,33 +150,25 @@ if __name__ == '__main__':
     next_tpm_sample = parse_data_utils._build_tpm_batch(tpm_iterator, 1)
     next_tpm_batch = parse_data_utils._build_tpm_batch(tpm_iterator, options.REPRESSION_BATCH_SIZE)
 
-    # KD data reader
-    if options.PRETRAIN:
-        print("Loading training KD data from")
-        print(options.KD_TFRECORDS)
-        kd_dataset = tf.data.TFRecordDataset(options.KD_TFRECORDS)
-        kd_val_dataset = kd_dataset.take(1000)
-        kd_train_dataset = kd_dataset.skip(1000)
+    # get kd tfrecord files
+    TRAIN_KDS_FILES = np.array([options.KD_TFRECORDS + '_{}.tfrecord'.format(mir) for mir in TRAIN_MIRS_KDS])
+    print("Loading training KD data from")
+    print(TRAIN_KDS_FILES)
+
+    kd_dataset = parse_data_utils._load_multiple_tfrecords(TRAIN_KDS_FILES)
+
+    # split into training and validation sets
+    if len(VAL_MIRS_KDS) > 0:
+        VAL_KDS_FILES = np.array([options.KD_TFRECORDS + '_{}.tfrecord'.format(mir) for mir in VAL_MIRS_KDS])
+        print("Loading validation KD data from")
+        print(VAL_KDS_FILES)
+        kd_val_dataset = parse_data_utils._load_multiple_tfrecords(VAL_KDS_FILES)
+        kd_train_dataset = kd_dataset
 
     else:
-        TRAIN_KDS_FILES = np.array([options.KD_TFRECORDS + '_{}.tfrecord'.format(mir) for mir in TRAIN_MIRS_KDS])
-        print("Loading training KD data from")
-        print(TRAIN_KDS_FILES)
-
-        kd_dataset = parse_data_utils._load_multiple_tfrecords(TRAIN_KDS_FILES)
-
-        # split into training and validation sets
-        if len(VAL_MIRS_KDS) > 0:
-            VAL_KDS_FILES = np.array([options.KD_TFRECORDS + '_{}.tfrecord'.format(mir) for mir in VAL_MIRS_KDS])
-            print("Loading validation KD data from")
-            print(VAL_KDS_FILES)
-            kd_val_dataset = parse_data_utils._load_multiple_tfrecords(VAL_KDS_FILES)
-            kd_train_dataset = kd_dataset
-
-        else:
-            print("Taking first 1000 kds as validation set.")
-            kd_val_dataset = kd_dataset.take(1000)
-            kd_train_dataset = kd_dataset.skip(1000)
+        print("Taking first 1000 kds as validation set.")
+        kd_val_dataset = kd_dataset.take(1000)
+        kd_train_dataset = kd_dataset.skip(1000)
 
     # shuffle, batch, and map datasets
     kd_train_dataset = kd_train_dataset.apply(tf.data.experimental.shuffle_and_repeat(buffer_size=1000))
@@ -244,8 +195,9 @@ if __name__ == '__main__':
     kd_iterator = tf.data.Iterator.from_string_handle(kd_handle, kd_train_dataset.output_types)
     next_kd_batch_mirs, next_kd_batch_images, next_kd_batch_labels, next_kd_batch_keep_probs, next_kd_batch_stypes = kd_iterator.get_next()
 
-    # augment data with random sequences generator
+    # generate random sequences for checking during training
     NUM_EXTRA_KD_VALS = 3
+
     def gen():
         while True:
             random_mirs, random_images, random_labels, random_stypes = [], [], [], []
@@ -301,10 +253,8 @@ if __name__ == '__main__':
     _epoch_num = tf.Variable(0, trainable=False, dtype=tf.float32)
     _increment_epoch_op = tf.assign(_epoch_num, _epoch_num + 1.0)
 
-
-    # weight KD values
+    # weight KD values, give generated sequences weight of 0.0
     _kd_weights = tf.constant(([[1.0]] * options.KD_BATCH_SIZE) + ([[0.0], [0.0], [0.0]]))
-    # _kd_weights = tf.placeholder(tf.float32, shape=[options.KD_BATCH_SIZE + 3, 1], name='kd_weights')
 
     _next_kd_batch_kds = tf.concat([next_kd_batch_labels, random_seq_labels], axis=0)
 
@@ -323,33 +273,24 @@ if __name__ == '__main__':
     # build KA predictor
     _combined_x = tf.concat([next_kd_batch['images'], next_tpm_batch['images']], axis=0, name='combined_x')
     _combined_x_4D = tf.expand_dims((_combined_x * 4.0) - 0.25, axis=3)  # reshape, zero-center input
-    
+
     _pred_ka_values, _cnn_weights = model.seq2ka_predictor(
         _combined_x_4D, _dropout_rate, _phase_train,
         options.HIDDEN1, options.HIDDEN2, options.HIDDEN3, options.MIRLEN, SEQLEN, options.DROPOUT_RATE > 0
     )
 
     # add layers to tensorboard
-    tf.summary.image("layer1", tf.transpose(_cnn_weights['w1'], perm=[3,0,1,2]), max_outputs=4)
-
-    # make KD model saver
-    pretrain_saver = tf.train.Saver(tf.global_variables(), max_to_keep=options.NUM_EPOCHS)
+    tf.summary.image("layer1", tf.transpose(_cnn_weights['w1'], perm=[3, 0, 1, 2]), max_outputs=4)
 
     # split data into biochem and repression and get biochem loss
     _pred_biochem = _pred_ka_values[:tf.shape(next_kd_batch['images'])[0], :]
-    # _ka_weights = tf.nn.relu(next_kd_batch['labels']) + 1
-    # _ka_weights /= tf.reduce_sum(_ka_weights)
     _ka_weighted_difference = _kd_weights * tf.square(_pred_biochem - next_kd_batch['labels'])
-    # _ka_weighted_difference = _kd_weights * tf.square(tf.math.maximum(_pred_biochem, -2.0) - tf.math.maximum(next_kd_batch['labels'], -2.0))
     _ka_loss = (1.0 - options.REPRESSION_WEIGHT) * tf.reduce_sum(_ka_weighted_difference) / (2 * options.KD_BATCH_SIZE)
-    # _ka_loss = tf.nn.l2_loss(tf.nn.relu(_pred_biochem) - next_kd_batch['labels']) / options.KD_BATCH_SIZE
     _utr_ka_values = _pred_ka_values[tf.shape(next_kd_batch['images'])[0]:, :]
 
     # create freeAGO concentration variables
     _freeAGO_guide = tf.get_variable('freeAGO_guide_offset', shape=[NUM_TRAIN_GUIDES], initializer=tf.constant_initializer(WEIGHTS_INIT['freeAGO_mean']))
-    # _assign_freeAGO = tf.assign(_freeAGO_guide, np.array([WEIGHTS_INIT['freeAGO_mean']] * NUM_TRAIN_GUIDES))
     _freeAGO_mean = tf.reduce_mean(_freeAGO_guide)
-    # _freeAGO_mean_regularizer = tf.placeholder(tf.float32, name='freeAGO_mean_regularizer')
     _freeAGO_guide_offset = _freeAGO_guide - _freeAGO_mean
     if options.PASSENGER:
         _freeAGO_pass = tf.get_variable('freeAGO_pass_offset', shape=[NUM_TRAIN_GUIDES], initializer=tf.constant_initializer(WEIGHTS_INIT['freeAGO_pass_offset'] + WEIGHTS_INIT['freeAGO_mean']))
@@ -368,29 +309,19 @@ if __name__ == '__main__':
                                         initializer=tf.constant_initializer(WEIGHTS_INIT['feature_coefs'][:options.USE_FEATS, :]))
             tf.add_to_collection('weight', _ts7_weights)
             _decay = tf.get_variable('decay', initializer=WEIGHTS_INIT['decay'])
-            # _assign_decay = tf.assign(_decay, WEIGHTS_INIT['decay'])
-            _ts7_bias = tf.get_variable('ts7_bias', initializer=0.0, trainable=False)
-            _utr3_length_coef = tf.get_variable('utr3_length_coef', initializer=0.1, trainable=False)
-            _orf_length_coef = tf.get_variable('orf_length_coef', initializer=0.1, trainable=False)
             model.variable_summaries(_ts7_weights)
 
     # add variables to tensorboard
     tf.summary.scalar('decay', _decay)
-    # tf.summary.scalar('ts7_bias', _ts7_bias)
-    tf.summary.scalar('utr3_length_coef', _utr3_length_coef)
-    tf.summary.scalar('orf_length_coef', _orf_length_coef)
     for ix in range(options.USE_FEATS):
         tf.summary.scalar(f'ts7_weight_{ix}', _ts7_weights[ix, 0])
 
     # get logfc prediction
-    _pred_logfc, _pred_logfc_normed, _repression_y_normed, _debug_item = model.get_pred_logfc_occupancy_only_netpred(
+    _pred_logfc, _pred_logfc_normed, _repression_y_normed = model.get_pred_logfc_occupancy_only_netpred(
         _utr_ka_values,
         _freeAGO_all,
         next_tpm_batch,
         _ts7_weights,
-        _ts7_bias,
-        # _utr3_length_coef,
-        # _orf_length_coef,
         _decay,
         options.REPRESSION_BATCH_SIZE,
         options.PASSENGER,
@@ -399,14 +330,11 @@ if __name__ == '__main__':
         options.LOSS_TYPE
     )
 
-    _pred_logfc_val, _pred_logfc_val_normed, _repression_y_val_normed, _ = model.get_pred_logfc_occupancy_only_netpred(
+    _pred_logfc_val, _pred_logfc_val_normed, _repression_y_val_normed = model.get_pred_logfc_occupancy_only_netpred(
         _utr_ka_values,
         _freeAGO_all_val,
         next_tpm_batch,
         _ts7_weights,
-        _ts7_bias,
-        # _utr3_length_coef,
-        # _orf_length_coef,
         _decay,
         1,
         options.PASSENGER,
@@ -425,7 +353,7 @@ if __name__ == '__main__':
         tf.nn.l2_loss(_cnn_weights['w4'])
     )
     _offset_weight = tf.nn.l2_loss(_freeAGO_guide_offset)
-    _regularize_term = (options.LAMBDA1 * _weight_regularize) + (options.LAMBDA2 * _offset_weight)# + (_freeAGO_mean_regularizer * tf.nn.l2_loss(_freeAGO_mean - WEIGHTS_INIT['freeAGO_mean']))
+    _regularize_term = (options.LAMBDA1 * _weight_regularize) + (options.LAMBDA2 * _offset_weight)
 
     # add to tensorboard
     tf.summary.scalar('offset_weight', _offset_weight)
@@ -433,17 +361,13 @@ if __name__ == '__main__':
     tf.summary.scalar('regularize_term', _regularize_term)
 
     # define loss
-    if options.PRETRAIN:
-        _loss = _ka_loss
-    else:
-        _loss = (_ka_loss + _repression_loss + _regularize_term) + (0.001 * tf.exp(_decay))
+    _loss = (_ka_loss + _repression_loss + _regularize_term) + (0.001 * tf.exp(_decay))
 
     # add to tensorboard
     tf.summary.scalar('ka_loss', _ka_loss)
     tf.summary.scalar('repression_loss', _repression_loss)
     tf.summary.scalar('loss', _loss)
 
-    # _learning_rate = tf.train.cosine_decay(options.LEARNING_RATE, _global_step, 30000)
     _learning_rate = tf.constant(options.LEARNING_RATE)
 
     # make training step
@@ -451,7 +375,6 @@ if __name__ == '__main__':
     print('Update OPs:')
     print(tf.get_collection(tf.GraphKeys.UPDATE_OPS))
     with tf.control_dependencies(_update_ops):
-        # optimizer = tf.train.AdamOptimizer(_learning_rate)
         optimizer = tf.train.AdamOptimizer(options.LEARNING_RATE)
 
         # get gradients, fix earlier layers if training more features
@@ -462,10 +385,7 @@ if __name__ == '__main__':
         _train_step = optimizer.apply_gradients(zip(gradients, variables), global_step=_global_step)
 
         for gradient, variable in zip(gradients, variables):
-            try:
-                tf.summary.histogram("gradients/" + variable.name, tf.nn.l2_loss(gradient))
-            except:
-                print(variable)
+            tf.summary.histogram("gradients/" + variable.name, tf.nn.l2_loss(gradient))
             tf.summary.histogram("variables/" + variable.name, tf.nn.l2_loss(variable))
 
     # make saver for whole model
@@ -492,19 +412,10 @@ if __name__ == '__main__':
     conf = tf.ConfigProto(inter_op_parallelism_threads=4, intra_op_parallelism_threads=24)
     with tf.Session(config=conf) as sess:
 
-        def eval_test_kd(testcase_image):
-            """Prints predicted KD for 8mer with train/val params"""
-            val1 = sess.run(_pred_ka_values, feed_dict={_phase_train: False, _dropout_rate: 0.0, _combined_x: testcase_image})
-            val2 = sess.run(_pred_ka_values, feed_dict={_phase_train: True, _dropout_rate: 0.0, _combined_x: testcase_image})
-            val3 = sess.run(_pred_ka_values, feed_dict={_phase_train: True, _dropout_rate: options.DROPOUT_RATE, _combined_x: testcase_image})
-
-            print(val1[0], val2[0], val3[0])
-
         # Merge all the summaries and write them out
         _merged = tf.summary.merge_all()
         if options.LOGDIR is not None:
             train_writer = tf.summary.FileWriter(os.path.join(options.LOGDIR, 'train'), sess.graph)
-            test_writer = tf.summary.FileWriter(os.path.join(options.LOGDIR, 'test'))
 
         # initialize varibles
         sess.run(tf.global_variables_initializer())
@@ -523,12 +434,8 @@ if __name__ == '__main__':
         vars_to_plot['train_freeAGO_means'].append(sess.run(_freeAGO_mean))
         vars_to_plot['decays'].append(sess.run(_decay))
         vars_to_plot['learning_rates'].append(sess.run(_learning_rate))
-        vars_to_plot['utr3_length_coefs'].append(sess.run(_utr3_length_coef))
-        vars_to_plot['orf_length_coefs'].append(sess.run(_orf_length_coef))
 
         # plot variables and parameters
-        eval_test_kd(test_image_8mer)
-        eval_test_kd(test_image_nosite)
         log_helpers.plot_weights(sess.run(_cnn_weights), options.LOGDIR, options.MIRLEN, SEQLEN)
         log_helpers.plot_scalars(vars_to_plot, options.LOGDIR)
 
@@ -539,59 +446,48 @@ if __name__ == '__main__':
             # get training handle for repression data
             tpm_train_handle = sess.run(tpm_train_iterator.string_handle())
 
-            # if current_epoch < 25:
-            #     freeAGO_mean_regularizer = 1
-            #     # sess.run(_assign_decay) 
-            # else:
-            #     freeAGO_mean_regularizer = 0
-
-            # freeAGO_mean_regularizer = np.maximum(0, 1 - (current_epoch / 50))
-
             # make training input dictionary
             train_feed_dict = {
                 _phase_train: True,
                 _dropout_rate: options.DROPOUT_RATE,
                 tpm_handle: tpm_train_handle,
                 kd_handle: kd_train_handle,
-                # _freeAGO_mean_regularizer: freeAGO_mean_regularizer,
-                # _kd_weights: np.array(([[1.0]] * options.KD_BATCH_SIZE) + [[0.0], [0.0], [np.maximum(0, 0.5 - (current_epoch / 50))]])
             }
 
-            time_start = time.time()
             while True:
-                try:  
+                temp = sess.run(next_tpm_batch, feed_dict=train_feed_dict)
+                print(temp['images'].shape)
+                # try:
 
-                    # every 10 steps add to tensorboard
-                    if (options.LOGDIR is not None) & ((num_steps % 100) == 0):
-                        evals = sess.run([
-                            _pred_ka_values,
-                            next_kd_batch,
-                            _pred_logfc_normed,
-                            _repression_y_normed,
-                            _debug_item,
-                            _train_step,
-                            _merged
-                        ], feed_dict=train_feed_dict)
+                #     # every 10 steps add to tensorboard
+                #     if (options.LOGDIR is not None) & ((num_steps % 100) == 0):
+                #         evals = sess.run([
+                #             _pred_ka_values,
+                #             next_kd_batch,
+                #             _pred_logfc_normed,
+                #             _repression_y_normed,
+                #             _train_step,
+                #             _merged
+                #         ], feed_dict=train_feed_dict)
 
-                        train_writer.add_summary(evals[-1], num_steps)
+                #         train_writer.add_summary(evals[-1], num_steps)
 
-                    else:
-                        evals = sess.run([
-                            _pred_ka_values,
-                            next_kd_batch,
-                            _pred_logfc_normed,
-                            _repression_y_normed,
-                            _debug_item,
-                            _train_step,
-                        ], feed_dict=train_feed_dict)
+                #     else:
+                #         evals = sess.run([
+                #             _pred_ka_values,
+                #             next_kd_batch,
+                #             _pred_logfc_normed,
+                #             _repression_y_normed,
+                #             _train_step,
+                #         ], feed_dict=train_feed_dict)
 
-                    if options.DRY_RUN:
-                        break
+                #     if options.DRY_RUN:
+                #         break
 
-                    num_steps += 1
+                #     num_steps += 1
 
-                except tf.errors.OutOfRangeError:
-                    break
+                # except tf.errors.OutOfRangeError:
+                #     break
 
             sess.run(_increment_epoch_op)
 
@@ -663,15 +559,12 @@ if __name__ == '__main__':
             vars_to_plot['train_freeAGO_means'].append(sess.run(_freeAGO_mean))
             vars_to_plot['decays'].append(sess.run(_decay))
             vars_to_plot['learning_rates'].append(sess.run(_learning_rate))
-            vars_to_plot['utr3_length_coefs'].append(sess.run(_utr3_length_coef))
-            vars_to_plot['orf_length_coefs'].append(sess.run(_orf_length_coef))
             vars_to_plot['val_losses'].append(np.sum(np.square(pred_vals_normed[:, -1] - real_vals_normed[:, -1])))
             vars_to_plot['val_r2s'].append(stats.linregress(pred_vals_normed[:, -1], real_vals_normed[:, -1])[2]**2)
 
             if options.LOGDIR is not None:
                 # save models
                 if current_epoch % 10 == 0:
-                    pretrain_saver.save(sess, os.path.join(PRETRAIN_SAVE_PATH, 'model'), global_step=current_epoch)
                     saver.save(sess, os.path.join(SAVE_PATH, 'model'), global_step=current_epoch)
 
                     pred_df = pd.DataFrame({
@@ -687,26 +580,20 @@ if __name__ == '__main__':
                     pred_df.to_csv(os.path.join(options.LOGDIR, 'pred_df_{}.txt'.format(current_epoch)), sep='\t', index=False)
 
                 eval_names = [
-                    'ka_preds', 'ka_batch', 'repression_preds', 'repression_labels', 'debug_item'
+                    'ka_preds', 'ka_batch', 'repression_preds', 'repression_labels'
                 ]
                 evals_dict = {eval_names[ix]: evals[ix] for ix in range(len(eval_names))}
 
                 # plot variables and parameters
-                eval_test_kd(test_image_8mer)
-                eval_test_kd(test_image_nosite)
                 log_helpers.plot_weights(sess.run(_cnn_weights), options.LOGDIR, options.MIRLEN, SEQLEN)
                 log_helpers.plot_scalars(vars_to_plot, options.LOGDIR)
-
-                print(sess.run(_ts7_weights))
-                # print(sess.run(_ts7_bias))
-                print(current_freeAGO_all_val)
 
                 len_kd_batch = len(evals_dict['ka_batch']['labels'].flatten())
 
                 colors = [STYPE_COLOR_DICT[x] for x in evals_dict['ka_batch']['stypes']]
                 fig = plt.figure(figsize=(7, 7))
                 plt.scatter(evals_dict['ka_preds'].flatten()[:len_kd_batch], evals_dict['ka_batch']['labels'].flatten(), color=colors)
-                plt.plot([0,6], [0,6])
+                plt.plot([0, 6], [0, 6])
                 plt.savefig(os.path.join(options.LOGDIR, 'train_ka_scatter.png'))
                 plt.close()
 
@@ -773,7 +660,7 @@ if __name__ == '__main__':
                 fig = plt.figure(figsize=(7, 7))
                 colors = [STYPE_COLOR_DICT[x] for x in temp_kd_batch['stypes']]
                 plt.scatter(ka_vals.flatten(), temp_kd_batch['labels'].flatten(), color=colors)
-                plt.plot([0,6], [0,6])
+                plt.plot([0, 6], [0, 6])
                 plt.savefig(os.path.join(options.LOGDIR, 'val_ka_scatter.png'))
                 plt.close()
 
@@ -782,7 +669,7 @@ if __name__ == '__main__':
                 plt.savefig(os.path.join(options.LOGDIR, 'val_ka_hist.png'))
                 plt.close()
 
-            if options.DRY_RUN:     
+            if options.DRY_RUN:
                 break
 
         if options.LOGDIR is not None:
@@ -790,7 +677,7 @@ if __name__ == '__main__':
             # write final freeAGO concentrations
             if options.PASSENGER:
                 current_freeAGO_all_val = current_freeAGO_all_val.reshape([-1, 2])
-                final_freeagos = pd.DataFrame(current_freeAGO_all_val, index=(TRAIN_GUIDES + VAL_GUIDES), columns=['guide','pass'])
+                final_freeagos = pd.DataFrame(current_freeAGO_all_val, index=(TRAIN_GUIDES + VAL_GUIDES), columns=['guide', 'pass'])
             else:
                 current_freeAGO_all_val = current_freeAGO_all_val.reshape([-1, 1])
                 final_freeagos = pd.DataFrame(current_freeAGO_all_val, index=(TRAIN_GUIDES + VAL_GUIDES), columns=['guide'])

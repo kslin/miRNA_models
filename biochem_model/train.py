@@ -27,8 +27,6 @@ def train_on_data(train_vals, num_feats, passenger, outfile, init_bound, set_var
     nosite_feature_tensor = tf.placeholder(tf.float32, shape=[None, None, None, NUM_FEATS], name='nosite_feats')
     mask_tensor = tf.placeholder(tf.float32, shape=[None, None, None], name='mask')
     labels_tensor = tf.placeholder(tf.float32, shape=[None, None], name='labels')
-    utr3_length_tensor = tf.placeholder(tf.float32, shape=[None, 1], name='utr3_length')
-    orf_length_tensor = tf.placeholder(tf.float32, shape=[None, 1], name='orf_length')
 
     # make data dictionary
     train_data = {
@@ -38,10 +36,7 @@ def train_on_data(train_vals, num_feats, passenger, outfile, init_bound, set_var
         'nosite_features': nosite_feature_tensor,
         'labels': labels_tensor,
         'passenger': passenger,
-        'num_guides': len(train_vals['guides']),
-        'utr3_length': utr3_length_tensor,
-        'orf_length': orf_length_tensor, 
-        # 'freeAGO': -5.95 # uncomment for using TA to fit
+        'num_guides': len(train_vals['guides'])
     }
 
     # make feed dictionary
@@ -50,16 +45,11 @@ def train_on_data(train_vals, num_feats, passenger, outfile, init_bound, set_var
         mask_tensor: train_vals['mask_3D'],
         feature_tensor: train_vals['features_4D'],
         nosite_feature_tensor: train_vals['nosite_features_4D'],
-        labels_tensor: train_vals['labels'],
-        utr3_length_tensor: train_vals['utr3_length'],
-        orf_length_tensor: train_vals['orf_length']
+        labels_tensor: train_vals['labels']
     }
-
-    # set_vars.update({'set_freeAGO': -5.52})
 
     # make and train model
     mod = models.OccupancyWithFeaturesModel(len(train_vals['guides']), num_feats, init_bound=init_bound, fit_background=False, passenger=passenger, set_vars=set_vars)
-    # mod = models.OccupancyWithFeaturesWithLensModel(len(train_vals['guides']), num_feats, passenger=passenger, set_vars=set_vars)
 
     with tf.Session() as sess:
         sess.run(tf.global_variables_initializer())
@@ -80,10 +70,6 @@ def train_on_data(train_vals, num_feats, passenger, outfile, init_bound, set_var
         # if outfile is given, write results to outfile
         if outfile is not None:
             pred_df.to_csv(outfile, sep='\t', index=False)
-
-        temp = pred_df[pred_df['mir'] == 'mir190a']
-        if len(temp) > 0:
-            print(stats.linregress(temp['pred_normed'], temp['label_normed'])[2]**2)
 
         mod.vars_evals['r2'] = mod.r2
         mod.vars_evals['final_loss'] = mod.final_loss
@@ -107,7 +93,6 @@ if __name__ == '__main__':
     parser.add_option("--init_bound", dest="INIT_BOUND", help="offset by background binding", default=False, action='store_true')
     parser.add_option("--extra_feats", dest="EXTRA_FEATS", help="comma-separated list of extra features", default=None)
     parser.add_option("--passenger", dest="PASSENGER", help="include passenger", default=False, action='store_true')
-    parser.add_option("--set_freeago", dest="SET_FREEAGO", help="infer freeAGO", default=False, action='store_true')
     parser.add_option("--outfile", dest="OUTFILE", help="output file", default=None)
     parser.add_option("--outparams", dest="OUTPARAMS", help="output file for writing fitted parameters")
 
@@ -198,8 +183,6 @@ if __name__ == '__main__':
     else:
         raise ValueError('invalid mode')
 
-    ALL_FEATS['intercept'] = 1.0
-
     NUM_SITES = ALL_FEATS.copy()
     NUM_SITES['nsites'] = 1
     NUM_SITES = NUM_SITES.groupby(['transcript', 'mir']).agg({'nsites': np.sum})
@@ -218,109 +201,64 @@ if __name__ == '__main__':
 
     print(np.sum(ALL_FEATS[FEATURE_LIST].values, axis=0))
 
-    if options.SET_FREEAGO:
-        FITTED_PARAMS, MEAN_FA_GUIDE, MEAN_FA_PASS = predict.get_params(options.SETPARAMS.replace('MODEL', MODEL), options.PASSENGER)
-        pred_df = []
-        for mir in TRAIN_GUIDES:
-            seed = MIRNA_DATA.loc[mir]['guide_seq'][1:7]
-            temp1 = ALL_FEATS.query('mir == @mir')
-            temp1['freeAGO'] = MEAN_FA_GUIDE
-            if 'CG' in seed:  # adjust for miRNAs with CpGs
-                temp1['freeAGO'] += 1
+    # get indices of features that do not affect background binding
+    ZERO_INDICES = []
+    for ix, feat in enumerate(FEATURE_LIST):
+        if feat in ['Threep_canon', 'PCT']:
+            ZERO_INDICES.append(ix)
 
-            if options.PASSENGER:
-                seed = MIRNA_DATA.loc[mir]['pass_seq'][1:7]
-                pass_mir = mir + '_pass'
-                temp2 = ALL_FEATS.query('mir == @pass_mir')
-                temp2['freeAGO'] = MEAN_FA_PASS
-                temp = pd.concat([temp1, temp2], sort=False)
-            else:
-                temp = temp1
-                
-            if options.EXTRA_FEATS == 'none':
-                FEATURE_LIST = ''
-            else:
-                FEATURE_LIST = options.EXTRA_FEATS
+    print(ZERO_INDICES)
 
-            # predict using fitted parameters
-            _, temp_pred = predict.predict(temp, FEATURE_LIST, FITTED_PARAMS)
-
-            temp_pred = temp_pred[['pred']].reindex(TRAIN_TRANSCRIPTS).fillna(0)
-            temp_pred.columns = [mir]
-
-            pred_df.append(temp_pred)
-
-        pred_df = pd.concat(pred_df, axis=1, join='inner', sort=False)
-        pred_df.index.name = 'transcript'
-        pred_df['mean_pred'] = np.mean(pred_df.values, axis=1)
-
-        pred_df_long = pred_df.reset_index().melt(id_vars=['transcript'], value_vars=TRAIN_GUIDES)
-        pred_df_long.columns = ['transcript','mir','pred']
-        pred_df_long['pred_normed'] = pred_df_long['pred'] - pred_df.reindex(pred_df_long['transcript'].values)['mean_pred'].values
-        pred_df_long.to_csv(options.OUTFILE.replace('MODEL', MODEL), sep='\t', index=False)
-
+    # if indicated, read in parameters to set
+    if options.SETPARAMS is not None:
+        with open(options.SETPARAMS.replace('MODEL', MODEL), 'r') as infile:
+            setparams = json.load(infile)
+            setparams['feature_coefs'] = np.array(setparams['feature_coefs']).reshape([1, 1, 1, -1])
+            print(setparams)
     else:
+        setparams = {}
 
-        # get indices of features that do not affect background binding
-        ZERO_INDICES = []
-        for ix, feat in enumerate(FEATURE_LIST):
-            if feat in ['Threep_canon', 'PCT']:
-                ZERO_INDICES.append(ix)
+    # expand features
+    train_vals_4D, train_mask_3D = utils.expand_features_4D(TRAIN_TRANSCRIPTS, TRAIN_MIRS, MAX_NSITES,
+                                                        FEATURE_LIST, ALL_FEATS)
 
-        print(ZERO_INDICES)
+    train_ka_vals_3D, train_features_4D, train_nosite_features_4D = utils.split_vals(train_vals_4D, ZERO_INDICES)
 
-        # if indicated, read in parameters to set
-        if options.SETPARAMS is not None:
-            with open(options.SETPARAMS.replace('MODEL', MODEL), 'r') as infile:
-                setparams = json.load(infile)
-                setparams['feature_coefs'] = np.array(setparams['feature_coefs']).reshape([1, 1, 1, -1])
-                print(setparams)
-        else:
-            setparams = {}
+    print(train_ka_vals_3D.shape, train_features_4D.shape, train_nosite_features_4D.shape, train_mask_3D.shape)
+    print(np.sum(np.sum(train_mask_3D, axis=0), axis=1))
+    print(np.sum(np.sum(np.sum(train_features_4D, axis=0), axis=0), axis=0))
+    print(np.sum(np.sum(np.sum(train_nosite_features_4D, axis=0), axis=0), axis=0))
 
-        # expand features
-        train_vals_4D, train_mask_3D = utils.expand_features_4D(TRAIN_TRANSCRIPTS, TRAIN_MIRS, MAX_NSITES,
-                                                            FEATURE_LIST, ALL_FEATS)
-
-        train_ka_vals_3D, train_features_4D, train_nosite_features_4D = utils.split_vals(train_vals_4D, ZERO_INDICES)
-
-        print(train_ka_vals_3D.shape, train_features_4D.shape, train_nosite_features_4D.shape, train_mask_3D.shape)
-        print(np.sum(np.sum(train_mask_3D, axis=0), axis=1))
-        print(np.sum(np.sum(np.sum(train_features_4D, axis=0), axis=0), axis=0))
-        print(np.sum(np.sum(np.sum(train_nosite_features_4D, axis=0), axis=0), axis=0))
-
-        print(np.sum(np.sum(train_features_4D, axis=0), axis=1).tolist())
-        print(np.sum(np.sum(train_nosite_features_4D, axis=0), axis=1).tolist())
+    print(np.sum(np.sum(train_features_4D, axis=0), axis=1).tolist())
+    print(np.sum(np.sum(train_nosite_features_4D, axis=0), axis=1).tolist())
 
 
-        train_vals = {
-            'transcripts': TRAIN_TRANSCRIPTS,
-            'guides': TRAIN_GUIDES,
-            'ka_vals_3D': train_ka_vals_3D,
-            'mask_3D': train_mask_3D,
-            'features_4D': train_features_4D,
-            'nosite_features_4D': train_nosite_features_4D,
-            'labels': ALL_TPMS.loc[TRAIN_TRANSCRIPTS][TRAIN_GUIDES].values,
-            'utr3_length': ALL_TPMS.loc[TRAIN_TRANSCRIPTS][['utr3_length']].values / 5000,
-            'orf_length': ALL_TPMS.loc[TRAIN_TRANSCRIPTS][['orf_length']].values / 5000,
-        }
+    train_vals = {
+        'transcripts': TRAIN_TRANSCRIPTS,
+        'guides': TRAIN_GUIDES,
+        'ka_vals_3D': train_ka_vals_3D,
+        'mask_3D': train_mask_3D,
+        'features_4D': train_features_4D,
+        'nosite_features_4D': train_nosite_features_4D,
+        'labels': ALL_TPMS.loc[TRAIN_TRANSCRIPTS][TRAIN_GUIDES].values
+    }
 
 
-        params = train_on_data(train_vals, NUM_FEATS, options.PASSENGER, options.OUTFILE.replace('MODEL', MODEL), options.INIT_BOUND, setparams)
-        params['freeAGO'] = params['freeAGO'].flatten().tolist()
-        params['feature_coefs'] = params['feature_coefs'].flatten().tolist()
-        params['FEATURE_LIST'] = FEATURE_LIST
-        params['PASSENGER'] = options.PASSENGER
-        params['KD_CUTOFF'] = options.KD_CUTOFF
-        params['TRAIN_MIRS'] = TRAIN_MIRS
+    params = train_on_data(train_vals, NUM_FEATS, options.PASSENGER, options.OUTFILE.replace('MODEL', MODEL), options.INIT_BOUND, setparams)
+    params['freeAGO'] = params['freeAGO'].flatten().tolist()
+    params['feature_coefs'] = params['feature_coefs'].flatten().tolist()
+    params['FEATURE_LIST'] = FEATURE_LIST
+    params['PASSENGER'] = options.PASSENGER
+    params['KD_CUTOFF'] = options.KD_CUTOFF
+    params['TRAIN_MIRS'] = TRAIN_MIRS
 
-        # convert all numpy types to native python types
-        for key, val in params.items():
-            try:
-                params[key] = val.item()
-            except AttributeError:
-                continue
+    # convert all numpy types to native python types
+    for key, val in params.items():
+        try:
+            params[key] = val.item()
+        except AttributeError:
+            continue
 
-        with open(options.OUTPARAMS.replace('MODEL', MODEL), 'w') as outparams:
-            json.dump(params, outparams)
+    with open(options.OUTPARAMS.replace('MODEL', MODEL), 'w') as outparams:
+        json.dump(params, outparams)
 
