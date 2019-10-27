@@ -8,30 +8,24 @@ import time
 import numpy as np
 import pandas as pd
 
-
-def generate_random_seq(length):
-    """Generate random sequence"""
-    nts = ['A', 'T', 'C', 'G']
-    seq = np.random.choice(nts, size=length, replace=True)
-    return ''.join(seq)
+import utils
 
 
 if __name__ == '__main__':
 
     parser = OptionParser()
-    parser.add_option("--kd_file", dest="KD_FILE", help="KD data")
-    parser.add_option("--temp_folder", dest="TEMP_FOLDER", help="folder for writing outputs")
+    parser.add_option("--sequence_file", dest="SEQUENCE_FILE", help="file with sequences")
+    parser.add_option("--temp_folder", dest="TEMP_FOLDER", help="folder for writing temporary outputs")
     parser.add_option("--num_bg", dest="NUM_BG", type=int, help="number of background seqs to fold")
     parser.add_option("--num_processes", dest="NUM_PROCESSES", type=int, help="number of parallel processes")
     parser.add_option("--outfile", dest="OUTFILE", help="folder for writing outputs")
-
 
     (options, args) = parser.parse_args()
 
     if (not os.path.isdir(options.TEMP_FOLDER)):
         os.makedirs(options.TEMP_FOLDER)
 
-    KDS = pd.read_csv(options.KD_FILE, sep='\t', chunksize=options.NUM_PROCESSES)
+    SEQUENCES = pd.read_csv(options.SEQUENCE_FILE, sep='\t', chunksize=options.NUM_PROCESSES)
 
     def get_RNAplfold(seq):
         cwd = os.getcwd()
@@ -42,7 +36,7 @@ if __name__ == '__main__':
         # write sequence to a temporary file
         with open('temp.fa', 'w') as f:
             for ix in range(options.NUM_BG):
-                bg = generate_random_seq(14) + seq + generate_random_seq(14)
+                bg = utils.generate_random_seq(14) + seq + utils.generate_random_seq(14)
                 f.write('>{}\n{}\n'.format(ix, bg))
 
         # # call RNAplfold
@@ -64,7 +58,7 @@ if __name__ == '__main__':
 
     total = 0
     with open(options.OUTFILE, 'w') as outfile:
-        for chunk in KDS:
+        for chunk in SEQUENCES:
             T0 = time.time()
             seqs = list(chunk['12mer'].values)
             total += len(seqs)

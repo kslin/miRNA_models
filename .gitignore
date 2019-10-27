@@ -5,7 +5,6 @@
 core/
 
 # Data folders
-outputs/
 data/
 old_files/
 

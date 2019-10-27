@@ -1,0 +1,1334 @@
+%!PS-Adobe-3.0 EPSF-3.0
+%%Creator: ViennaRNA-2.4.13
+%%CreationDate: Sun Oct 27 16:50:40 2019
+%%Title: RNA Dot Plot
+%%BoundingBox: 66 530 520 650
+%%DocumentFonts: Helvetica
+%%Pages: 1
+%%EndComments
+
+% Program options: 
+
+% This file contains the square roots of probabilities in the form
+% i  j  sqrt(p(i,j)) ubox
+
+/DPdict 100 dict def
+
+DPdict begin
+
+%%BeginProlog
+
+/logscale false def
+/lpmin 1e-05 log def
+/DataVisible  [ true true true true] def
+/DataTitles   [ false false false false ] def
+/min { 2 copy gt { exch } if pop } bind def
+/max { 2 copy lt { exch } if pop } bind def
+/box { %size x y box - draws box centered on x,y
+   2 index 0.5 mul sub            % x -= 0.5
+   exch 2 index 0.5 mul sub exch  % y -= 0.5
+   3 -1 roll dup rectfill
+} bind def
+/ubox {
+   logscale {
+      log dup add lpmin div 1 exch sub dup 0 lt { pop 0 } if
+   } if
+   3 1 roll
+   exch len exch sub 1 add box
+} bind def
+/lbox {
+   3 1 roll
+   len exch sub 1 add box
+} bind def
+/drawseq { % print sequence along all 4 sides
+[ [0.7 -0.3 0 ]
+  [0.7 0.7 len add 0]
+  [-0.3 len sub -0.4 -90]
+  [-0.3 len sub 0.7 len add -90]
+] {
+   gsave
+    aload pop rotate translate
+    0 1 len 1 sub {
+     dup 0 moveto
+     sequence exch 1 getinterval
+     show
+    } for
+   grestore
+  } forall
+} bind def
+/drawgrid{
+  gsave
+  0.5 dup translate
+  0.01 setlinewidth
+  len log 0.9 sub cvi 10 exch exp  % grid spacing
+  dup 1 gt {
+     dup dup 20 div dup 2 array astore exch 40 div setdash
+  } { [0.3 0.7] 0.1 setdash } ifelse
+  0 exch len {
+     dup dup
+     0 moveto
+     len lineto
+     dup
+     len exch sub 0 exch moveto
+     len exch len exch sub lineto
+     stroke
+  } for
+  [] 0 setdash
+  0.04 setlinewidth
+  currentdict /cutpoint known {
+    cutpoint 1 sub
+    dup dup -1 moveto len 1 add lineto
+    len exch sub dup
+    -1 exch moveto len 1 add exch lineto
+    stroke
+  } if
+  % draw diagonal
+  0 len moveto len 0 lineto stroke
+  grestore
+} bind def
+/drawTitle {
+  currentdict /DPtitle known {
+    % center title text
+    /Helvetica findfont 10 scalefont setfont
+    360 705 moveto DPtitle dup stringwidth pop 2 div neg 0 rmoveto show
+  } if
+} bind def
+/prepareCoords {
+  0 1 3 {
+    % check whether we want to display current data
+    dup DataVisible exch get
+    {
+      % check whether we've actually got some data
+      DataSource exch get dup currentdict exch known {
+        % data source s_j is present, so find length of array
+        currentdict exch get length 
+      } { pop 0 } ifelse
+    } if
+  } for
+  exch dup 5 -1 roll add 4 -1 roll dup 5 1 roll 4 -1 roll add max
+  len add 3 add 700 exch div dup scale
+  exch 1 add exch 1 add translate
+} bind def
+
+%%EndProlog
+
+/DPtitle {
+  (ENST00000331825.6)
+} def
+
+/sequence { (\
+AUGAGCUCCCAGAUUCGUCAGAAUUAUUCCACCGACGUGGAGGCAGCCGUCAACAGCCUGGUCAAUUUGUACCUGCAGGCCUCCUACACCUACCUCUCUCUGGGCUUCUAUUUCGACCGCGAUGAUGUGGCUCUGGAAGGCGUGAGCCACUUCUUCCGCGAAUUGGCCGAGGAGAAGCGCGAGGGCUACGAGCGUCUCCUGAAGAUGCAAAACCAGCGUGGCGGCCGCGCUCUCUUCCAGGACAUCAAGAAGCCA\
+GCUGAAGAUGAGUGGGGUAAAACCCCAGACGCCAUGAAAGCUGCCAUGGCCCUGGAGAAAAAGCUGAACCAGGCCCUUUUGGAUCUUCAUGCCCUGGGUUCUGCCCGCACGGACCCCCAUCUCUGUGACUUCCUGGAGACUCACUUCCUAGAUGAGGAAGUGAAGCUUAUCAAGAAGAUGGGUGACCACCUGACCAACCUCCACAGGCUGGGUGGCCCGGAGGCUGGGCUGGGCGAGUAUCUCUUCGAAAGGCUC\
+ACUCUCAAGCACGACUAAGAGCCUUCUGAGCCCAGCGACUUCUGAAGGGCCCCUUGCAAAGUAAUAGGGCUUCUGCCUAAGCCUCUCCCUCCAGCCAAUAGGCAGCUUUCUUAACUAUCCUAACAAGCCUUGGACCAAAUGGAAAUAAAGCUUUUUGAUG\
+) } def
+/len { sequence length } bind def
+
+/winSize 40 def
+292 416 translate
+72 6 mul len 1 add winSize add 2 sqrt mul div dup scale
+/Helvetica findfont 0.95 scalefont setfont
+
+/drawseq_turn {
+% print sequence at bottom
+   gsave
+   len 2 sqrt div dup neg 0.28 add exch 0.78 sub translate
+    0 1 len 1 sub {
+     dup dup 2 sqrt mul 0 moveto
+     sequence exch 1 getinterval
+     show
+    } for
+   grestore
+} bind def
+/drawgrid_turn{
+  0.01 setlinewidth
+  len log 0.9 sub cvi 10 exch exp  % grid spacing
+  dup 1 gt {
+     dup dup 20 div dup 2 array astore exch 40 div setdash
+  } { [0.3 0.7] 0.1 setdash } ifelse
+  0 exch len {    %for (0, gridspacing, len) 
+     dup dup      %duplicate what - gridspacing??
+     dup len exch sub moveto     %moveto diagonal?
+     dup winSize gt
+     {dup dup len exch sub winSize add lineto}
+     {dup len lineto}ifelse
+     dup len exch sub moveto  %moveto diagonal?
+     dup len winSize sub le
+     {dup dup len exch sub dup winSize exch sub len add exch lineto}
+     {dup dup len exch sub len exch lineto}ifelse
+     stroke pop pop
+  } for
+  len log 0.9 sub cvi 10 exch exp  % grid spacing
+      dup 1 gt {
+          dup dup 20 div dup 2 array astore exch 40 div setdash
+      } { [0.3 0.7] 0.1 setdash } ifelse
+      0 exch len {    %for (0, gridspacing, len) 
+     dup dup      %duplicate what - gridspacing??
+     dup len exch sub moveto     %moveto diagonal?
+     len exch sub 0.7 sub exch 0.7 sub exch lineto
+     stroke
+   }for
+ winSize len moveto  len winSize  lineto stroke
+  [] 0 setdash
+  0.04 setlinewidth 
+  currentdict /cutpoint known {
+    cutpoint 1 sub
+    dup dup -1 moveto len 1 add lineto
+    len exch sub dup
+    -1 exch moveto len 1 add exch lineto
+   stroke
+  } if
+  0.5 neg dup translate
+} bind def
+0.5 dup translate
+drawseq_turn
+45 rotate
+
+
+%draw the grid
+drawgrid_turn
+
+%start of base pair probability data
+1 18 0.1545 ubox
+2 11 0.2331 ubox
+2 17 0.1325 ubox
+3 10 0.2214 ubox
+3 16 0.1369 ubox
+4 15 0.1183 ubox
+5 14 0.1029 ubox
+5 44 0.5423 ubox
+6 43 0.4939 ubox
+7 42 0.4125 ubox
+9 40 0.2592 ubox
+9 43 0.1100 ubox
+10 39 0.2468 ubox
+10 42 0.1057 ubox
+11 38 0.2331 ubox
+12 25 0.9222 ubox
+13 24 0.9486 ubox
+14 23 0.9368 ubox
+15 22 0.9245 ubox
+15 35 0.1014 ubox
+16 21 0.8982 ubox
+16 34 0.1073 ubox
+16 37 0.1722 ubox
+17 33 0.1028 ubox
+17 36 0.1696 ubox
+17 44 0.1039 ubox
+17 51 0.1092 ubox
+18 35 0.1648 ubox
+18 43 0.1009 ubox
+19 34 0.1601 ubox
+19 49 0.1018 ubox
+21 29 0.1126 ubox
+21 47 0.1187 ubox
+21 48 0.1084 ubox
+21 51 0.1479 ubox
+22 28 0.1093 ubox
+22 50 0.1434 ubox
+27 42 0.4061 ubox
+28 41 0.9235 ubox
+29 40 0.9823 ubox
+30 39 0.9680 ubox
+31 38 0.9512 ubox
+32 37 0.9326 ubox
+34 51 0.3602 ubox
+35 50 0.3563 ubox
+36 49 0.3511 ubox
+37 48 0.3327 ubox
+37 54 0.1536 ubox
+38 45 0.1917 ubox
+38 52 0.1503 ubox
+38 53 0.1252 ubox
+38 55 0.2012 ubox
+39 44 0.2063 ubox
+39 47 0.2327 ubox
+39 48 0.1087 ubox
+39 51 0.1855 ubox
+39 54 0.2354 ubox
+40 47 0.1108 ubox
+40 50 0.1789 ubox
+40 51 0.1201 ubox
+41 50 0.1182 ubox
+41 59 0.2883 ubox
+42 48 0.2401 ubox
+42 51 0.6931 ubox
+42 58 0.3180 ubox
+43 47 0.2338 ubox
+43 50 0.6919 ubox
+43 57 0.3147 ubox
+44 49 0.6846 ubox
+44 56 0.3108 ubox
+46 54 0.1519 ubox
+49 87 0.2955 ubox
+50 86 0.2806 ubox
+55 82 0.1525 ubox
+56 76 0.2454 ubox
+56 80 0.9043 ubox
+56 81 0.1132 ubox
+57 75 0.2422 ubox
+57 79 0.9093 ubox
+58 78 0.9016 ubox
+59 77 0.8894 ubox
+60 73 0.6059 ubox
+60 76 0.7276 ubox
+60 81 0.2499 ubox
+61 72 0.6621 ubox
+61 80 0.2481 ubox
+62 71 0.6487 ubox
+62 79 0.2448 ubox
+63 69 0.5664 ubox
+63 75 0.1527 ubox
+63 78 0.2337 ubox
+64 68 0.4556 ubox
+64 74 0.1450 ubox
+67 78 0.1251 ubox
+68 77 0.2337 ubox
+69 76 0.2377 ubox
+69 93 0.3268 ubox
+70 75 0.2264 ubox
+70 92 0.3243 ubox
+71 91 0.3154 ubox
+74 88 0.3537 ubox
+74 110 0.1167 ubox
+75 87 0.3649 ubox
+75 108 0.1868 ubox
+75 109 0.1235 ubox
+77 85 0.3720 ubox
+77 91 0.1168 ubox
+77 107 0.3856 ubox
+78 84 0.3776 ubox
+78 90 0.1219 ubox
+78 106 0.4564 ubox
+79 83 0.3666 ubox
+79 89 0.1198 ubox
+79 105 0.4676 ubox
+80 104 0.4587 ubox
+81 103 0.4473 ubox
+82 102 0.3965 ubox
+83 102 0.1034 ubox
+83 103 0.1258 ubox
+83 104 0.1093 ubox
+84 102 0.1314 ubox
+84 103 0.1098 ubox
+85 102 0.1079 ubox
+86 101 0.1002 ubox
+89 103 0.1670 ubox
+89 104 0.5420 ubox
+90 102 0.1662 ubox
+90 103 0.5379 ubox
+91 102 0.5290 ubox
+91 129 0.1103 ubox
+92 101 0.5107 ubox
+92 128 0.1420 ubox
+93 103 0.2719 ubox
+93 104 0.2727 ubox
+93 127 0.1442 ubox
+94 102 0.2727 ubox
+94 103 0.2712 ubox
+94 104 0.1888 ubox
+95 102 0.2249 ubox
+95 103 0.1899 ubox
+95 125 0.1972 ubox
+96 102 0.2291 ubox
+96 124 0.2046 ubox
+97 122 0.1583 ubox
+97 125 0.2042 ubox
+98 121 0.1608 ubox
+98 124 0.2149 ubox
+98 136 0.1122 ubox
+99 122 0.2763 ubox
+99 136 0.1226 ubox
+99 137 0.3453 ubox
+100 121 0.2800 ubox
+100 135 0.1841 ubox
+100 136 0.3750 ubox
+101 119 0.2398 ubox
+101 135 0.3552 ubox
+102 118 0.2639 ubox
+102 133 0.4460 ubox
+102 134 0.2584 ubox
+103 117 0.2594 ubox
+103 118 0.2286 ubox
+103 132 0.4439 ubox
+103 133 0.2530 ubox
+103 141 0.4217 ubox
+104 117 0.2250 ubox
+104 120 0.1779 ubox
+104 131 0.5069 ubox
+104 141 0.1594 ubox
+105 115 0.1320 ubox
+105 119 0.1759 ubox
+105 130 0.4987 ubox
+105 139 0.5079 ubox
+105 140 0.1348 ubox
+106 129 0.4782 ubox
+106 138 0.5141 ubox
+106 139 0.1049 ubox
+107 116 0.2713 ubox
+107 137 0.5117 ubox
+108 115 0.2813 ubox
+108 127 0.3429 ubox
+108 136 0.5062 ubox
+109 127 0.2701 ubox
+109 135 0.4951 ubox
+110 126 0.3601 ubox
+110 134 0.4728 ubox
+111 125 0.3616 ubox
+111 138 0.1437 ubox
+112 124 0.3333 ubox
+112 137 0.1678 ubox
+113 122 0.6258 ubox
+113 136 0.1686 ubox
+114 121 0.6506 ubox
+114 135 0.1689 ubox
+115 120 0.6309 ubox
+115 131 0.2249 ubox
+115 133 0.4658 ubox
+116 132 0.4582 ubox
+117 130 0.5513 ubox
+118 129 0.5460 ubox
+119 128 0.5383 ubox
+119 157 0.2481 ubox
+120 127 0.5309 ubox
+120 158 0.1175 ubox
+121 126 0.2903 ubox
+121 156 0.4741 ubox
+122 155 0.4595 ubox
+124 153 0.6163 ubox
+125 152 0.5929 ubox
+127 150 0.8482 ubox
+128 149 0.8422 ubox
+129 148 0.8357 ubox
+129 168 0.2191 ubox
+130 147 0.8237 ubox
+130 167 0.2238 ubox
+131 146 0.8110 ubox
+131 166 0.2186 ubox
+132 145 0.7986 ubox
+132 161 0.2145 ubox
+132 165 0.1432 ubox
+133 144 0.7866 ubox
+133 160 0.2468 ubox
+134 142 0.5672 ubox
+134 158 0.3090 ubox
+135 141 0.5971 ubox
+135 157 0.4356 ubox
+136 141 0.3151 ubox
+136 156 0.4289 ubox
+137 155 0.4218 ubox
+138 154 0.4150 ubox
+139 148 0.4187 ubox
+139 153 0.4061 ubox
+140 147 0.4255 ubox
+140 152 0.3849 ubox
+141 146 0.4199 ubox
+142 150 0.3881 ubox
+143 149 0.3826 ubox
+143 169 0.1777 ubox
+144 148 0.3716 ubox
+144 168 0.2364 ubox
+146 167 0.3134 ubox
+146 178 0.1203 ubox
+146 180 0.2769 ubox
+147 166 0.3093 ubox
+147 177 0.1174 ubox
+147 179 0.2526 ubox
+147 181 0.1152 ubox
+148 165 0.3043 ubox
+148 179 0.2096 ubox
+149 164 0.2965 ubox
+150 174 0.1351 ubox
+150 177 0.5499 ubox
+151 162 0.2782 ubox
+151 173 0.1214 ubox
+151 174 0.4230 ubox
+151 176 0.5670 ubox
+152 161 0.2883 ubox
+152 172 0.1030 ubox
+152 173 0.5460 ubox
+152 175 0.5704 ubox
+153 160 0.2843 ubox
+153 171 0.1042 ubox
+153 172 0.5740 ubox
+153 174 0.5633 ubox
+153 184 0.1017 ubox
+154 171 0.5711 ubox
+154 173 0.5409 ubox
+154 183 0.1020 ubox
+155 170 0.5864 ubox
+155 172 0.5181 ubox
+155 173 0.1601 ubox
+155 182 0.1011 ubox
+156 169 0.6053 ubox
+156 171 0.5094 ubox
+156 172 0.1976 ubox
+157 169 0.4748 ubox
+157 171 0.1947 ubox
+157 181 0.1126 ubox
+157 194 0.1568 ubox
+158 167 0.8053 ubox
+158 168 0.3447 ubox
+158 180 0.1202 ubox
+158 193 0.1863 ubox
+159 166 0.8542 ubox
+159 169 0.1866 ubox
+159 179 0.1182 ubox
+159 192 0.1823 ubox
+160 167 0.1203 ubox
+160 168 0.1839 ubox
+160 178 0.1160 ubox
+164 188 0.1919 ubox
+165 187 0.2024 ubox
+166 186 0.2006 ubox
+167 185 0.1962 ubox
+168 184 0.1917 ubox
+168 201 0.2294 ubox
+169 200 0.1125 ubox
+170 200 0.7689 ubox
+171 180 0.1282 ubox
+171 199 0.8149 ubox
+172 198 0.8065 ubox
+173 197 0.7921 ubox
+174 189 0.1814 ubox
+174 196 0.7761 ubox
+174 198 0.1508 ubox
+175 195 0.5757 ubox
+175 197 0.1486 ubox
+176 187 0.4257 ubox
+177 186 0.4447 ubox
+177 193 0.3947 ubox
+177 195 0.5205 ubox
+178 185 0.4389 ubox
+178 192 0.3886 ubox
+178 194 0.6839 ubox
+179 186 0.3058 ubox
+179 193 0.6792 ubox
+179 217 0.1719 ubox
+180 185 0.3026 ubox
+180 190 0.3502 ubox
+180 192 0.6691 ubox
+180 216 0.1686 ubox
+180 218 0.1065 ubox
+181 189 0.3424 ubox
+181 198 0.1278 ubox
+181 217 0.1109 ubox
+182 197 0.1263 ubox
+183 189 0.6002 ubox
+183 196 0.1243 ubox
+183 214 0.2065 ubox
+184 189 0.1998 ubox
+184 195 0.1103 ubox
+184 213 0.2025 ubox
+184 214 0.1714 ubox
+185 193 0.1238 ubox
+185 213 0.1683 ubox
+185 222 0.4139 ubox
+186 192 0.1224 ubox
+186 221 0.4084 ubox
+187 191 0.1090 ubox
+187 220 0.3995 ubox
+188 219 0.3913 ubox
+189 218 0.3837 ubox
+190 217 0.3734 ubox
+192 208 0.7394 ubox
+193 207 0.7394 ubox
+194 206 0.7325 ubox
+195 205 0.7235 ubox
+196 204 0.7139 ubox
+197 203 0.6786 ubox
+201 237 0.6207 ubox
+202 236 0.6185 ubox
+203 235 0.6080 ubox
+204 234 0.5965 ubox
+205 219 0.2377 ubox
+205 233 0.5729 ubox
+206 218 0.2396 ubox
+207 217 0.2497 ubox
+207 232 0.4037 ubox
+208 216 0.2462 ubox
+215 231 0.8864 ubox
+216 230 0.9600 ubox
+217 229 0.9659 ubox
+218 228 0.9686 ubox
+219 227 0.9549 ubox
+220 226 0.9424 ubox
+220 231 0.1036 ubox
+221 225 0.9149 ubox
+221 228 0.1033 ubox
+221 230 0.1261 ubox
+222 227 0.1020 ubox
+222 229 0.1286 ubox
+222 259 0.2381 ubox
+223 228 0.1304 ubox
+223 258 0.2990 ubox
+224 257 0.3003 ubox
+225 256 0.2937 ubox
+227 254 0.2722 ubox
+229 253 0.2763 ubox
+229 257 0.1389 ubox
+229 268 0.4242 ubox
+230 252 0.2715 ubox
+230 256 0.1368 ubox
+230 267 0.5369 ubox
+231 251 0.2590 ubox
+231 255 0.1333 ubox
+231 266 0.5933 ubox
+232 265 0.6255 ubox
+232 267 0.1497 ubox
+233 250 0.2691 ubox
+233 263 0.8184 ubox
+233 266 0.1469 ubox
+234 241 0.1003 ubox
+234 249 0.2698 ubox
+234 252 0.3018 ubox
+234 262 0.8521 ubox
+234 265 0.1426 ubox
+235 248 0.2639 ubox
+235 251 0.3028 ubox
+235 261 0.8365 ubox
+235 272 0.2057 ubox
+236 247 0.2393 ubox
+236 250 0.3002 ubox
+236 260 0.8200 ubox
+236 263 0.1269 ubox
+236 271 0.2879 ubox
+237 249 0.2948 ubox
+237 259 0.6902 ubox
+237 262 0.1272 ubox
+237 270 0.3650 ubox
+238 256 0.2891 ubox
+238 259 0.4476 ubox
+238 269 0.3615 ubox
+239 258 0.5968 ubox
+239 268 0.3483 ubox
+240 246 0.2501 ubox
+240 254 0.5338 ubox
+240 257 0.5785 ubox
+241 245 0.1604 ubox
+241 246 0.1136 ubox
+241 253 0.5295 ubox
+241 254 0.1096 ubox
+243 252 0.4956 ubox
+243 265 0.4209 ubox
+244 264 0.4184 ubox
+245 263 0.4120 ubox
+246 252 0.1626 ubox
+246 262 0.4048 ubox
+248 258 0.1628 ubox
+249 257 0.1655 ubox
+251 258 0.2971 ubox
+251 273 0.2014 ubox
+252 257 0.2938 ubox
+252 273 0.2663 ubox
+253 270 0.1446 ubox
+253 271 0.2483 ubox
+253 272 0.2684 ubox
+254 265 0.1159 ubox
+254 269 0.1436 ubox
+254 270 0.2445 ubox
+254 271 0.2629 ubox
+255 264 0.1139 ubox
+255 268 0.1167 ubox
+256 268 0.3626 ubox
+257 267 0.3883 ubox
+258 266 0.3816 ubox
+260 264 0.1837 ubox
+262 288 0.1106 ubox
+264 286 0.2869 ubox
+265 285 0.6476 ubox
+267 285 0.1237 ubox
+268 282 0.8233 ubox
+269 280 0.1173 ubox
+269 281 0.9338 ubox
+270 279 0.1648 ubox
+270 280 0.9260 ubox
+271 278 0.1647 ubox
+271 279 0.9310 ubox
+272 278 0.9183 ubox
+273 277 0.8163 ubox
+278 312 0.2272 ubox
+279 312 0.2763 ubox
+280 310 0.6132 ubox
+281 309 0.6247 ubox
+282 308 0.6192 ubox
+283 307 0.6087 ubox
+286 296 0.1721 ubox
+286 305 0.9968 ubox
+287 295 0.1689 ubox
+287 304 0.9984 ubox
+288 303 0.9920 ubox
+289 302 0.9782 ubox
+290 301 0.9643 ubox
+291 300 0.9505 ubox
+299 337 0.4644 ubox
+300 336 0.4556 ubox
+301 335 0.4268 ubox
+303 330 0.3503 ubox
+303 331 0.4194 ubox
+304 329 0.3649 ubox
+304 330 0.4112 ubox
+305 328 0.2949 ubox
+306 327 0.2059 ubox
+306 328 0.7772 ubox
+307 327 0.8055 ubox
+308 326 0.8194 ubox
+308 344 0.3361 ubox
+309 325 0.8080 ubox
+309 343 0.3789 ubox
+310 324 0.7939 ubox
+310 342 0.3714 ubox
+311 320 0.5232 ubox
+311 341 0.3644 ubox
+312 319 0.5218 ubox
+312 340 0.3572 ubox
+313 320 0.1169 ubox
+313 339 0.3353 ubox
+314 320 0.1873 ubox
+314 335 0.1917 ubox
+315 320 0.1148 ubox
+315 334 0.1926 ubox
+316 333 0.1898 ubox
+317 332 0.1740 ubox
+318 329 0.2821 ubox
+318 331 0.1290 ubox
+318 347 0.4523 ubox
+319 327 0.1289 ubox
+319 328 0.2833 ubox
+319 346 0.4459 ubox
+319 358 0.1852 ubox
+320 326 0.1321 ubox
+320 327 0.2730 ubox
+320 344 0.4341 ubox
+321 325 0.1298 ubox
+321 340 0.1592 ubox
+321 343 0.4393 ubox
+321 356 0.4081 ubox
+322 339 0.1559 ubox
+322 342 0.4299 ubox
+322 355 0.4029 ubox
+323 341 0.3618 ubox
+323 354 0.3902 ubox
+324 337 0.3897 ubox
+324 352 0.3615 ubox
+324 353 0.3358 ubox
+325 336 0.3845 ubox
+325 351 0.4015 ubox
+325 352 0.2752 ubox
+325 358 0.1578 ubox
+326 335 0.3776 ubox
+326 341 0.2212 ubox
+326 350 0.4332 ubox
+326 357 0.1572 ubox
+327 334 0.3451 ubox
+327 340 0.2488 ubox
+327 348 0.3326 ubox
+327 349 0.3828 ubox
+327 356 0.1539 ubox
+328 333 0.2416 ubox
+328 339 0.2312 ubox
+328 347 0.3792 ubox
+328 348 0.3240 ubox
+328 354 0.1332 ubox
+328 355 0.1090 ubox
+329 337 0.1525 ubox
+329 346 0.4163 ubox
+329 353 0.1707 ubox
+330 336 0.1494 ubox
+330 337 0.6555 ubox
+330 346 0.1113 ubox
+330 352 0.1679 ubox
+331 336 0.6486 ubox
+331 351 0.1649 ubox
+335 344 0.2306 ubox
+335 374 0.3389 ubox
+336 343 0.2373 ubox
+336 348 0.1493 ubox
+336 349 0.1431 ubox
+336 370 0.1518 ubox
+336 371 0.2015 ubox
+336 373 0.3762 ubox
+337 342 0.1842 ubox
+337 347 0.1475 ubox
+337 348 0.1410 ubox
+337 369 0.1496 ubox
+337 370 0.1982 ubox
+337 372 0.3672 ubox
+338 345 0.1104 ubox
+339 368 0.2718 ubox
+340 367 0.2745 ubox
+341 366 0.2634 ubox
+341 368 0.3650 ubox
+342 367 0.3837 ubox
+342 368 0.1117 ubox
+343 366 0.3930 ubox
+343 367 0.1186 ubox
+345 364 0.5017 ubox
+345 374 0.1050 ubox
+346 363 0.5130 ubox
+346 373 0.1082 ubox
+347 362 0.4996 ubox
+347 367 0.1141 ubox
+348 366 0.1130 ubox
+350 362 0.4269 ubox
+350 374 0.2006 ubox
+351 361 0.7927 ubox
+351 371 0.4726 ubox
+351 372 0.2398 ubox
+351 373 0.2150 ubox
+352 360 0.7859 ubox
+352 370 0.4721 ubox
+352 371 0.2414 ubox
+352 372 0.2075 ubox
+353 359 0.7752 ubox
+353 369 0.4662 ubox
+353 370 0.2400 ubox
+353 371 0.1998 ubox
+354 358 0.7156 ubox
+354 368 0.4286 ubox
+355 367 0.3886 ubox
+355 368 0.3385 ubox
+355 394 0.1208 ubox
+356 366 0.3819 ubox
+356 367 0.3754 ubox
+356 393 0.1314 ubox
+357 364 0.3268 ubox
+357 366 0.3701 ubox
+357 392 0.1279 ubox
+358 363 0.3226 ubox
+358 365 0.3717 ubox
+359 391 0.1317 ubox
+360 390 0.1291 ubox
+360 391 0.2121 ubox
+361 382 0.1173 ubox
+361 390 0.2091 ubox
+362 381 0.1180 ubox
+362 384 0.3916 ubox
+362 389 0.1772 ubox
+363 380 0.1165 ubox
+363 382 0.7917 ubox
+364 379 0.1136 ubox
+364 381 0.7827 ubox
+365 380 0.7715 ubox
+366 373 0.1955 ubox
+366 377 0.1088 ubox
+366 379 0.7591 ubox
+367 372 0.1927 ubox
+367 376 0.1120 ubox
+367 378 0.7485 ubox
+368 375 0.1025 ubox
+368 377 0.7259 ubox
+373 409 0.1641 ubox
+374 408 0.1616 ubox
+375 394 0.6341 ubox
+375 407 0.1585 ubox
+376 393 0.7002 ubox
+376 406 0.1554 ubox
+377 392 0.6904 ubox
+377 405 0.1476 ubox
+378 391 0.6804 ubox
+379 390 0.6610 ubox
+380 387 0.1079 ubox
+380 388 0.1426 ubox
+380 389 0.5332 ubox
+380 399 0.1624 ubox
+381 398 0.1603 ubox
+382 387 0.3994 ubox
+382 388 0.2663 ubox
+382 397 0.1580 ubox
+383 396 0.1505 ubox
+383 416 0.1214 ubox
+384 391 0.1063 ubox
+384 393 0.1594 ubox
+384 415 0.1400 ubox
+385 390 0.1038 ubox
+385 392 0.1565 ubox
+385 414 0.1422 ubox
+386 391 0.1423 ubox
+386 407 0.1516 ubox
+386 413 0.1425 ubox
+387 406 0.1630 ubox
+387 412 0.1404 ubox
+388 406 0.1825 ubox
+388 411 0.1377 ubox
+389 405 0.1809 ubox
+389 410 0.1333 ubox
+389 427 0.2545 ubox
+390 403 0.3012 ubox
+390 404 0.1296 ubox
+390 426 0.2692 ubox
+391 402 0.2980 ubox
+391 403 0.1262 ubox
+391 423 0.6164 ubox
+391 425 0.1680 ubox
+392 400 0.1014 ubox
+392 401 0.2893 ubox
+392 422 0.6579 ubox
+393 399 0.1110 ubox
+393 400 0.2447 ubox
+393 402 0.1174 ubox
+393 421 0.6540 ubox
+394 401 0.1083 ubox
+395 411 0.2040 ubox
+395 420 0.3408 ubox
+396 410 0.2044 ubox
+396 418 0.9414 ubox
+396 419 0.2386 ubox
+397 409 0.2020 ubox
+397 417 0.9987 ubox
+398 408 0.1973 ubox
+398 416 0.9910 ubox
+399 406 0.1875 ubox
+399 415 0.9866 ubox
+400 405 0.1802 ubox
+400 414 0.9818 ubox
+401 413 0.9767 ubox
+402 412 0.9674 ubox
+403 411 0.9538 ubox
+403 429 0.1487 ubox
+404 410 0.9192 ubox
+404 428 0.1489 ubox
+406 426 0.2237 ubox
+407 425 0.2204 ubox
+408 424 0.2169 ubox
+409 423 0.2135 ubox
+410 422 0.2103 ubox
+410 446 0.3015 ubox
+411 421 0.2069 ubox
+411 445 0.3065 ubox
+412 444 0.2946 ubox
+414 446 0.1001 ubox
+415 441 0.2177 ubox
+415 442 0.1013 ubox
+415 444 0.4115 ubox
+416 440 0.2052 ubox
+416 443 0.4258 ubox
+417 441 0.1843 ubox
+417 442 0.4167 ubox
+420 438 0.7937 ubox
+421 432 0.1202 ubox
+421 437 0.8314 ubox
+422 431 0.1188 ubox
+422 436 0.8198 ubox
+423 430 0.1109 ubox
+423 435 0.8165 ubox
+424 434 0.8297 ubox
+425 433 0.8227 ubox
+425 448 0.1082 ubox
+426 432 0.8121 ubox
+426 447 0.1175 ubox
+431 446 0.4381 ubox
+432 444 0.1014 ubox
+432 445 0.4480 ubox
+434 443 0.4873 ubox
+434 447 0.1057 ubox
+435 442 0.5033 ubox
+435 446 0.2374 ubox
+435 473 0.3995 ubox
+436 441 0.4963 ubox
+436 445 0.2526 ubox
+436 450 0.1641 ubox
+436 472 0.3943 ubox
+436 473 0.1277 ubox
+437 444 0.2498 ubox
+437 449 0.1635 ubox
+437 471 0.3858 ubox
+437 472 0.1264 ubox
+438 443 0.2306 ubox
+438 448 0.1612 ubox
+438 470 0.3661 ubox
+439 471 0.1788 ubox
+439 472 0.1082 ubox
+440 446 0.1150 ubox
+440 468 0.3480 ubox
+441 466 0.2791 ubox
+441 467 0.3207 ubox
+441 470 0.3678 ubox
+442 465 0.3073 ubox
+442 466 0.2913 ubox
+442 469 0.4363 ubox
+443 464 0.3218 ubox
+443 468 0.4295 ubox
+444 462 0.4473 ubox
+444 467 0.4221 ubox
+445 461 0.4432 ubox
+445 466 0.4065 ubox
+446 460 0.4361 ubox
+446 465 0.3863 ubox
+447 459 0.4267 ubox
+447 463 0.1120 ubox
+447 464 0.2935 ubox
+447 484 0.2451 ubox
+449 462 0.3646 ubox
+449 466 0.2426 ubox
+449 482 0.8385 ubox
+450 461 0.3592 ubox
+450 465 0.2656 ubox
+450 481 0.8389 ubox
+451 464 0.2622 ubox
+451 480 0.8148 ubox
+453 462 0.2888 ubox
+453 478 0.8842 ubox
+454 461 0.2862 ubox
+454 477 0.8763 ubox
+455 460 0.2582 ubox
+455 476 0.8613 ubox
+456 475 0.8471 ubox
+457 474 0.8327 ubox
+458 493 0.1304 ubox
+459 492 0.1363 ubox
+461 472 0.7957 ubox
+462 471 0.7850 ubox
+462 489 0.1942 ubox
+462 493 0.3184 ubox
+463 470 0.7738 ubox
+463 488 0.1913 ubox
+463 492 0.3380 ubox
+464 469 0.7142 ubox
+464 487 0.1861 ubox
+464 491 0.3308 ubox
+466 485 0.1306 ubox
+466 489 0.3158 ubox
+466 493 0.1222 ubox
+467 484 0.1129 ubox
+467 489 0.1248 ubox
+468 483 0.1024 ubox
+468 486 0.2625 ubox
+468 487 0.1883 ubox
+468 488 0.1197 ubox
+468 491 0.1753 ubox
+469 480 0.1038 ubox
+469 485 0.4208 ubox
+470 479 0.1091 ubox
+470 484 0.4655 ubox
+470 489 0.3448 ubox
+471 478 0.1082 ubox
+471 483 0.4677 ubox
+471 488 0.3622 ubox
+472 477 0.1065 ubox
+472 482 0.4616 ubox
+472 487 0.3577 ubox
+473 481 0.4551 ubox
+473 486 0.3523 ubox
+473 502 0.1464 ubox
+474 480 0.4436 ubox
+474 485 0.3446 ubox
+474 499 0.1842 ubox
+474 501 0.1564 ubox
+475 479 0.4284 ubox
+475 484 0.3391 ubox
+475 496 0.1200 ubox
+475 498 0.2192 ubox
+475 500 0.1527 ubox
+475 514 0.1907 ubox
+476 495 0.1178 ubox
+476 497 0.2165 ubox
+476 499 0.1509 ubox
+476 513 0.1879 ubox
+476 515 0.1249 ubox
+477 496 0.2119 ubox
+477 498 0.1482 ubox
+477 512 0.1805 ubox
+477 513 0.1134 ubox
+477 514 0.1373 ubox
+478 489 0.1232 ubox
+478 493 0.2520 ubox
+478 512 0.1348 ubox
+478 513 0.1238 ubox
+479 488 0.1217 ubox
+479 492 0.2728 ubox
+480 487 0.1186 ubox
+480 491 0.2679 ubox
+480 511 0.4555 ubox
+481 510 0.5038 ubox
+482 489 0.2570 ubox
+482 509 0.4963 ubox
+483 489 0.1645 ubox
+483 493 0.2618 ubox
+483 508 0.5426 ubox
+483 520 0.4565 ubox
+484 488 0.1642 ubox
+484 492 0.2667 ubox
+484 507 0.5405 ubox
+484 519 0.4476 ubox
+485 491 0.2620 ubox
+485 502 0.1144 ubox
+485 503 0.1234 ubox
+485 506 0.5279 ubox
+485 517 0.1950 ubox
+485 518 0.3895 ubox
+486 501 0.1694 ubox
+486 514 0.3776 ubox
+486 516 0.2639 ubox
+487 500 0.1656 ubox
+487 501 0.2088 ubox
+487 513 0.3755 ubox
+487 515 0.2487 ubox
+487 516 0.1119 ubox
+488 499 0.1602 ubox
+488 500 0.1994 ubox
+488 512 0.3790 ubox
+488 514 0.2412 ubox
+488 515 0.1089 ubox
+489 502 0.5591 ubox
+490 496 0.1064 ubox
+490 498 0.4509 ubox
+490 501 0.5573 ubox
+490 510 0.4331 ubox
+490 514 0.1398 ubox
+491 497 0.4449 ubox
+491 499 0.1839 ubox
+491 500 0.5274 ubox
+491 509 0.4265 ubox
+491 513 0.1389 ubox
+492 496 0.4296 ubox
+492 498 0.2329 ubox
+492 499 0.4157 ubox
+492 508 0.4198 ubox
+492 512 0.1368 ubox
+493 507 0.4035 ubox
+493 511 0.1312 ubox
+495 503 0.2332 ubox
+495 505 0.1001 ubox
+496 502 0.2380 ubox
+497 503 0.2425 ubox
+497 507 0.1069 ubox
+498 502 0.2423 ubox
+498 506 0.1468 ubox
+499 505 0.1432 ubox
+500 504 0.1178 ubox
+500 539 0.7807 ubox
+501 538 0.8185 ubox
+502 536 0.3853 ubox
+502 537 0.7412 ubox
+503 535 0.3098 ubox
+504 534 0.2136 ubox
+504 535 0.8418 ubox
+505 534 0.9044 ubox
+506 533 0.9227 ubox
+506 542 0.2931 ubox
+507 532 0.9087 ubox
+507 541 0.3068 ubox
+508 531 0.8949 ubox
+508 540 0.3019 ubox
+509 530 0.8792 ubox
+509 539 0.2964 ubox
+510 529 0.8626 ubox
+510 538 0.2908 ubox
+511 526 0.1068 ubox
+511 537 0.2820 ubox
+512 531 0.4444 ubox
+513 524 0.3008 ubox
+513 530 0.4440 ubox
+514 523 0.3027 ubox
+514 529 0.4382 ubox
+514 531 0.1460 ubox
+515 524 0.6843 ubox
+515 528 0.4102 ubox
+515 530 0.1476 ubox
+516 523 0.6927 ubox
+516 529 0.1458 ubox
+517 526 0.1678 ubox
+518 526 0.3003 ubox
+519 525 0.3093 ubox
+519 532 0.1528 ubox
+519 546 0.1093 ubox
+520 531 0.1627 ubox
+520 545 0.1073 ubox
+522 529 0.1559 ubox
+525 540 0.1027 ubox
+527 565 0.1978 ubox
+528 537 0.1499 ubox
+528 564 0.2148 ubox
+529 536 0.1545 ubox
+529 561 0.2174 ubox
+529 562 0.1532 ubox
+529 563 0.2091 ubox
+530 535 0.1426 ubox
+531 560 0.3202 ubox
+531 567 0.1741 ubox
+532 558 0.5466 ubox
+532 559 0.2800 ubox
+532 566 0.1687 ubox
+533 557 0.5862 ubox
+533 558 0.2328 ubox
+534 556 0.5948 ubox
+534 557 0.1759 ubox
+535 555 0.5974 ubox
+535 556 0.1278 ubox
+536 545 0.1803 ubox
+536 554 0.5962 ubox
+537 544 0.1822 ubox
+538 543 0.1800 ubox
+538 551 0.3859 ubox
+538 552 0.4188 ubox
+538 561 0.2002 ubox
+538 562 0.2107 ubox
+539 550 0.4283 ubox
+539 551 0.3684 ubox
+540 546 0.2160 ubox
+540 549 0.4599 ubox
+540 550 0.2366 ubox
+540 560 0.7429 ubox
+541 545 0.2125 ubox
+541 547 0.2196 ubox
+541 559 0.7344 ubox
+541 579 0.1526 ubox
+542 547 0.2231 ubox
+542 558 0.7239 ubox
+542 578 0.1530 ubox
+543 554 0.3203 ubox
+543 557 0.7106 ubox
+543 577 0.1498 ubox
+544 553 0.3284 ubox
+545 552 0.3199 ubox
+546 554 0.6334 ubox
+547 552 0.1525 ubox
+547 553 0.5307 ubox
+548 572 0.1944 ubox
+549 571 0.1952 ubox
+550 570 0.1911 ubox
+551 569 0.1796 ubox
+553 568 0.1395 ubox
+554 567 0.1394 ubox
+555 565 0.1748 ubox
+556 564 0.1743 ubox
+556 584 0.1544 ubox
+557 563 0.1723 ubox
+557 582 0.4758 ubox
+557 583 0.1594 ubox
+558 562 0.1672 ubox
+558 581 0.6104 ubox
+558 582 0.1138 ubox
+559 567 0.1259 ubox
+559 580 0.7221 ubox
+560 566 0.1240 ubox
+560 579 0.7128 ubox
+561 578 0.7014 ubox
+561 579 0.3992 ubox
+562 577 0.6874 ubox
+562 578 0.4179 ubox
+562 579 0.1052 ubox
+563 571 0.1238 ubox
+563 577 0.4178 ubox
+563 578 0.1075 ubox
+564 570 0.1212 ubox
+564 574 0.5982 ubox
+564 576 0.3777 ubox
+564 577 0.1059 ubox
+565 573 0.6837 ubox
+565 574 0.3017 ubox
+565 576 0.1120 ubox
+566 572 0.6945 ubox
+566 575 0.1127 ubox
+566 605 0.2289 ubox
+567 571 0.6821 ubox
+567 604 0.2248 ubox
+569 582 0.1212 ubox
+570 581 0.1305 ubox
+570 600 0.1530 ubox
+571 580 0.1303 ubox
+571 599 0.1576 ubox
+572 579 0.1263 ubox
+576 596 0.2890 ubox
+577 588 0.3046 ubox
+577 594 0.5146 ubox
+577 595 0.3045 ubox
+578 587 0.3162 ubox
+578 593 0.6181 ubox
+578 617 0.1095 ubox
+579 586 0.3147 ubox
+579 592 0.6111 ubox
+579 616 0.1287 ubox
+580 585 0.3125 ubox
+580 591 0.6035 ubox
+580 615 0.1185 ubox
+581 590 0.5929 ubox
+582 589 0.5184 ubox
+583 615 0.8019 ubox
+584 614 0.8278 ubox
+585 592 0.1411 ubox
+585 613 0.8378 ubox
+586 591 0.1395 ubox
+586 612 0.8287 ubox
+587 611 0.8151 ubox
+588 610 0.7996 ubox
+589 609 0.7701 ubox
+589 618 0.1077 ubox
+590 617 0.1282 ubox
+591 605 0.6639 ubox
+591 606 0.1852 ubox
+591 613 0.1995 ubox
+591 616 0.1298 ubox
+592 604 0.6331 ubox
+592 612 0.1987 ubox
+592 615 0.1214 ubox
+593 604 0.3126 ubox
+593 611 0.1971 ubox
+594 603 0.3547 ubox
+594 610 0.1873 ubox
+595 604 0.1963 ubox
+596 603 0.1890 ubox
+604 613 0.4747 ubox
+605 612 0.4741 ubox
+605 643 0.4401 ubox
+606 611 0.4697 ubox
+606 642 0.4356 ubox
+607 641 0.4098 ubox
+608 640 0.1949 ubox
+610 640 0.3588 ubox
+611 639 0.4163 ubox
+612 638 0.4100 ubox
+613 637 0.4032 ubox
+615 638 0.3011 ubox
+616 637 0.3045 ubox
+617 636 0.2964 ubox
+617 654 0.1100 ubox
+617 655 0.6622 ubox
+618 635 0.2667 ubox
+618 653 0.1241 ubox
+618 654 0.7670 ubox
+619 652 0.1225 ubox
+619 653 0.7870 ubox
+620 651 0.1223 ubox
+620 652 0.7732 ubox
+621 633 0.2021 ubox
+621 651 0.7420 ubox
+622 632 0.2133 ubox
+623 631 0.2073 ubox
+628 644 0.7100 ubox
+629 643 0.7241 ubox
+630 642 0.7104 ubox
+630 643 0.1837 ubox
+630 667 0.2301 ubox
+631 642 0.1845 ubox
+631 667 0.5801 ubox
+632 640 0.1077 ubox
+632 641 0.2858 ubox
+632 665 0.1214 ubox
+632 666 0.5883 ubox
+633 640 0.2521 ubox
+633 664 0.1300 ubox
+633 665 0.5342 ubox
+634 667 0.1038 ubox
+635 663 0.6788 ubox
+636 662 0.7185 ubox
+637 661 0.6908 ubox
+638 660 0.6518 ubox
+640 658 0.5569 ubox
+640 659 0.1253 ubox
+641 657 0.5584 ubox
+641 658 0.1164 ubox
+642 656 0.5339 ubox
+645 652 0.5528 ubox
+646 651 0.5399 ubox
+646 667 0.2981 ubox
+647 666 0.2674 ubox
+648 665 0.2431 ubox
+649 664 0.2204 ubox
+649 669 0.1260 ubox
+650 668 0.1082 ubox
+651 662 0.1847 ubox
+652 661 0.1850 ubox
+showpage
+end
+%%EOF

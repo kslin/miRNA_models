@@ -16,13 +16,12 @@ if __name__ == '__main__':
     parser = OptionParser()
     parser.add_option("--transcripts", dest="TRANSCRIPTS", help="transcript sequence information")
     parser.add_option("--mir", dest="MIR", help="miRNA to get features for")
-    parser.add_option("-m", "--mirseqs", dest="MIR_SEQS", help="tsv with miRNAs and their sequences")
-    parser.add_option("--kds", dest="KDS", help="kd data in tsv format", default=None)
+    parser.add_option("--mirseqs", dest="MIR_SEQS", help="tsv with miRNAs and their sequences")
+    parser.add_option("--kds", dest="KDS", help="kd data in tsv format, this family must be included", default=None)
     parser.add_option("--sa_bg", dest="SA_BG", help="SA background for 12mers")
     parser.add_option("--rnaplfold_dir", dest="RNAPLFOLD_DIR", help="folder with RNAplfold info for transcripts")
     parser.add_option("--pct_file", dest="PCT_FILE", default=None, help="file with PCT information")
-    parser.add_option("--ta_sps_file", dest="TA_SPS_FILE", default=None, help="file with target abundance information")
-    parser.add_option("--kd_cutoff", dest="KD_CUTOFF", type=float, default=None)
+    parser.add_option("--kd_cutoff", dest="KD_CUTOFF", type=float, default=np.inf)
     parser.add_option("--outfile", dest="OUTFILE", help="location to write outputs")
     parser.add_option("--overlap_dist", dest="OVERLAP_DIST", help="minimum distance between neighboring sites", type=int)
     parser.add_option("--upstream_limit", dest="UPSTREAM_LIMIT", help="how far upstream to look for 3p pairing", type=int)
@@ -30,31 +29,17 @@ if __name__ == '__main__':
 
     (options, args) = parser.parse_args()
 
-    family_dict = {
-        'mir15a': 'mir16',
-        'mir15b': 'mir16',
-        'mir195': 'mir16',
-        'mir107': 'mir103',
-        'mir17-5p': 'mir20a',
-        'mir141': 'mir200a',
-        'mir192': 'mir215',
-        'let7c': 'let7'
-    }
-
-    if options.MIR in family_dict:
-        FAMILY_NAME = family_dict[options.MIR]
-    else:
-        FAMILY_NAME = options.MIR
-
     TRANSCRIPTS = pd.read_csv(options.TRANSCRIPTS, sep='\t', index_col='transcript')
     mirseqs = pd.read_csv(options.MIR_SEQS, sep='\t', index_col='mir')
     if '_pass' in options.MIR:
         MIRSEQ = mirseqs.loc[options.MIR.replace('_pass', '')]['pass_seq']
+        FAMILY = mirseqs.loc[options.MIR.replace('_pass', '')]['pass_family']
     else:
         MIRSEQ = mirseqs.loc[options.MIR]['guide_seq']
+        FAMILY = mirseqs.loc[options.MIR]['guide_family']
 
     SITE8 = utils.rev_comp(MIRSEQ[1:8]) + 'A'
-    print(FAMILY_NAME, options.MIR, SITE8)
+    print(options.MIR, SITE8)
 
     # if KD file provided, find sites based on KD file
     if options.KDS is not None:
@@ -63,9 +48,9 @@ if __name__ == '__main__':
             KDS = KDS[KDS['aligned_stype'] != 'no site']
         KDS = KDS[KDS['best_stype'] == KDS['aligned_stype']]
 
-        temp = KDS[KDS['mir'] == FAMILY_NAME]
+        temp = KDS[KDS['mir'] == FAMILY]
         if len(temp) == 0:
-            raise ValueError('{} not in kd files'.format(FAMILY_NAME))
+            raise ValueError('{} not in kd files'.format(FAMILY))
         mir_kd_dict = {x: y for (x, y) in zip(temp['12mer'], temp['log_kd']) if (y < options.KD_CUTOFF)}
 
         # find all the sites and KDs
@@ -84,7 +69,7 @@ if __name__ == '__main__':
     all_features['mir'] = options.MIR.replace('_pass', '*')
 
     # add site accessibility background information
-    temp = pd.read_csv(options.SA_BG.replace('MIR', FAMILY_NAME), sep='\t', index_col='12mer').reindex(all_features['12mer'].values)
+    temp = pd.read_csv(options.SA_BG, sep='\t', index_col='12mer').reindex(all_features['12mer'].values)
     all_features['logSA_bg'] = temp['logp'].values
 
     # add stypes
@@ -121,14 +106,6 @@ if __name__ == '__main__':
     all_features['logSA_diff'] = all_features['logSA'] - all_features['logSA_bg']
     all_features['utr3_loc'] = all_features['loc'] - all_features['orf_length']
     all_features['passenger'] = ('_pass' in options.MIR) or ('*' in options.MIR)
-    
-    if options.TA_SPS_FILE is not None:
-        print('Adding target abundance')
-        TAs = pd.read_csv(options.TA_SPS_FILE, sep='\t', index_col='Seed region')
-        SEED_SEQ = MIRSEQ[1:8].replace('T','U')
-        all_features['TA'] = TAs.loc[SEED_SEQ]['TA']
-    else:
-        print('Skipping target abundance')
 
     print('Adding PCT')
 
@@ -136,10 +113,10 @@ if __name__ == '__main__':
     if options.PCT_FILE is not None:
         pct_df = pd.read_csv(options.PCT_FILE, sep='\t', usecols=['Gene ID', 'miRNA family', 'Site type', 'Site start', 'PCT'])
         pct_df.columns = ['transcript', 'mir', 'stype', 'loc', 'PCT']
-        pct_df = pct_df[pct_df['mir'] == FAMILY_NAME]
+        pct_df = pct_df[pct_df['mir'] == FAMILY]
         if len(pct_df) == 0:
             all_features['PCT'] = 0
-            print(f"No PCT information for {FAMILY_NAME}")
+            print(f"No PCT information for {FAMILY}")
         else:
             pct_df['offset'] = [1 if x in ['8mer-1a', '7mer-m8'] else 0 for x in pct_df['stype']]
             pct_df['loc'] = pct_df['loc'] + pct_df['offset']
@@ -154,10 +131,10 @@ if __name__ == '__main__':
             all_features = pd.concat([temp1, temp2])
 
     else:
-        print(f"No PCT information for {FAMILY_NAME}")
+        print(f"No PCT information for {FAMILY}")
         all_features['PCT'] = 0
 
     all_features = all_features.set_index('transcript').sort_index()
 
     # write outputs
-    all_features.to_csv(options.OUTFILE.replace('MIR', options.MIR), sep='\t')
+    all_features.to_csv(options.OUTFILE, sep='\t')
