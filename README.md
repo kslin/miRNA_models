@@ -49,7 +49,7 @@ Then generate 200 random contexts for each sequence in each file and fold them. 
 	done; \
 	done
 
-Finally, parse RNAplfold outputs for all background sequences
+Finally, parse RNAplfold outputs for all background sequences. Because the contexts are random, the final results will be very slightly different each time.
 
 	python rnaplfold/combine_results.py \
 	--mirseqs sample_data/inputs/mirseqs.txt \
@@ -99,17 +99,16 @@ The TEMP files can be deleted at this point. To calculate all features:
 ### biochem_model
 This module contains code for building, training, and using the biochemical model and biochemical+ models.
 
-Sample usage:
+To use our trained parameters to predict scores:
 
-	python train.py \
-	--tpm_file /lab/solexa_bartel/klin/miRNA_models_data/transfections/hek293ft_ensembl/processed/merged.txt \
-	--mirseqs /lab/solexa_bartel/klin/miRNA_models_data/miRNA_info/HEK293FT_mirs/mirseqs.txt \
-	--feature_file /lab/solexa_bartel/klin/miRNA_models_data/model_inputs/biochem/predicted_kds/$(current_model)/hek293ft/MIR.txt \
-	--mode $${mode} \
-	--init_bound \
-	--passenger \
-	--setparams /lab/solexa_bartel/klin/miRNA_models_data/model_outputs/biochem/hela_transfection/$(current_model)/train_$${mode}_with_passenger_MODEL_params.json \
-	--kd_cutoff 0.0 \
-	--extra_feats $${feats} \
-	--outfile /lab/solexa_bartel/klin/miRNA_models_data/model_outputs/biochem/hek293ft_transfection/$(current_model)/fit_freeago_$${mode}_with_passenger_MODEL_preds.txt \
-	--outparams /lab/solexa_bartel/klin/miRNA_models_data/model_outputs/biochem/hek293ft_transfection/$(current_model)/fit_freeago_$${mode}_with_passenger_MODEL_params.json
+	for mirname in mir122 mir133 ; do \
+	python biochem_model/predict.py \
+	--features sample_data/outputs/features/"$mirname".txt \
+	--features_pass sample_data/outputs/features/"$mirname"_pass.txt \
+	--model biochem_model/trained_models/biochemplus.json \
+	--freeAGO -6.5 \
+	--freeAGO_pass -7.5 \
+	--outfile sample_data/outputs/predictions/"$mirname".txt ; \
+	done
+
+The predictions will change slightly for an mRNA depending on the cohort of all other mRNAs because the structural accessibility score for noncanonical sites of a miRNA is determined by the average value of all canonical sites in the given mRNAs. If you chose to calculate background values for all sites of a miRNA instead, this would no longer be true.

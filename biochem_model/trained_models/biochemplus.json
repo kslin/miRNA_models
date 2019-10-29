@@ -1,0 +1,1 @@
+{"log_decay": 0.5735143423080444, "feature_coefs": [-1.7090857028961182, 0.11533742398023605, 0.09985063970088959, 0.9219825267791748], "nosite_conc": 0.0, "FEATURE_LIST": ["log_KA", "in_ORF", "logSA_diff", "Threep_canon", "PCT"]}

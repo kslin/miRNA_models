@@ -7,7 +7,6 @@ import pandas as pd
 from scipy import stats
 import tensorflow as tf
 
-import predict
 import utils
 import models
 
